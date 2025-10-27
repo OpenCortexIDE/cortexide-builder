@@ -1,0 +1,37 @@
+{
+  "name": "cortexide-packaging-tests",
+  "version": "1.0.0",
+  "description": "Cross-platform packaging tests for CortexIDE",
+  "main": "packaging-test-runner.js",
+  "type": "module",
+  "scripts": {
+    "test": "node packaging-test-runner.js",
+    "test:macos": "node packaging-test-runner.js --platform macos",
+    "test:linux": "node packaging-test-runner.js --platform linux",
+    "test:windows": "node packaging-test-runner.js --platform windows",
+    "test:consistency": "node packaging-test-runner.js --test-types consistency",
+    "test:branding": "node packaging-test-runner.js --test-types branding",
+    "test:strict": "node packaging-test-runner.js --strict",
+    "test:bash": "./scripts/test-packaging-crossplatform.sh",
+    "test:bash:macos": "./scripts/test-packaging-crossplatform.sh macos",
+    "test:bash:linux": "./scripts/test-packaging-crossplatform.sh linux",
+    "test:bash:windows": "./scripts/test-packaging-crossplatform.sh windows"
+  },
+  "keywords": [
+    "cortexide",
+    "packaging",
+    "testing",
+    "cross-platform",
+    "macos",
+    "linux",
+    "windows"
+  ],
+  "author": "Glass Devtools, Inc.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  }
+}

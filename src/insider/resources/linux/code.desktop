@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=@@NAME_LONG@@
 Comment=CortexIDE. Code editing with AI-first workflows.
-GenericName=Text Editor
+GenericName=AI-powered Code Editor
 Exec=@@EXEC@@ %F
 Icon=@@ICON@@
 Type=Application

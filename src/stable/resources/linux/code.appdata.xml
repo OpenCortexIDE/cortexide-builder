@@ -6,7 +6,7 @@
 	<name>@@NAME_LONG@@</name>
 	<url type="homepage">https://www.vscodium.com</url>
 	<summary>VSCodium. Code editing. Redefined.</summary>
-	<description>
+	<description>CortexIDE is an AI-powered code editor built on VS Code technology.</description>
 		<p>VSCodium is a community-driven, freely-licensed binary distribution of Microsoft's editor VS Code.</p>
 	</description>
 	<screenshots>

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2129
 
-# Void completely rewrote this file
+# CortexIDE completely rewrote this file
 set -e
 
 if [[ -z "${GH_TOKEN}" ]] && [[ -z "${GITHUB_TOKEN}" ]] && [[ -z "${GH_ENTERPRISE_TOKEN}" ]] && [[ -z "${GITHUB_ENTERPRISE_TOKEN}" ]]; then

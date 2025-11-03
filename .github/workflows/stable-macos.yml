@@ -12,10 +12,10 @@ on:
       checkout_pr:
         type: string
         description: Checkout PR
-      void_commit: # Void added this
+      cortexide_commit:
         type: string
-        description: Checkout specific Void commit
-      void_release: # Void added this
+        description: Checkout specific CortexIDE commit
+      cortexide_release:
         type: string
         description: Custom release number
   repository_dispatch:
@@ -31,13 +31,13 @@ on:
     - '**/*.md'
 
 env:
-  APP_NAME: Void
+  APP_NAME: CortexIDE
   # ASSETS_REPOSITORY is where all the downloads are.
-  # VSCodium has this be the current repo, voideditor/void-builder:
+  # VSCodium has this be the current repo, but we use a separate binaries repo:
   # ASSETS_REPOSITORY: ${{ github.repository }}
 
   ASSETS_REPOSITORY: ${{ github.repository_owner }}/binaries
-  BINARY_NAME: void
+  BINARY_NAME: cortexide
   GH_REPO_PATH: ${{ github.repository_owner }}/binaries
   ORG_NAME: ${{ github.repository_owner }}
   OS_NAME: osx
@@ -79,10 +79,10 @@ jobs:
           python-version: '3.11'
         if: env.VSCODE_ARCH == 'x64'
 
-      - name: Clone VSCode repo
-        env: # Void added this
-          VOID_COMMIT: ${{ github.event.inputs.void_commit }} # Void added this
-          VOID_RELEASE: ${{ github.event.inputs.void_release }} # Void added this
+      - name: Clone CortexIDE repo
+        env:
+          CORTEXIDE_COMMIT: ${{ github.event.inputs.cortexide_commit }}
+          CORTEXIDE_RELEASE: ${{ github.event.inputs.cortexide_release }}
         run: . get_repo.sh
 
       - name: Check PR or cron

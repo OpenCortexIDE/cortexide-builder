@@ -189,7 +189,7 @@ fi
 
 cd "${REPOSITORY_NAME}" || { echo "'${REPOSITORY_NAME}' dir not found"; exit 1; }
 
-# Void made master into main (why would anyone change from main -> master??)
+# CortexIDE uses main branch (standard practice)
 git pull origin main # in case another build just pushed
 git add .
 

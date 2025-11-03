@@ -12,10 +12,10 @@ on:
       checkout_pr:
         type: string
         description: Checkout PR
-      void_commit: # Void added this
+      cortexide_commit:
         type: string
-        description: Checkout specific Void commit
-      void_release: # Void added this
+        description: Checkout specific CortexIDE commit
+      cortexide_release:
         type: string
         description: Custom release number
   repository_dispatch:
@@ -32,9 +32,9 @@ on:
 
 env:
   ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
-  APP_NAME: Void
+  APP_NAME: CortexIDE
   ASSETS_REPOSITORY: ${{ github.repository_owner }}/binaries
-  BINARY_NAME: void
+  BINARY_NAME: cortexide
   DISABLE_UPDATE: 'yes'
   GH_REPO_PATH: ${{ github.repository_owner }}/binaries
   ORG_NAME: ${{ github.repository_owner }}
@@ -62,10 +62,10 @@ jobs:
           PULL_REQUEST_ID: ${{ github.event.inputs.checkout_pr }}
         run: ./get_pr.sh
 
-      - name: Clone VSCode repo
-        env: # Void added this
-          VOID_COMMIT: ${{ github.event.inputs.void_commit }} # Void added this
-          VOID_RELEASE: ${{ github.event.inputs.void_release }} # Void added this
+      - name: Clone CortexIDE repo
+        env:
+          CORTEXIDE_COMMIT: ${{ github.event.inputs.cortexide_commit }}
+          CORTEXIDE_RELEASE: ${{ github.event.inputs.cortexide_release }}
         run: ./get_repo.sh
 
       - name: Check PR or cron
@@ -133,10 +133,10 @@ jobs:
         run: sudo apt-get update -y && sudo apt-get install -y libkrb5-dev
         if: env.SHOULD_BUILD == 'yes'
 
-      - name: Clone VSCode repo
-        env: # Void added this
-          VOID_COMMIT: ${{ github.event.inputs.void_commit }} # Void added this
-          VOID_RELEASE: ${{ github.event.inputs.void_release }} # Void added this
+      - name: Clone CortexIDE repo
+        env:
+          CORTEXIDE_COMMIT: ${{ github.event.inputs.cortexide_commit }}
+          CORTEXIDE_RELEASE: ${{ github.event.inputs.cortexide_release }}
         run: ./get_repo.sh
         if: env.SHOULD_BUILD == 'yes'
 

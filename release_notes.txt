@@ -1,31 +1,31 @@
-# Void VOID_VERSION
+# CortexIDE CORTEX_VERSION
 
-See https://voideditor.com for Void's official download page.
+See https://cortexide.com for CortexIDE's official download page.
 
-For maintainers: [`void-builder/`](https://github.com/voideditor/void-builder#readme)
+For maintainers: [`cortexide-builder/`](https://github.com/cortexide/cortexide-builder#readme)
 
 # Binaries
 
 ## Windows
-- <a href="https://github.com/voideditor/binaries/releases/download/RELEASE_VERSION/VoidSetup-x64-RELEASE_VERSION.exe">Windows (x64)</a>
-- <a href="https://github.com/voideditor/binaries/releases/download/RELEASE_VERSION/VoidSetup-arm64-RELEASE_VERSION.exe">Windows (ARM)</a>
+- <a href="https://github.com/cortexide/binaries/releases/download/RELEASE_VERSION/CortexIDESetup-x64-RELEASE_VERSION.exe">Windows (x64)</a>
+- <a href="https://github.com/cortexide/binaries/releases/download/RELEASE_VERSION/CortexIDESetup-arm64-RELEASE_VERSION.exe">Windows (ARM)</a>
 
 ## Mac
-- <a href="https://github.com/voideditor/binaries/releases/download/RELEASE_VERSION/Void.x64.RELEASE_VERSION.dmg">Mac (x64 / Intel)</a>
-- <a href="https://github.com/voideditor/binaries/releases/download/RELEASE_VERSION/Void.arm64.RELEASE_VERSION.dmg">Mac (ARM / M Chip)</a>
+- <a href="https://github.com/cortexide/binaries/releases/download/RELEASE_VERSION/CortexIDE.x64.RELEASE_VERSION.dmg">Mac (x64 / Intel)</a>
+- <a href="https://github.com/cortexide/binaries/releases/download/RELEASE_VERSION/CortexIDE.arm64.RELEASE_VERSION.dmg">Mac (ARM / M Chip)</a>
 
 ## Linux
-- <a href="https://github.com/voideditor/binaries/releases/download/RELEASE_VERSION/Void-linux-x64-RELEASE_VERSION.tar.gz">Linux .tar.gz (x64)</a>
-- <a href="https://github.com/voideditor/binaries/releases/download/RELEASE_VERSION/Void-linux-arm64-RELEASE_VERSION.tar.gz">Linux .tar.gz (arm64)</a>
-- <a href="https://github.com/voideditor/binaries/releases/download/RELEASE_VERSION/Void-linux-armhf-RELEASE_VERSION.tar.gz">Linux .tar.gz (armhf)</a>
-- <a href="https://github.com/voideditor/binaries/releases/download/RELEASE_VERSION/Void-linux-loong64-RELEASE_VERSION.tar.gz">Linux .tar.gz (loong64)</a>
-- <a href="https://github.com/voideditor/binaries/releases/download/RELEASE_VERSION/Void-linux-ppc64le-RELEASE_VERSION.tar.gz">Linux .tar.gz (ppc64le)</a>
-- <a href="https://github.com/voideditor/binaries/releases/download/RELEASE_VERSION/Void-linux-riscv64-RELEASE_VERSION.tar.gz">Linux .tar.gz (riscv64)</a>
-- <a href="https://github.com/voideditor/binaries/releases/download/RELEASE_VERSION/void_RELEASE_VERSION_arm64.deb">Linux .deb (ARM)</a>
-- <a href="https://github.com/voideditor/binaries/releases/download/RELEASE_VERSION/void_RELEASE_VERSION_amd64.deb">Linux .deb (AMD)</a>
+- <a href="https://github.com/cortexide/binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-x64-RELEASE_VERSION.tar.gz">Linux .tar.gz (x64)</a>
+- <a href="https://github.com/cortexide/binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-arm64-RELEASE_VERSION.tar.gz">Linux .tar.gz (arm64)</a>
+- <a href="https://github.com/cortexide/binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-armhf-RELEASE_VERSION.tar.gz">Linux .tar.gz (armhf)</a>
+- <a href="https://github.com/cortexide/binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-loong64-RELEASE_VERSION.tar.gz">Linux .tar.gz (loong64)</a>
+- <a href="https://github.com/cortexide/binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-ppc64le-RELEASE_VERSION.tar.gz">Linux .tar.gz (ppc64le)</a>
+- <a href="https://github.com/cortexide/binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-riscv64-RELEASE_VERSION.tar.gz">Linux .tar.gz (riscv64)</a>
+- <a href="https://github.com/cortexide/binaries/releases/download/RELEASE_VERSION/cortexide_RELEASE_VERSION_arm64.deb">Linux .deb (ARM)</a>
+- <a href="https://github.com/cortexide/binaries/releases/download/RELEASE_VERSION/cortexide_RELEASE_VERSION_amd64.deb">Linux .deb (AMD)</a>
 
 
 ## Status
 If any downloads give a 404, this version is likely very new. Try the previous version until the workflows complete!
 
-[![stable-windows](https://github.com/voideditor/void-builder/actions/workflows/stable-windows.yml/badge.svg)](https://github.com/voideditor/void-builder/actions/workflows/stable-windows.yml) [![stable-macos](https://github.com/voideditor/void-builder/actions/workflows/stable-macos.yml/badge.svg)](https://github.com/voideditor/void-builder/actions/workflows/stable-macos.yml) [![stable-linux](https://github.com/voideditor/void-builder/actions/workflows/stable-linux.yml/badge.svg)](https://github.com/voideditor/void-builder/actions/workflows/stable-linux.yml)
+[![stable-windows](https://github.com/cortexide/cortexide-builder/actions/workflows/stable-windows.yml/badge.svg)](https://github.com/cortexide/cortexide-builder/actions/workflows/stable-windows.yml) [![stable-macos](https://github.com/cortexide/cortexide-builder/actions/workflows/stable-macos.yml/badge.svg)](https://github.com/cortexide/cortexide-builder/actions/workflows/stable-macos.yml) [![stable-linux](https://github.com/cortexide/cortexide-builder/actions/workflows/stable-linux.yml/badge.svg)](https://github.com/cortexide/cortexide-builder/actions/workflows/stable-linux.yml)

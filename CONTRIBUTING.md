@@ -16,8 +16,8 @@ This project and everyone participating in it is governed by the [VSCodium Code 
 
 ### Before Submitting an Issue
 
-Before creating bug reports, please check existing issues and [the Troubleshooting page](https://github.com/voideditor/void/blob/master/docs/troubleshooting.md) as you might find out that you don't need to create one.
-When you are creating a bug report, please include as many details as possible. Fill out [the required template](https://github.com/voideditor/void/issues/new?&labels=bug&&template=bug_report.md), the information it asks for helps us resolve issues faster.
+Before creating bug reports, please check existing issues and [the Troubleshooting page](https://github.com/cortexide/cortexide/blob/master/docs/troubleshooting.md) as you might find out that you don't need to create one.
+When you are creating a bug report, please include as many details as possible. Fill out [the required template](https://github.com/cortexide/cortexide/issues/new?&labels=bug&&template=bug_report.md), the information it asks for helps us resolve issues faster.
 
 ## Making Changes
 

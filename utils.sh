@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
-APP_NAME="${APP_NAME:-Void}"
+APP_NAME="${APP_NAME:-CortexIDE}"
 APP_NAME_LC="$( echo "${APP_NAME}" | awk '{print tolower($0)}' )"
-BINARY_NAME="${BINARY_NAME:-void}"
-GH_REPO_PATH="${GH_REPO_PATH:-voideditor/void}"
-ORG_NAME="${ORG_NAME:-voideditor}"
+BINARY_NAME="${BINARY_NAME:-cortexide}"
+GH_REPO_PATH="${GH_REPO_PATH:-cortexide/cortexide}"
+ORG_NAME="${ORG_NAME:-cortexide}"
 
 echo "---------- utils.sh -----------"
 echo "APP_NAME=\"${APP_NAME}\""

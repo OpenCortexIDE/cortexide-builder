@@ -19,9 +19,9 @@ if [[ $( gh release view "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" 2>&1
   if [[ "${VSCODE_QUALITY}" == "insider" ]]; then
     NOTES="update vscode to [${MS_COMMIT}](https://github.com/microsoft/vscode/tree/${MS_COMMIT})"
 
-    gh release create "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --title "${VOID_VERSION}" --notes "${NOTES}"
+    gh release create "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --title "${CORTEX_VERSION}" --notes "${NOTES}"
   else
-    gh release create "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --title "${VOID_VERSION}" --generate-notes
+    gh release create "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --title "${CORTEX_VERSION}" --generate-notes
 
     . ./utils.sh
 
@@ -30,7 +30,7 @@ if [[ $( gh release view "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" 2>&1
     replace "s|MS_TAG_SHORT|$( echo "${MS_TAG//./_}" | cut -d'_' -f 1,2 )|" release_notes.txt
     replace "s|MS_TAG|${MS_TAG}|" release_notes.txt
     replace "s|RELEASE_VERSION|${RELEASE_VERSION}|g" release_notes.txt
-    replace "s|VOID_VERSION|${VOID_VERSION}|g" release_notes.txt
+    replace "s|CORTEX_VERSION|${CORTEX_VERSION}|g" release_notes.txt
     replace "s|RELEASE_NOTES|${RELEASE_NOTES//$'\n'/\\n}|" release_notes.txt
 
     gh release edit "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --notes-file release_notes.txt

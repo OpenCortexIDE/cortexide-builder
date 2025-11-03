@@ -80,7 +80,15 @@ else
   cd vscode || { echo "'vscode' dir not found"; exit 1; }
   
   git init -q
-  git remote add origin https://github.com/cortexide/cortexide.git
+  
+  # Use GITHUB_TOKEN if available for authentication (GitHub Actions provides this automatically)
+  # Otherwise use the public URL
+  if [[ -n "${GITHUB_TOKEN}" ]]; then
+    echo "Using GITHUB_TOKEN for authentication"
+    git remote add origin "https://${GITHUB_TOKEN}@github.com/OpenCortexIDE/cortexide.git"
+  else
+    git remote add origin https://github.com/OpenCortexIDE/cortexide.git
+  fi
   
   # Allow callers to specify a particular commit to checkout via the
   # environment variable CORTEXIDE_COMMIT.  We still default to the tip of the

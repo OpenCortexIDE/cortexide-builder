@@ -62,6 +62,7 @@ jobs:
 
       - name: Clone CortexIDE repo
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CORTEXIDE_COMMIT: ${{ github.event.inputs.cortexide_commit }}
           CORTEXIDE_RELEASE: ${{ github.event.inputs.cortexide_release }}
         run: ./get_repo.sh
@@ -125,6 +126,7 @@ jobs:
 
       - name: Clone CortexIDE repo
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CORTEXIDE_COMMIT: ${{ github.event.inputs.cortexide_commit }}
           CORTEXIDE_RELEASE: ${{ github.event.inputs.cortexide_release }}
         run: ./get_repo.sh

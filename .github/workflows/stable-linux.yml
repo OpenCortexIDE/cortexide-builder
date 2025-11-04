@@ -33,13 +33,13 @@ on:
 env:
   ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
   APP_NAME: CortexIDE
-  ASSETS_REPOSITORY: ${{ github.repository_owner }}/binaries
+  ASSETS_REPOSITORY: ${{ github.repository_owner }}/cortexide-binaries
   BINARY_NAME: cortexide
   DISABLE_UPDATE: 'yes'
-  GH_REPO_PATH: ${{ github.repository_owner }}/binaries
+  GH_REPO_PATH: ${{ github.repository_owner }}/cortexide-binaries
   ORG_NAME: ${{ github.repository_owner }}
   OS_NAME: linux
-  VERSIONS_REPOSITORY: ${{ github.repository_owner }}/versions
+  VERSIONS_REPOSITORY: ${{ github.repository_owner }}/cortexide-versions
   VSCODE_QUALITY: stable
 
 jobs:

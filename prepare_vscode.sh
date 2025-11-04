@@ -142,8 +142,8 @@ setpath "product" "tipsAndTricksUrl" "https://go.microsoft.com/fwlink/?linkid=85
 setpath "product" "twitterUrl" "https://x.com/cortexide"
 
 if [[ "${DISABLE_UPDATE}" != "yes" ]]; then
-  setpath "product" "updateUrl" "https://raw.githubusercontent.com/cortexide/versions/refs/heads/main"
-  setpath "product" "downloadUrl" "https://github.com/cortexide/binaries/releases"
+  setpath "product" "updateUrl" "https://raw.githubusercontent.com/OpenCortexIDE/cortexide-versions/refs/heads/main"
+  setpath "product" "downloadUrl" "https://github.com/OpenCortexIDE/cortexide-binaries/releases"
 fi
 
 # Note: CortexIDE product.json already has correct branding, so these overrides may not be needed

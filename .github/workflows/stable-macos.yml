@@ -36,12 +36,12 @@ env:
   # VSCodium has this be the current repo, but we use a separate binaries repo:
   # ASSETS_REPOSITORY: ${{ github.repository }}
 
-  ASSETS_REPOSITORY: ${{ github.repository_owner }}/binaries
+  ASSETS_REPOSITORY: ${{ github.repository_owner }}/cortexide-binaries
   BINARY_NAME: cortexide
-  GH_REPO_PATH: ${{ github.repository_owner }}/binaries
+  GH_REPO_PATH: ${{ github.repository_owner }}/cortexide-binaries
   ORG_NAME: ${{ github.repository_owner }}
   OS_NAME: osx
-  VERSIONS_REPOSITORY: ${{ github.repository_owner }}/versions
+  VERSIONS_REPOSITORY: ${{ github.repository_owner }}/cortexide-versions
   VSCODE_QUALITY: stable
 
 jobs:

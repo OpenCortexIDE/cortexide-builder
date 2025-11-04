@@ -61,16 +61,61 @@ for file in ../patches/user/*.patch; do
   fi
 done
 
-# Fix CSS path for code-icon.svg in editorgroupview.css if it was modified
-# The correct path from parts/editor/media/ should be ../../../media/code-icon.svg
-# (not ../../media/code-icon.svg)
+# Fix CSS paths for code-icon.svg if they were modified during build
+# This comprehensive fix handles all CSS files with incorrect relative paths
+# The correct paths depend on the file location relative to browser/media/
+
+echo "Checking and fixing CSS paths for code-icon.svg..."
+
+# Fix specific known issues first (most common cases)
+
+# Fix editorgroupview.css: ../../media/code-icon.svg -> ../../../media/code-icon.svg
 if [[ -f "src/vs/workbench/browser/parts/editor/media/editorgroupview.css" ]]; then
-  if grep -q "../../media/code-icon.svg" "src/vs/workbench/browser/parts/editor/media/editorgroupview.css"; then
-    echo "Fixing CSS path for code-icon.svg in editorgroupview.css..."
+  if grep -q "../../media/code-icon.svg" "src/vs/workbench/browser/parts/editor/media/editorgroupview.css" 2>/dev/null; then
+    echo "Fixing path in editorgroupview.css..."
     replace "s|url('../../media/code-icon\.svg')|url('../../../media/code-icon.svg')|g" "src/vs/workbench/browser/parts/editor/media/editorgroupview.css"
     replace "s|url(\"../../media/code-icon\.svg\")|url('../../../media/code-icon.svg')|g" "src/vs/workbench/browser/parts/editor/media/editorgroupview.css"
   fi
 fi
+
+# Fix void.css: ../../browser/media/code-icon.svg -> ../../../../browser/media/code-icon.svg
+if [[ -f "src/vs/workbench/contrib/void/browser/media/void.css" ]]; then
+  if grep -q "../../browser/media/code-icon.svg" "src/vs/workbench/contrib/void/browser/media/void.css" 2>/dev/null; then
+    echo "Fixing path in void.css..."
+    replace "s|url('../../browser/media/code-icon\.svg')|url('../../../../browser/media/code-icon.svg')|g" "src/vs/workbench/contrib/void/browser/media/void.css"
+    replace "s|url(\"../../browser/media/code-icon\.svg\")|url('../../../../browser/media/code-icon.svg')|g" "src/vs/workbench/contrib/void/browser/media/void.css"
+  fi
+fi
+
+# General fix: Find all CSS files with incorrect paths and fix them
+# Pattern 1: Fix ../../media/code-icon.svg in parts/*/media/ directories (should be ../../../media/code-icon.svg)
+find src/vs/workbench/browser/parts -name "*.css" -type f 2>/dev/null | while read -r css_file; do
+  if [[ -f "$css_file" ]] && grep -q "../../media/code-icon.svg" "$css_file" 2>/dev/null; then
+    echo "Fixing path in $css_file (parts/*/media/)..."
+    replace "s|url('../../media/code-icon\.svg')|url('../../../media/code-icon.svg')|g" "$css_file"
+    replace "s|url(\"../../media/code-icon\.svg\")|url('../../../media/code-icon.svg')|g" "$css_file"
+  fi
+done
+
+# Pattern 2: Fix ../../browser/media/code-icon.svg in contrib/*/browser/media/ directories (should be ../../../../browser/media/code-icon.svg)
+find src/vs/workbench/contrib -path "*/browser/media/*.css" -type f 2>/dev/null | while read -r css_file; do
+  if [[ -f "$css_file" ]] && grep -q "../../browser/media/code-icon.svg" "$css_file" 2>/dev/null; then
+    echo "Fixing path in $css_file (contrib/*/browser/media/)..."
+    replace "s|url('../../browser/media/code-icon\.svg')|url('../../../../browser/media/code-icon.svg')|g" "$css_file"
+    replace "s|url(\"../../browser/media/code-icon\.svg\")|url('../../../../browser/media/code-icon.svg')|g" "$css_file"
+  fi
+done
+
+# Pattern 3: Fix ../../media/code-icon.svg in contrib/*/media/ directories (should be ../../../../media/code-icon.svg)
+find src/vs/workbench/contrib -path "*/media/*.css" -type f 2>/dev/null | while read -r css_file; do
+  if [[ -f "$css_file" ]] && [[ "$css_file" != *"browser/media/"* ]] && grep -q "../../media/code-icon.svg" "$css_file" 2>/dev/null; then
+    echo "Fixing path in $css_file (contrib/*/media/)..."
+    replace "s|url('../../media/code-icon\.svg')|url('../../../../media/code-icon.svg')|g" "$css_file"
+    replace "s|url(\"../../media/code-icon\.svg\")|url('../../../../media/code-icon.svg')|g" "$css_file"
+  fi
+done
+
+echo "CSS path fixes completed."
 
 set -x
 

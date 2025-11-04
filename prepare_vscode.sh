@@ -16,6 +16,20 @@ set -e
 # CortexIDE - keep our license...
 # cp -f LICENSE vscode/LICENSE.txt
 
+# CortexIDE - ensure code-icon.svg is copied to vscode directory
+# This file is required by the build process for the workbench UI
+if [[ "${VSCODE_QUALITY}" == "insider" ]]; then
+  if [[ -f "src/insider/src/vs/workbench/browser/media/code-icon.svg" ]]; then
+    mkdir -p vscode/src/vs/workbench/browser/media
+    cp -f src/insider/src/vs/workbench/browser/media/code-icon.svg vscode/src/vs/workbench/browser/media/code-icon.svg
+  fi
+else
+  if [[ -f "src/stable/src/vs/workbench/browser/media/code-icon.svg" ]]; then
+    mkdir -p vscode/src/vs/workbench/browser/media
+    cp -f src/stable/src/vs/workbench/browser/media/code-icon.svg vscode/src/vs/workbench/browser/media/code-icon.svg
+  fi
+fi
+
 cd vscode || { echo "'vscode' dir not found"; exit 1; }
 
 ../update_settings.sh

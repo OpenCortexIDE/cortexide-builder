@@ -24,6 +24,66 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   npm run gulp compile-build-without-mangling
   npm run gulp compile-extension-media
   npm run gulp compile-extensions-build
+  
+  # Fix CSS paths in out-build directory before minify
+  # This fixes paths that get incorrectly modified during the build process
+  echo "Fixing CSS paths in out-build directory..."
+  
+  # Determine sed command based on system (GNU vs BSD)
+  if sed --version >/dev/null 2>&1; then
+    SED_CMD="sed -i"
+  else
+    SED_CMD="sed -i ''"
+  fi
+  
+  # Fix editorgroupview.css: ../../media/code-icon.svg -> ../../../media/code-icon.svg
+  if [[ -f "out-build/vs/workbench/browser/parts/editor/media/editorgroupview.css" ]]; then
+    if grep -q "../../media/code-icon.svg" "out-build/vs/workbench/browser/parts/editor/media/editorgroupview.css" 2>/dev/null; then
+      echo "Fixing path in out-build/editorgroupview.css..."
+      $SED_CMD "s|url('../../media/code-icon\.svg')|url('../../../media/code-icon.svg')|g" "out-build/vs/workbench/browser/parts/editor/media/editorgroupview.css" 2>/dev/null || true
+      $SED_CMD "s|url(\"../../media/code-icon\.svg\")|url('../../../media/code-icon.svg')|g" "out-build/vs/workbench/browser/parts/editor/media/editorgroupview.css" 2>/dev/null || true
+    fi
+  fi
+  
+  # Fix void.css: ../../browser/media/code-icon.svg -> ../../../../browser/media/code-icon.svg
+  if [[ -f "out-build/vs/workbench/contrib/void/browser/media/void.css" ]]; then
+    if grep -q "../../browser/media/code-icon.svg" "out-build/vs/workbench/contrib/void/browser/media/void.css" 2>/dev/null; then
+      echo "Fixing path in out-build/void.css..."
+      $SED_CMD "s|url('../../browser/media/code-icon\.svg')|url('../../../../browser/media/code-icon.svg')|g" "out-build/vs/workbench/contrib/void/browser/media/void.css" 2>/dev/null || true
+      $SED_CMD "s|url(\"../../browser/media/code-icon\.svg\")|url('../../../../browser/media/code-icon.svg')|g" "out-build/vs/workbench/contrib/void/browser/media/void.css" 2>/dev/null || true
+    fi
+  fi
+  
+  # Fix any other CSS files in out-build/browser/parts with incorrect paths to media/
+  find out-build/vs/workbench/browser/parts -name "*.css" -type f 2>/dev/null | while read -r css_file; do
+    if [[ -f "$css_file" ]] && grep -q "../../media/code-icon.svg" "$css_file" 2>/dev/null; then
+      echo "Fixing path in $css_file (parts/*/media/)..."
+      $SED_CMD "s|url('../../media/code-icon\.svg')|url('../../../media/code-icon.svg')|g" "$css_file" 2>/dev/null || true
+      $SED_CMD "s|url(\"../../media/code-icon\.svg\")|url('../../../media/code-icon.svg')|g" "$css_file" 2>/dev/null || true
+    fi
+  done
+  
+  # Fix any CSS files in out-build/contrib with incorrect paths to browser/media/
+  find out-build/vs/workbench/contrib -path "*/browser/media/*.css" -type f 2>/dev/null | while read -r css_file; do
+    if [[ -f "$css_file" ]] && grep -q "../../browser/media/code-icon.svg" "$css_file" 2>/dev/null; then
+      echo "Fixing path in $css_file (contrib/*/browser/media/)..."
+      $SED_CMD "s|url('../../browser/media/code-icon\.svg')|url('../../../../browser/media/code-icon.svg')|g" "$css_file" 2>/dev/null || true
+      $SED_CMD "s|url(\"../../browser/media/code-icon\.svg\")|url('../../../../browser/media/code-icon.svg')|g" "$css_file" 2>/dev/null || true
+    fi
+  done
+  
+  # Also check for any other incorrect relative paths that might cause issues
+  # Pattern: ../../media/ from parts/*/media/ (too short, should be ../../../media/)
+  find out-build/vs/workbench/browser/parts -path "*/media/*.css" -type f 2>/dev/null | while read -r css_file; do
+    if [[ -f "$css_file" ]] && grep -q "url(['\"]\.\./\.\./media/[^'\"].*['\"])" "$css_file" 2>/dev/null; then
+      # Check if it's not void-icon-sm.png (which uses correct ../../../../browser/media/)
+      if ! grep -q "void-icon-sm.png" "$css_file" 2>/dev/null; then
+        echo "Warning: Potential incorrect path in $css_file"
+        echo "  Check if relative path is correct for this file location"
+      fi
+    fi
+  done
+  
   npm run gulp minify-vscode
 
   if [[ "${OS_NAME}" == "osx" ]]; then

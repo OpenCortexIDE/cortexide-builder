@@ -16,20 +16,6 @@ set -e
 # CortexIDE - keep our license...
 # cp -f LICENSE vscode/LICENSE.txt
 
-# CortexIDE - ensure code-icon.svg is copied to vscode directory
-# This file is required by the build process for the workbench UI
-if [[ "${VSCODE_QUALITY}" == "insider" ]]; then
-  if [[ -f "src/insider/src/vs/workbench/browser/media/code-icon.svg" ]]; then
-    mkdir -p vscode/src/vs/workbench/browser/media
-    cp -f src/insider/src/vs/workbench/browser/media/code-icon.svg vscode/src/vs/workbench/browser/media/code-icon.svg
-  fi
-else
-  if [[ -f "src/stable/src/vs/workbench/browser/media/code-icon.svg" ]]; then
-    mkdir -p vscode/src/vs/workbench/browser/media
-    cp -f src/stable/src/vs/workbench/browser/media/code-icon.svg vscode/src/vs/workbench/browser/media/code-icon.svg
-  fi
-fi
-
 cd vscode || { echo "'vscode' dir not found"; exit 1; }
 
 ../update_settings.sh
@@ -74,6 +60,17 @@ for file in ../patches/user/*.patch; do
     apply_patch "${file}"
   fi
 done
+
+# Fix CSS path for code-icon.svg in editorgroupview.css if it was modified
+# The correct path from parts/editor/media/ should be ../../../media/code-icon.svg
+# (not ../../media/code-icon.svg)
+if [[ -f "src/vs/workbench/browser/parts/editor/media/editorgroupview.css" ]]; then
+  if grep -q "../../media/code-icon.svg" "src/vs/workbench/browser/parts/editor/media/editorgroupview.css"; then
+    echo "Fixing CSS path for code-icon.svg in editorgroupview.css..."
+    replace "s|url('../../media/code-icon\.svg')|url('../../../media/code-icon.svg')|g" "src/vs/workbench/browser/parts/editor/media/editorgroupview.css"
+    replace "s|url(\"../../media/code-icon\.svg\")|url('../../../media/code-icon.svg')|g" "src/vs/workbench/browser/parts/editor/media/editorgroupview.css"
+  fi
+fi
 
 set -x
 

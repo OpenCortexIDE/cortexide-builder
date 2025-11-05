@@ -21,12 +21,15 @@ npm install -g github-release-cli
 if [[ $( gh release view "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" 2>&1 ) =~ "release not found" ]]; then
   echo "Creating release '${RELEASE_VERSION}'"
 
+  # Choose target branch for the release in the binaries repo
+  TARGET_BRANCH="${RELEASE_TARGET_BRANCH:-main}"
+
   if [[ "${VSCODE_QUALITY}" == "insider" ]]; then
     NOTES="update vscode to [${MS_COMMIT}](https://github.com/microsoft/vscode/tree/${MS_COMMIT})"
 
-    gh release create "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --title "${CORTEX_VERSION}" --notes "${NOTES}"
+    gh release create "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --title "${CORTEX_VERSION}" --notes "${NOTES}" --target "${TARGET_BRANCH}"
   else
-    gh release create "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --title "${CORTEX_VERSION}" --generate-notes
+    gh release create "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --title "${CORTEX_VERSION}" --generate-notes --target "${TARGET_BRANCH}"
 
     . ./utils.sh
 

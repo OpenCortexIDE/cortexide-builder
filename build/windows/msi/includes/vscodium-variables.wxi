@@ -17,6 +17,7 @@
   <?define AppFolderName="$(var.AppName)" ?>
   <?define ProductManufacturerShort="$(var.ManufacturerName)" ?>
   <?define ProductManufacturerLong="$(var.ManufacturerName)" ?>
+  <?define ExeFileId="$(var.ExeFileId)" ?>
 
   <!-- Static settings, DO NOT TOUCH or upgrades will break! -->
   <?define ProductUpgradeCode="{@@PRODUCT_UPGRADE_CODE@@}" ?>

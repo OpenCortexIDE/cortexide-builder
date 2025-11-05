@@ -9,19 +9,34 @@ cd "$( dirname "${BASH_SOURCE[0]}" )"
 WIN_SDK_MAJOR_VERSION="10"
 WIN_SDK_FULL_VERSION="10.0.17763.0"
 
+# Get executable name from APP_NAME or product.json
+if [[ -n "${APP_NAME}" ]]; then
+  EXE_NAME="$( echo "${APP_NAME}" | tr '[:upper:]' '[:lower:]' )"
+else
+  # Fallback to reading from product.json if available
+  if [[ -f "../../vscode/product.json" ]]; then
+    EXE_NAME=$( node -p "require('../../vscode/product.json').applicationName || 'cortexide'" )
+  else
+    EXE_NAME="cortexide"
+  fi
+fi
+
 if [[ "${VSCODE_QUALITY}" == "insider" ]]; then
-  PRODUCT_NAME="Void - Insiders"
-  PRODUCT_CODE="VoidInsiders"
+  PRODUCT_NAME="CortexIDE - Insiders"
+  PRODUCT_CODE="CortexIDEInsiders"
   PRODUCT_UPGRADE_CODE="1C9B7195-5A9A-43B3-B4BD-583E20498467"
   ICON_DIR="..\\..\\..\\src\\insider\\resources\\win32"
   SETUP_RESOURCES_DIR=".\\resources\\insider"
 else
-  PRODUCT_NAME="Void"
-  PRODUCT_CODE="Void"
+  PRODUCT_NAME="CortexIDE"
+  PRODUCT_CODE="CortexIDE"
   PRODUCT_UPGRADE_CODE="965370CD-253C-4720-82FC-2E6B02A53808"
   ICON_DIR="..\\..\\..\\src\\stable\\resources\\win32"
   SETUP_RESOURCES_DIR=".\\resources\\stable"
 fi
+
+# Convert EXE_NAME to uppercase for WiX file ID (e.g., "cortexide.exe" -> "CORTEXIDE.EXE")
+EXE_FILE_ID="$( echo "${EXE_NAME}.exe" | tr '[:lower:]' '[:upper:]' )"
 
 PRODUCT_ID=$( powershell.exe -command "[guid]::NewGuid().ToString().ToUpper()" )
 PRODUCT_ID="${PRODUCT_ID%%[[:cntrl:]]}"
@@ -35,9 +50,9 @@ LICENSE_DIR="..\\..\\..\\vscode"
 PROGRAM_FILES_86=$( env | sed -n 's/^ProgramFiles(x86)=//p' )
 
 if [[ -z "${1}" ]]; then
-	OUTPUT_BASE_FILENAME="Void-${VSCODE_ARCH}-${RELEASE_VERSION}"
+	OUTPUT_BASE_FILENAME="CortexIDE-${VSCODE_ARCH}-${RELEASE_VERSION}"
 else
-	OUTPUT_BASE_FILENAME="Void-${VSCODE_ARCH}-${1}-${RELEASE_VERSION}"
+	OUTPUT_BASE_FILENAME="CortexIDE-${VSCODE_ARCH}-${1}-${RELEASE_VERSION}"
 fi
 
 if [[ "${VSCODE_ARCH}" == "ia32" ]]; then
@@ -48,6 +63,7 @@ fi
 
 sed -i "s|@@PRODUCT_UPGRADE_CODE@@|${PRODUCT_UPGRADE_CODE}|g" .\\includes\\vscodium-variables.wxi
 sed -i "s|@@PRODUCT_NAME@@|${PRODUCT_NAME}|g" .\\vscodium.xsl
+sed -i "s|@@EXE_FILE_ID@@|${EXE_FILE_ID}|g" .\\vscodium.xsl
 
 find i18n -name '*.wxl' -print0 | xargs -0 sed -i "s|@@PRODUCT_NAME@@|${PRODUCT_NAME}|g"
 

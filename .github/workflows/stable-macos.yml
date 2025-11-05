@@ -8,7 +8,7 @@ on:
         description: Force update version
       generate_assets:
         type: boolean
-        description: Generate assets
+        description: Generate assets (creates downloadable artifacts when not deploying)
       checkout_pr:
         type: string
         description: Checkout PR
@@ -132,8 +132,8 @@ jobs:
         with:
           name: bin-${{ matrix.vscode_arch }}
           path: assets/
-          retention-days: 3
-        if: env.SHOULD_BUILD == 'yes' && env.SHOULD_DEPLOY == 'no' && github.event.inputs.generate_assets == 'true'
+          retention-days: 7
+        if: env.SHOULD_BUILD == 'yes' && (env.SHOULD_DEPLOY == 'no' && github.event.inputs.generate_assets == 'true')
 
       - name: Clean up keychain
         if: always()

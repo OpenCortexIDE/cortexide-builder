@@ -3,6 +3,11 @@
 
 set -e
 
+# Allow custom token variable to drive updates without requiring GITHUB_TOKEN
+if [[ -z "${GITHUB_TOKEN}" && -n "${RELEASE_GITHUB_TOKEN}" ]]; then
+  export GITHUB_TOKEN="${RELEASE_GITHUB_TOKEN}"
+fi
+
 if [[ "${SHOULD_BUILD}" != "yes" && "${FORCE_UPDATE}" != "true" ]]; then
   echo "Will not update version JSON because we did not build"
   exit 0

@@ -3,6 +3,11 @@
 
 set -ex
 
+# Allow custom token variable to drive releases without requiring GITHUB_TOKEN
+if [[ -z "${GITHUB_TOKEN}" && -n "${RELEASE_GITHUB_TOKEN}" ]]; then
+  export GITHUB_TOKEN="${RELEASE_GITHUB_TOKEN}"
+fi
+
 if [[ -z "${GH_TOKEN}" ]] && [[ -z "${GITHUB_TOKEN}" ]] && [[ -z "${GH_ENTERPRISE_TOKEN}" ]] && [[ -z "${GITHUB_ENTERPRISE_TOKEN}" ]]; then
   echo "Will not release because no GITHUB_TOKEN defined"
   exit

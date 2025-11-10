@@ -42,22 +42,149 @@ if [[ "${OS_NAME}" == "osx" ]]; then
     export CODESIGN_IDENTITY AGENT_TEMPDIRECTORY
 
     DEBUG="electron-osx-sign*" node vscode/build/darwin/sign.js "$( pwd )"
-    # codesign --display --entitlements :- ""
+    
+    # Verify code signing succeeded
+    echo "+ verifying code signature"
+    cd "VSCode-darwin-${VSCODE_ARCH}"
+    
+    # Find the app bundle (should be only one)
+    APP_BUNDLE=$( find . -maxdepth 1 -name "*.app" -type d | head -n 1 )
+    if [[ -z "${APP_BUNDLE}" ]]; then
+      echo "Error: No .app bundle found in VSCode-darwin-${VSCODE_ARCH}"
+      ls -la
+      exit 1
+    fi
+    
+    # Normalize path (remove leading ./ if present)
+    APP_BUNDLE="${APP_BUNDLE#./}"
+    
+    # Verify the app is properly signed
+    echo "+ checking code signature validity..."
+    if ! codesign -dv --verbose=4 "${APP_BUNDLE}" 2>&1 | grep -q "valid on disk"; then
+      echo "Error: Code signing verification failed - app is not properly signed"
+      echo "Full codesign output:"
+      codesign -dv --verbose=4 "${APP_BUNDLE}" 2>&1
+      exit 1
+    fi
+    
+    # Check signature details
+    echo "+ checking signature details..."
+    codesign -dv --verbose=4 "${APP_BUNDLE}" 2>&1 | head -n 5
+    
+    # Check for entitlements (non-fatal if missing)
+    if codesign -d --entitlements :- "${APP_BUNDLE}" > /dev/null 2>&1; then
+      echo "+ entitlements found"
+    else
+      echo "Warning: Could not extract entitlements (this may be normal)"
+    fi
+    
+    # Verify architecture of key binaries
+    echo "+ verifying binary architectures..."
+    MAIN_EXECUTABLE="${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
+    if [[ -f "${MAIN_EXECUTABLE}" ]]; then
+      EXEC_ARCH=$( file "${MAIN_EXECUTABLE}" | grep -oE "(x86_64|arm64)" | head -n 1 )
+      if [[ "${VSCODE_ARCH}" == "x64" && "${EXEC_ARCH}" != "x86_64" ]]; then
+        echo "Error: Main executable architecture mismatch. Expected x86_64, got ${EXEC_ARCH}"
+        file "${MAIN_EXECUTABLE}"
+        exit 1
+      elif [[ "${VSCODE_ARCH}" == "arm64" && "${EXEC_ARCH}" != "arm64" ]]; then
+        echo "Error: Main executable architecture mismatch. Expected arm64, got ${EXEC_ARCH}"
+        file "${MAIN_EXECUTABLE}"
+        exit 1
+      fi
+      echo "+ main executable architecture: ${EXEC_ARCH} ✓"
+    else
+      echo "Warning: Main executable not found at ${MAIN_EXECUTABLE}"
+    fi
+    
+    # Check CLI binary architecture if it exists
+    TUNNEL_APP_NAME=$( node -p "require('../../product.json').tunnelApplicationName" 2>/dev/null || echo "" )
+    if [[ -n "${TUNNEL_APP_NAME}" ]]; then
+      CLI_BINARY="${APP_BUNDLE}/Contents/Resources/app/bin/${TUNNEL_APP_NAME}"
+      if [[ -f "${CLI_BINARY}" ]]; then
+        CLI_ARCH=$( file "${CLI_BINARY}" | grep -oE "(x86_64|arm64)" | head -n 1 )
+        if [[ "${VSCODE_ARCH}" == "x64" && "${CLI_ARCH}" != "x86_64" ]]; then
+          echo "Error: CLI binary architecture mismatch. Expected x86_64, got ${CLI_ARCH}"
+          file "${CLI_BINARY}"
+          exit 1
+        elif [[ "${VSCODE_ARCH}" == "arm64" && "${CLI_ARCH}" != "arm64" ]]; then
+          echo "Error: CLI binary architecture mismatch. Expected arm64, got ${CLI_ARCH}"
+          file "${CLI_BINARY}"
+          exit 1
+        fi
+        echo "+ CLI binary architecture: ${CLI_ARCH} ✓"
+      else
+        echo "Warning: CLI binary not found at ${CLI_BINARY}"
+      fi
+    fi
+    
+    echo "✓ Code signing verified successfully"
 
     echo "+ notarize"
 
-    cd "VSCode-darwin-${VSCODE_ARCH}"
     ZIP_FILE="./${APP_NAME}-darwin-${VSCODE_ARCH}-${RELEASE_VERSION}.zip"
 
-    zip -r -X -y "${ZIP_FILE}" ./*.app
+    # Create ZIP for notarization
+    echo "+ creating ZIP archive for notarization..."
+    if ! zip -r -X -y "${ZIP_FILE}" ./*.app; then
+      echo "Error: Failed to create ZIP archive for notarization"
+      exit 1
+    fi
 
-    xcrun notarytool store-credentials "${APP_NAME}" --apple-id "${CERTIFICATE_OSX_ID}" --team-id "${CERTIFICATE_OSX_TEAM_ID}" --password "${CERTIFICATE_OSX_APP_PASSWORD}" --keychain "${KEYCHAIN}"
-    # xcrun notarytool history --keychain-profile "${APP_NAME}" --keychain "${KEYCHAIN}"
-    xcrun notarytool submit "${ZIP_FILE}" --keychain-profile "${APP_NAME}" --wait --keychain "${KEYCHAIN}"
+    # Store notarization credentials
+    if ! xcrun notarytool store-credentials "${APP_NAME}" --apple-id "${CERTIFICATE_OSX_ID}" --team-id "${CERTIFICATE_OSX_TEAM_ID}" --password "${CERTIFICATE_OSX_APP_PASSWORD}" --keychain "${KEYCHAIN}"; then
+      echo "Error: Failed to store notarization credentials"
+      exit 1
+    fi
+    
+    # Submit for notarization
+    echo "+ submitting for notarization (this may take several minutes)..."
+    NOTARIZATION_OUTPUT=$( xcrun notarytool submit "${ZIP_FILE}" --keychain-profile "${APP_NAME}" --wait --keychain "${KEYCHAIN}" 2>&1 )
+    NOTARIZATION_EXIT_CODE=$?
+    
+    if [[ ${NOTARIZATION_EXIT_CODE} -ne 0 ]]; then
+      echo "Error: Notarization submission failed"
+      echo "${NOTARIZATION_OUTPUT}"
+      exit 1
+    fi
+    
+    # Check notarization status
+    if echo "${NOTARIZATION_OUTPUT}" | grep -qi "status:.*Accepted"; then
+      echo "✓ Notarization accepted"
+    elif echo "${NOTARIZATION_OUTPUT}" | grep -qi "status:.*Invalid"; then
+      echo "Error: Notarization was rejected"
+      echo "${NOTARIZATION_OUTPUT}"
+      exit 1
+    else
+      echo "Warning: Could not determine notarization status from output"
+      echo "${NOTARIZATION_OUTPUT}"
+    fi
 
     echo "+ attach staple"
-    xcrun stapler staple ./*.app
-    # spctl --assess -vv --type install ./*.app
+    if ! xcrun stapler staple "${APP_BUNDLE}"; then
+      echo "Error: Failed to staple notarization ticket"
+      exit 1
+    fi
+    
+    # Verify stapling succeeded
+    if ! xcrun stapler validate "${APP_BUNDLE}"; then
+      echo "Error: Stapling validation failed"
+      exit 1
+    fi
+    echo "✓ Stapling verified successfully"
+    
+    # Final verification: check Gatekeeper assessment
+    echo "+ final Gatekeeper verification"
+    SPCTL_OUTPUT=$( spctl --assess --verbose "${APP_BUNDLE}" 2>&1 )
+    SPCTL_EXIT_CODE=$?
+    
+    if [[ ${SPCTL_EXIT_CODE} -eq 0 ]]; then
+      echo "✓ Gatekeeper assessment passed"
+    else
+      echo "Warning: Gatekeeper assessment failed or returned non-zero exit code"
+      echo "This may be expected for self-signed certificates"
+      echo "Output: ${SPCTL_OUTPUT}"
+    fi
 
     rm "${ZIP_FILE}"
 

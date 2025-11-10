@@ -10,7 +10,8 @@
   - [Remote SSH doesn't work](#linux-remote-ssh)
 - [macOS](#macos)
   - [App can't be opened because Apple cannot check it for malicious software](#macos-unidentified-developer)
-  - ["VSCodium.app" is damaged and can’t be opened. You should move it to the Bin](#macos-quarantine)
+  - ["VSCodium.app" is damaged and can't be opened. You should move it to the Bin](#macos-quarantine)
+  - [App installs but doesn't open on Intel Mac](#macos-intel-not-opening)
 
 
 ## <a id="linux"></a>Linux
@@ -81,10 +82,68 @@ Since the App is signed with a self-signed certificate, on the first launch, you
 
 You can right-click the App and choose `Open`.
 
-#### <a id="macos-quarantine"></a>*"VSCodium.app" is damaged and can’t be opened. You should move it to the Bin.*
+#### <a id="macos-quarantine"></a>*"VSCodium.app" is damaged and can't be opened. You should move it to the Bin.*
 
 The following command will remove the quarantine attribute.
 
 ```
 xattr -r -d com.apple.quarantine /Applications/VSCodium.app
 ```
+
+#### <a id="macos-intel-not-opening"></a>*App installs but doesn't open on Intel Mac*
+
+If the app installs successfully but doesn't open on Intel Mac (x64), try the following troubleshooting steps:
+
+1. **Remove quarantine attribute** (if downloaded from the internet):
+   ```bash
+   xattr -r -d com.apple.quarantine /Applications/CortexIDE.app
+   ```
+
+2. **Verify code signing**:
+   ```bash
+   codesign -dv --verbose=4 /Applications/CortexIDE.app
+   ```
+   Look for errors or warnings about invalid signatures.
+
+3. **Check notarization status**:
+   ```bash
+   spctl --assess --verbose /Applications/CortexIDE.app
+   ```
+   If notarization failed, you may need to check the build logs.
+
+4. **Verify architecture**:
+   ```bash
+   file /Applications/CortexIDE.app/Contents/MacOS/CortexIDE
+   ```
+   Should show `x86_64` for Intel Macs. If it shows `arm64`, you have the wrong build.
+
+5. **Check Console logs**:
+   - Open Console.app
+   - Filter for "CortexIDE" or the app's process name
+   - Look for crash reports or error messages
+
+6. **Try launching from Terminal**:
+   ```bash
+   /Applications/CortexIDE.app/Contents/MacOS/CortexIDE
+   ```
+   This will show any error messages that might be hidden when launching from Finder.
+
+7. **Check entitlements**:
+   ```bash
+   codesign -d --entitlements :- /Applications/CortexIDE.app
+   ```
+   Verify that required entitlements are present.
+
+8. **If the app crashes immediately**, check for crash reports:
+   ```bash
+   ls -la ~/Library/Logs/DiagnosticReports/ | grep CortexIDE
+   ```
+
+9. **For Gatekeeper issues**, you may need to allow the app in System Settings:
+   - System Settings → Privacy & Security → Scroll to "Security"
+   - If the app is blocked, click "Allow Anyway"
+
+10. **If using Rosetta 2** (running Intel app on Apple Silicon), ensure Rosetta 2 is installed:
+    ```bash
+    softwareupdate --install-rosetta
+    ```

@@ -67,6 +67,52 @@ sed -i "s|@@EXE_FILE_ID@@|${EXE_FILE_ID}|g" .\\vscodium.xsl
 
 find i18n -name '*.wxl' -print0 | xargs -0 sed -i "s|@@PRODUCT_NAME@@|${PRODUCT_NAME}|g"
 
+# Transform version to MSI-compatible format (x.x.x.x where each part is 0-65534)
+transformMsiVersion() {
+	local version="${1%-insider}"
+	local parts
+	IFS='.' read -r -a parts <<< "${version}"
+	
+	# MSI requires exactly 4 parts, each 0-65534
+	# Handle versions with more than 4 parts by combining the extra parts
+	local major="${parts[0]:-0}"
+	local minor="${parts[1]:-0}"
+	local patch="${parts[2]:-0}"
+	local build="${parts[3]:-0}"
+	
+	# If there are more than 4 parts, combine them into the build number
+	if [[ ${#parts[@]} -gt 4 ]]; then
+		# Combine parts[3] and parts[4] (e.g., "0.2" becomes "2" or handle as needed)
+		# For "1.99.30.0.2", we want "1.99.30.2" (combining 0 and 2)
+		if [[ -n "${parts[4]}" ]]; then
+			# If parts[3] is 0 and parts[4] exists, use parts[4] as build
+			if [[ "${parts[3]}" == "0" ]]; then
+				build="${parts[4]}"
+			else
+				# Otherwise, combine them (limit to 65534)
+				build=$((10#${parts[3]} * 1000 + 10#${parts[4]}))
+				if [[ ${build} -gt 65534 ]]; then
+					build=65534
+				fi
+			fi
+		fi
+	fi
+	
+	# Ensure each part is within valid range (0-65534)
+	major=$((10#${major}))
+	minor=$((10#${minor}))
+	patch=$((10#${patch}))
+	build=$((10#${build}))
+	
+	# Clamp values to valid range
+	[[ ${major} -gt 65534 ]] && major=65534
+	[[ ${minor} -gt 65534 ]] && minor=65534
+	[[ ${patch} -gt 65534 ]] && patch=65534
+	[[ ${build} -gt 65534 ]] && build=65534
+	
+	echo "${major}.${minor}.${patch}.${build}"
+}
+
 BuildSetupTranslationTransform() {
 	local CULTURE=${1}
 	local LANGID=${2}
@@ -89,8 +135,11 @@ BuildSetupTranslationTransform() {
 	rm -f "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.${CULTURE}.mst"
 }
 
+# Transform version to MSI-compatible format
+MSI_VERSION=$(transformMsiVersion "${RELEASE_VERSION}")
+
 "${WIX}bin\\heat.exe" dir "${BINARY_DIR}" -out "Files-${OUTPUT_BASE_FILENAME}.wxs" -t vscodium.xsl -gg -sfrag -scom -sreg -srd -ke -cg "AppFiles" -var var.ManufacturerName -var var.AppName -var var.AppCodeName -var var.ProductVersion -var var.IconDir -var var.LicenseDir -var var.BinaryDir -dr APPLICATIONFOLDER -platform "${PLATFORM}"
-"${WIX}bin\\candle.exe" -arch "${PLATFORM}" vscodium.wxs "Files-${OUTPUT_BASE_FILENAME}.wxs" -ext WixUIExtension -ext WixUtilExtension -ext WixNetFxExtension -dManufacturerName="Void" -dAppCodeName="${PRODUCT_CODE}" -dAppName="${PRODUCT_NAME}" -dProductVersion="${RELEASE_VERSION%-insider}" -dProductId="${PRODUCT_ID}" -dBinaryDir="${BINARY_DIR}" -dIconDir="${ICON_DIR}" -dLicenseDir="${LICENSE_DIR}" -dSetupResourcesDir="${SETUP_RESOURCES_DIR}" -dCulture="${CULTURE}" -dExeFileId="${EXE_FILE_ID}"
+"${WIX}bin\\candle.exe" -arch "${PLATFORM}" vscodium.wxs "Files-${OUTPUT_BASE_FILENAME}.wxs" -ext WixUIExtension -ext WixUtilExtension -ext WixNetFxExtension -dManufacturerName="Void" -dAppCodeName="${PRODUCT_CODE}" -dAppName="${PRODUCT_NAME}" -dProductVersion="${MSI_VERSION}" -dProductId="${PRODUCT_ID}" -dBinaryDir="${BINARY_DIR}" -dIconDir="${ICON_DIR}" -dLicenseDir="${LICENSE_DIR}" -dSetupResourcesDir="${SETUP_RESOURCES_DIR}" -dCulture="${CULTURE}" -dExeFileId="${EXE_FILE_ID}"
 "${WIX}bin\\light.exe" vscodium.wixobj "Files-${OUTPUT_BASE_FILENAME}.wixobj" -ext WixUIExtension -ext WixUtilExtension -ext WixNetFxExtension -spdb -cc "${TEMP}\\vscodium-cab-cache\\${PLATFORM}" -out "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.msi" -loc "i18n\\vscodium.${CULTURE}.wxl" -cultures:"${CULTURE}" -sice:ICE60 -sice:ICE69
 
 BuildSetupTranslationTransform de-de 1031

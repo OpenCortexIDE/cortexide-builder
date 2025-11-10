@@ -60,12 +60,13 @@ if [[ "${OS_NAME}" == "osx" ]]; then
     
     # Verify the app is properly signed
     echo "+ checking code signature validity..."
-    if ! codesign -dv --verbose=4 "${APP_BUNDLE}" 2>&1 | grep -q "valid on disk"; then
+    if ! codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}" 2>&1; then
       echo "Error: Code signing verification failed - app is not properly signed"
       echo "Full codesign output:"
       codesign -dv --verbose=4 "${APP_BUNDLE}" 2>&1
       exit 1
     fi
+    echo "✓ Code signature is valid"
     
     # Check signature details
     echo "+ checking signature details..."

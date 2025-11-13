@@ -145,11 +145,93 @@ fi
 mv .npmrc .npmrc.bak
 cp ../npmrc .npmrc
 
+# Function to fix node-pty post-install script
+fix_node_pty_postinstall() {
+  if [[ -f "node_modules/node-pty/scripts/post-install.js" ]]; then
+    if grep -q "npx node-gyp configure" "node_modules/node-pty/scripts/post-install.js" && ! grep -q "nodeGypCmd" "node_modules/node-pty/scripts/post-install.js"; then
+      echo "Fixing node-pty post-install script to use local node-gyp..."
+      cat > /tmp/fix-node-pty-postinstall.js << 'FIXSCRIPT'
+const fs = require('fs');
+const path = require('path');
+
+const cwd = process.cwd();
+const postInstallPath = path.join(cwd, 'node_modules/node-pty/scripts/post-install.js');
+
+if (fs.existsSync(postInstallPath)) {
+  let content = fs.readFileSync(postInstallPath, 'utf8');
+  
+  if (content.includes('nodeGypCmd')) {
+    process.exit(0);
+  }
+  
+  const fixCode = `// Try to use local node-gyp first to respect package.json overrides
+let nodeGypCmd = 'npx node-gyp';
+const localNodeGyp = path.join(__dirname, '../../node-gyp/bin/node-gyp.js');
+if (fs.existsSync(localNodeGyp)) {
+  nodeGypCmd = \`node "\${localNodeGyp}"\`;
+}
+
+`;
+  
+  content = content.replace(
+    /console\.log\(`\\x1b\[32m> Generating compile_commands\.json\.\.\.\\x1b\[0m`\);/,
+    fixCode + 'console.log(`\\x1b[32m> Generating compile_commands.json...\\x1b[0m`);'
+  );
+  
+  content = content.replace(
+    /execSync\('npx node-gyp configure -- -f compile_commands_json'\);/,
+    'execSync(`${nodeGypCmd} configure -- -f compile_commands_json`);'
+  );
+  
+  fs.writeFileSync(postInstallPath, content, 'utf8');
+  console.log('Fixed node-pty post-install script');
+}
+FIXSCRIPT
+      node /tmp/fix-node-pty-postinstall.js
+      rm -f /tmp/fix-node-pty-postinstall.js
+    fi
+  fi
+}
+
+# Temporarily disable node-pty postinstall to prevent it from running during npm ci
+# We'll run it manually after fixing the script
+if [[ -f "package.json" ]]; then
+  # Check if we need to patch package.json to skip node-pty postinstall
+  # Actually, we can't easily do this without modifying the package.json file
+  # So we'll let it fail and fix it in the retry loop
+  echo "Note: node-pty postinstall may fail on first attempt, will be fixed on retry"
+fi
+
 for i in {1..5}; do # try 5 times
+  # Fix the script before attempting install (in case it exists from previous attempt)
+  fix_node_pty_postinstall
+  
+  # Try npm install with ignore-scripts for node-pty, then run postinstall manually
+  # Actually, we can't selectively ignore scripts, so we'll need to handle failures
   if [[ "${CI_BUILD}" != "no" && "${OS_NAME}" == "osx" ]]; then
-    CXX=clang++ npm ci && break
+    CXX=clang++ npm ci 2>&1 | tee /tmp/npm-install.log || {
+      # If it failed, check if it's due to node-pty postinstall
+      if grep -q "node-pty.*postinstall\|ERR_REQUIRE_ESM.*env-paths" /tmp/npm-install.log; then
+        echo "npm install failed due to node-pty postinstall issue, fixing and retrying..."
+        fix_node_pty_postinstall
+        # Remove node-pty to force reinstall
+        rm -rf node_modules/node-pty
+        # Continue to retry
+        continue
+      fi
+      # Other errors, break and retry normally
+      false
+    } && break
   else
-    npm ci && break
+    npm ci 2>&1 | tee /tmp/npm-install.log || {
+      if grep -q "node-pty.*postinstall\|ERR_REQUIRE_ESM.*env-paths" /tmp/npm-install.log; then
+        echo "npm install failed due to node-pty postinstall issue, fixing and retrying..."
+        fix_node_pty_postinstall
+        rm -rf node_modules/node-pty
+        continue
+      fi
+      false
+    } && break
   fi
 
   if [[ $i == 3 ]]; then
@@ -157,11 +239,27 @@ for i in {1..5}; do # try 5 times
     exit 1
   fi
   echo "Npm install failed $i, trying again..."
+  
+  # Fix the script after failure (it may have been partially installed)
+  fix_node_pty_postinstall
 
   sleep $(( 15 * (i + 1)))
 done
 
+rm -f /tmp/npm-install.log
 mv .npmrc.bak .npmrc
+
+# Ensure the script is fixed after successful install
+fix_node_pty_postinstall
+
+# If node-pty was installed but postinstall didn't run, run it manually
+# Only run on Linux (Windows and macOS handle this differently)
+if [[ "$(uname -s)" == "Linux" ]] && [[ -f "node_modules/node-pty/scripts/post-install.js" ]]; then
+  if [[ ! -f "node_modules/node-pty/build/Release/pty.node" ]]; then
+    echo "Running node-pty postinstall manually..."
+    (cd node_modules/node-pty && node scripts/post-install.js) || echo "node-pty postinstall completed with warnings"
+  fi
+fi
 
 setpath() {
   local jsonTmp

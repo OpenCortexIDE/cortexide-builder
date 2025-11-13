@@ -145,6 +145,11 @@ fi
 mv .npmrc .npmrc.bak
 cp ../npmrc .npmrc
 
+# Create @vscode/ripgrep bin folder to skip download during npm install
+# This prevents 403 errors from GitHub rate limiting during npm ci
+# We'll handle the download manually after npm install with proper error handling
+mkdir -p node_modules/@vscode/ripgrep/bin 2>/dev/null || true
+
 # Function to fix node-pty post-install script
 fix_node_pty_postinstall() {
   if [[ -f "node_modules/node-pty/scripts/post-install.js" ]]; then
@@ -210,13 +215,19 @@ for i in {1..5}; do # try 5 times
   # Actually, we can't selectively ignore scripts, so we'll need to handle failures
   if [[ "${CI_BUILD}" != "no" && "${OS_NAME}" == "osx" ]]; then
     CXX=clang++ npm ci 2>&1 | tee /tmp/npm-install.log || {
-      # If it failed, check if it's due to node-pty postinstall
+      # If it failed, check if it's due to node-pty postinstall or ripgrep download
       if grep -q "node-pty.*postinstall\|ERR_REQUIRE_ESM.*env-paths" /tmp/npm-install.log; then
         echo "npm install failed due to node-pty postinstall issue, fixing and retrying..."
         fix_node_pty_postinstall
         # Remove node-pty to force reinstall
         rm -rf node_modules/node-pty
         # Continue to retry
+        continue
+      elif grep -q "ripgrep.*403\|Request failed: 403.*ripgrep\|@vscode/ripgrep.*403\|Downloading ripgrep failed" /tmp/npm-install.log; then
+        echo "npm install failed due to ripgrep download 403 error, will handle manually after install..."
+        # Create bin folder to skip download on retry
+        mkdir -p node_modules/@vscode/ripgrep/bin 2>/dev/null || true
+        # Continue - the download will be handled manually after successful install
         continue
       fi
       # Other errors, break and retry normally
@@ -228,6 +239,12 @@ for i in {1..5}; do # try 5 times
         echo "npm install failed due to node-pty postinstall issue, fixing and retrying..."
         fix_node_pty_postinstall
         rm -rf node_modules/node-pty
+        continue
+      elif grep -q "ripgrep.*403\|Request failed: 403.*ripgrep\|@vscode/ripgrep.*403\|Downloading ripgrep failed" /tmp/npm-install.log; then
+        echo "npm install failed due to ripgrep download 403 error, will handle manually after install..."
+        # Create bin folder to skip download on retry
+        mkdir -p node_modules/@vscode/ripgrep/bin 2>/dev/null || true
+        # Continue - the download will be handled manually after successful install
         continue
       fi
       false
@@ -251,6 +268,28 @@ mv .npmrc.bak .npmrc
 
 # Ensure the script is fixed after successful install
 fix_node_pty_postinstall
+
+# Handle @vscode/ripgrep download manually after npm install
+# This allows us to use GITHUB_TOKEN and handle errors gracefully
+if [[ -d "node_modules/@vscode/ripgrep" ]] && [[ ! -f "node_modules/@vscode/ripgrep/bin/rg" ]]; then
+  echo "Downloading ripgrep binary manually..."
+  # Remove the empty bin folder we created earlier
+  rm -rf node_modules/@vscode/ripgrep/bin
+  # Run the postinstall script with GITHUB_TOKEN if available
+  if [[ -n "${GITHUB_TOKEN}" ]]; then
+    (cd node_modules/@vscode/ripgrep && GITHUB_TOKEN="${GITHUB_TOKEN}" node lib/postinstall.js) || {
+      echo "Warning: ripgrep download failed, will retry during build if needed"
+      # Create empty bin folder to prevent repeated failures
+      mkdir -p node_modules/@vscode/ripgrep/bin
+    }
+  else
+    echo "Warning: GITHUB_TOKEN not set, ripgrep download may fail"
+    (cd node_modules/@vscode/ripgrep && node lib/postinstall.js) || {
+      echo "Warning: ripgrep download failed without token"
+      mkdir -p node_modules/@vscode/ripgrep/bin
+    }
+  fi
+fi
 
 # If node-pty was installed but postinstall didn't run, run it manually
 # Only run on Linux (Windows and macOS handle this differently)

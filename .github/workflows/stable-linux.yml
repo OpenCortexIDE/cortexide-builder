@@ -231,6 +231,8 @@ jobs:
         if: env.DISABLED != 'yes'
 
       - name: Install GH
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./install_gh.sh
         if: env.DISABLED != 'yes' && env.SHOULD_BUILD == 'yes' && env.SHOULD_DEPLOY == 'yes'
 
@@ -369,6 +371,8 @@ jobs:
         if: env.DISABLED != 'yes'
 
       - name: Install GH
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./install_gh.sh
         if: env.DISABLED != 'yes' && env.SHOULD_DEPLOY == 'yes'
 
@@ -451,6 +455,8 @@ jobs:
           platform: x64
 
       - name: Install GH
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./install_gh.sh
         if: env.SHOULD_DEPLOY == 'yes'
 

@@ -5,7 +5,17 @@ set -ex
 GH_ARCH="amd64"
 
 # Fetch latest release with error handling
-API_RESPONSE=$( curl --retry 12 --retry-delay 30 -sSL "https://api.github.com/repos/cli/cli/releases/latest" )
+# Use GITHUB_TOKEN if available for authenticated requests (higher rate limit)
+if [[ -n "${GITHUB_TOKEN}" ]]; then
+  echo "Using GITHUB_TOKEN for authenticated GitHub API request"
+  API_RESPONSE=$( curl --retry 12 --retry-delay 30 -sSL \
+    -H "Authorization: token ${GITHUB_TOKEN}" \
+    -H "Accept: application/vnd.github.v3+json" \
+    "https://api.github.com/repos/cli/cli/releases/latest" )
+else
+  echo "Warning: GITHUB_TOKEN not set, using unauthenticated request (lower rate limit)"
+  API_RESPONSE=$( curl --retry 12 --retry-delay 30 -sSL "https://api.github.com/repos/cli/cli/releases/latest" )
+fi
 
 # Check if API response is valid JSON and contains tag_name
 if ! echo "${API_RESPONSE}" | jq -e '.tag_name' > /dev/null 2>&1; then

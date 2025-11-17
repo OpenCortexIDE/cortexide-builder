@@ -656,7 +656,8 @@ diff --git a/src/vs/server/node/server.cli.ts b/src/vs/server/node/server.cli.ts
 index 0535ddd..79f12dc 100644
 --- a/src/vs/server/node/server.cli.ts
 +++ b/src/vs/server/node/server.cli.ts
-@@ -469,3 +469,3 @@ function asExtensionIdOrVSIX(inputs: string[] | undefined) {
+@@ -468,3 +468,3 @@ function asExtensionIdOrVSIX(inputs: string[] | undefined) {
+ 
  function fatal(message: string, err: unknown): void {
 -	console.error('Unable to connect to VS Code server: ' + message);
 +	console.error('Unable to connect to !!APP_NAME!! server: ' + message);
@@ -785,7 +786,7 @@ index 572bb26..53f5740 100644
 -			alert(localize('uninstallExtensionComplete', "Please reload Visual Studio Code to complete the uninstallation of the extension {0}.", this.extension.displayName));
 +			alert(localize('uninstallExtensionComplete', "Please reload !!APP_NAME!! to complete the uninstallation of the extension {0}.", this.extension.displayName));
  		} catch (error) {
-@@ -2599,4 +2599,4 @@ export class ExtensionStatusAction extends ExtensionAction {
+@@ -2598,4 +2598,4 @@ export class ExtensionStatusAction extends ExtensionAction {
 			} else if (this.extension.deprecationInfo.settings) {
 				const link = `[${localize('settings', "settings")}](${createCommandUri('workbench.action.openSettings', this.extension.deprecationInfo.settings.map(setting => `@id:${setting}`).join(' '))}})`;
 -				this.updateStatus({ icon: warningIcon, message: new MarkdownString(localize('deprecated with alternate settings tooltip', "This extension is deprecated as this functionality is now built-in to VS Code. Configure these {0} to use this functionality.", link)) }, true);
@@ -1034,11 +1035,11 @@ diff --git a/src/vs/workbench/contrib/welcomeGettingStarted/common/gettingStarte
 index c7074a5..4fd9ae7 100644
 --- a/src/vs/workbench/contrib/welcomeGettingStarted/common/gettingStartedContent.ts
 +++ b/src/vs/workbench/contrib/welcomeGettingStarted/common/gettingStartedContent.ts
-@@ -15,2 +15,1 @@ import { CONTEXT_ACCESSIBILITY_MODE_ENABLED } from '../../../../platform/accessi
+@@ -14,2 +14,1 @@ import { CONTEXT_ACCESSIBILITY_MODE_ENABLED } from '../../../../platform/accessi
  import { URI } from '../../../../base/common/uri.js';
 -import product from '../../../../platform/product/common/product.js';
  
-@@ -225,24 +225,2 @@ const Button = (title: string, href: string) => `[${title}](${href})`;
+@@ -224,24 +224,2 @@ const Button = (title: string, href: string) => `[${title}](${href})`;
  
 -const CopilotStepTitle = localize('gettingStarted.copilotSetup.title', "Use AI features with Copilot for free");
 -const CopilotDescription = localize({ key: 'gettingStarted.copilotSetup.description', comment: ['{Locked="["}', '{Locked="]({0})"}'] }, "You can use [Copilot]({0}) to generate code across multiple files, fix errors, ask questions about your code, and much more using natural language.", defaultChat.documentationUrl ?? '');

@@ -68,9 +68,9 @@ index be7eea1..389e89e 100644
 @@ -33,4 +33,4 @@ const relativeUrlRequiresHttpsRepository = l10n.t("Relative image URLs require a
  const relativeBadgeUrlRequiresHttpsRepository = l10n.t("Relative badge URLs require a repository with HTTPS protocol to be specified in this package.json.");
 -const apiProposalNotListed = l10n.t("This proposal cannot be used because for this extension the product defines a fixed set of API proposals. You can test your extension but before publishing you MUST reach out to the VS Code team.");
--const bumpEngineForImplicitActivationEvents = l10n.t("This activation event can be removed for extensions targeting engine version ^1.75 as VS Code will generate these automatically from your package.json contribution declarations.");
+-const bumpEngineForImplicitActivationEvents = l10n.t("This activation event can be removed for extensions targeting engine version ^1.75.0 as VS Code will generate these automatically from your package.json contribution declarations.");
 +const apiProposalNotListed = l10n.t("This proposal cannot be used because for this extension the product defines a fixed set of API proposals. You can test your extension but before publishing you MUST reach out to the !!APP_NAME!! team.");
-+const bumpEngineForImplicitActivationEvents = l10n.t("This activation event can be removed for extensions targeting engine version ^1.75 as !!APP_NAME!! will generate these automatically from your package.json contribution declarations.");
++const bumpEngineForImplicitActivationEvents = l10n.t("This activation event can be removed for extensions targeting engine version ^1.75.0 as !!APP_NAME!! will generate these automatically from your package.json contribution declarations.");
  const starActivation = l10n.t("Using '*' activation is usually a bad idea as it impacts performance.");
 diff --git a/extensions/git/package.nls.json b/extensions/git/package.nls.json
 index 52ba381..8a42701 100644
@@ -782,7 +782,7 @@ index 572bb26..53f5740 100644
 +			alert(localize('uninstallExtensionComplete', "Please reload !!APP_NAME!! to complete the uninstallation of the extension {0}.", this.extension.displayName));
  		} catch (error) {
 @@ -2566,3 +2566,3 @@ export class ExtensionStatusAction extends ExtensionAction {
- 				const link = `[${localize('settings', "settings")}](${URI.parse(`command:workbench.action.openSettings?${encodeURIComponent(JSON.stringify([this.extension.deprecationInfo.settings.map(setting => `@id:${setting}`).join(' ')]))}`)})`;
+ 				const link = `[${localize('settings', "settings")}](${createCommandUri('workbench.action.openSettings', this.extension.deprecationInfo.settings.map(setting => `@id:${setting}`).join(' '))}})`;
 -				this.updateStatus({ icon: warningIcon, message: new MarkdownString(localize('deprecated with alternate settings tooltip', "This extension is deprecated as this functionality is now built-in to VS Code. Configure these {0} to use this functionality.", link)) }, true);
 +				this.updateStatus({ icon: warningIcon, message: new MarkdownString(localize('deprecated with alternate settings tooltip', "This extension is deprecated as this functionality is now built-in to !!APP_NAME!!. Configure these {0} to use this functionality.", link)) }, true);
  			} else {

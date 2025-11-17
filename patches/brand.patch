@@ -1082,8 +1082,8 @@ index c7074a5..4fd9ae7 100644
 -				createCopilotSetupStep('CopilotSetupComplete', CopilotCompleteButton, 'chatSetupInstalled && (chatPlanPro || chatPlanLimited)', false),
 -				createCopilotSetupStep('CopilotSetupSignedIn', CopilotSignedInButton, '!chatSetupSignedOut && (!chatSetupInstalled || chatPlanCanSignUp)', true),
  				{
-@@ -264,6 +238,6 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
- 					title: localize('gettingStarted.extensions.title', "Code with extensions"),
+@@ -280,6 +256,6 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
+					title: localize('gettingStarted.extensions.title', "Code with extensions"),
 -					description: localize('gettingStarted.extensionsWeb.description.interpolated', "Extensions are VS Code's power-ups. A growing number are becoming available in the web.\n{0}", Button(localize('browsePopularWeb', "Browse Popular Web Extensions"), 'command:workbench.extensions.action.showPopularExtensions')),
 +					description: localize('gettingStarted.extensionsWeb.description.interpolated', "Extensions are !!APP_NAME!!'s power-ups. A growing number are becoming available in the web.\n{0}", Button(localize('browsePopularWeb', "Browse Popular Web Extensions"), 'command:workbench.extensions.action.showPopularExtensions')),
  					when: 'workspacePlatform == \'webworker\'',

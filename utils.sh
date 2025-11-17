@@ -34,8 +34,17 @@ apply_patch() {
   # First try normal apply
   PATCH_ERROR=$(git apply --ignore-whitespace "$1" 2>&1) || PATCH_FAILED=1
   
+  # Check if we have git history (required for --3way)
+  # In CI, vscode is often a shallow clone, so --3way won't work
+  HAS_GIT_HISTORY=$(git rev-list --count HEAD 2>/dev/null || echo "0")
+  CAN_USE_3WAY="no"
+  if [[ "$HAS_GIT_HISTORY" -gt 1 ]]; then
+    CAN_USE_3WAY="yes"
+  fi
+  
   # If that fails, try with 3-way merge first (handles line number shifts better)
-  if [[ -n "$PATCH_FAILED" ]] && echo "$PATCH_ERROR" | grep -qE "patch does not apply|hunk.*failed"; then
+  # But only if we have git history
+  if [[ -n "$PATCH_FAILED" ]] && echo "$PATCH_ERROR" | grep -qE "patch does not apply|hunk.*failed" && [[ "$CAN_USE_3WAY" == "yes" ]]; then
     echo "Warning: Patch failed to apply cleanly, trying with 3-way merge first..."
     PATCH_ERROR_3WAY=$(git apply --3way --ignore-whitespace "$1" 2>&1) || PATCH_FAILED_3WAY=1
     if [[ -z "$PATCH_FAILED_3WAY" ]]; then
@@ -52,10 +61,19 @@ apply_patch() {
     HAS_MISSING_FILES=$(echo "$PATCH_ERROR" | grep -q "No such file or directory" && echo "yes" || echo "no")
     HAS_LINE_ISSUES=$(echo "$PATCH_ERROR" | grep -qE "patch does not apply|hunk.*failed" && echo "yes" || echo "no")
     
-    # If we have both missing files and line issues, try 3-way merge with reject
+    # If we have both missing files and line issues, try 3-way merge with reject (if history available)
+    # Otherwise fall back to regular reject
     if [[ "$HAS_MISSING_FILES" == "yes" ]] || [[ "$HAS_LINE_ISSUES" == "yes" ]]; then
-      echo "Warning: Patch has issues (missing files or line number shifts), trying 3-way merge with reject..."
-      REJECT_OUTPUT=$(git apply --3way --reject --ignore-whitespace "$1" 2>&1) || REJECT_FAILED=1
+      if [[ "$CAN_USE_3WAY" == "yes" ]]; then
+        echo "Warning: Patch has issues (missing files or line number shifts), trying 3-way merge with reject..."
+        REJECT_OUTPUT=$(git apply --3way --reject --ignore-whitespace "$1" 2>&1) || REJECT_FAILED=1
+      else
+        # No git history, so can't use --3way
+        # --reject will work for missing files but may create .rej files for line number issues
+        echo "Warning: Patch has issues (missing files or line number shifts), trying with reject..."
+        echo "Note: 3-way merge not available (shallow clone), so line number shifts may cause conflicts"
+        REJECT_OUTPUT=$(git apply --reject --ignore-whitespace "$1" 2>&1) || REJECT_FAILED=1
+      fi
       
       # Count rejected hunks
       REJ_COUNT=$(find . -name "*.rej" -type f 2>/dev/null | wc -l | tr -d ' ')
@@ -67,7 +85,10 @@ apply_patch() {
         
         for rej_file in $(find . -name "*.rej" -type f 2>/dev/null); do
           # Get the source file from .rej filename
+          # .rej files are named like "path/to/file.ext.rej" for "path/to/file.ext"
           source_file="${rej_file%.rej}"
+          # Check if the source file exists (if it does, it's a real conflict)
+          # If it doesn't exist, it's a missing file (expected)
           if [[ -f "$source_file" ]]; then
             # File exists, so this is a real conflict
             CONFLICT_FILES="${CONFLICT_FILES}${source_file}\n"
@@ -91,9 +112,17 @@ apply_patch() {
         echo "Applied patch successfully with 3-way merge"
       fi
     elif echo "$PATCH_ERROR" | grep -qE "patch does not apply|hunk.*failed"; then
-      # Try with --3way for better conflict resolution
-      echo "Warning: Patch failed to apply cleanly, trying with 3-way merge..."
-      PATCH_ERROR_3WAY=$(git apply --3way --ignore-whitespace "$1" 2>&1) || PATCH_FAILED_3WAY=1
+      # Try with --3way for better conflict resolution (if history available)
+      if [[ "$CAN_USE_3WAY" == "yes" ]]; then
+        echo "Warning: Patch failed to apply cleanly, trying with 3-way merge..."
+        PATCH_ERROR_3WAY=$(git apply --3way --ignore-whitespace "$1" 2>&1) || PATCH_FAILED_3WAY=1
+      else
+        echo "Error: Patch failed to apply and 3-way merge not available (shallow clone)" >&2
+        echo "Patch file: $1" >&2
+        echo "Error: $PATCH_ERROR" >&2
+        echo "This patch may need to be updated for VS Code 1.106" >&2
+        exit 1
+      fi
       if [[ -n "$PATCH_FAILED_3WAY" ]]; then
         # Check if 3-way merge left any conflicts
         REJ_COUNT=$(find . -name "*.rej" -type f 2>/dev/null | wc -l | tr -d ' ')

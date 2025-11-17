@@ -66,7 +66,7 @@ index be7eea1..389e89e 100644
 --- a/extensions/extension-editing/src/extensionLinter.ts
 +++ b/extensions/extension-editing/src/extensionLinter.ts
 @@ -33,4 +33,4 @@ const relativeUrlRequiresHttpsRepository = l10n.t("Relative image URLs require a
-const relativeBadgeUrlRequiresHttpsRepository = l10n.t("Relative badge URLs require a repository with HTTPS protocol to be specified in this package.json.");
+ const relativeBadgeUrlRequiresHttpsRepository = l10n.t("Relative badge URLs require a repository with HTTPS protocol to be specified in this package.json.");
 -const apiProposalNotListed = l10n.t("This proposal cannot be used because for this extension the product defines a fixed set of API proposals. You can test your extension but before publishing you MUST reach out to the VS Code team.");
 -const bumpEngineForImplicitActivationEvents = l10n.t("This activation event can be removed for extensions targeting engine version ^1.75 as VS Code will generate these automatically from your package.json contribution declarations.");
 +const apiProposalNotListed = l10n.t("This proposal cannot be used because for this extension the product defines a fixed set of API proposals. You can test your extension but before publishing you MUST reach out to the !!APP_NAME!! team.");
@@ -250,7 +250,7 @@ index f36ecf3..9545ba2 100644
 +	"html.customData.desc": "A list of relative file paths pointing to JSON files following the [custom data format](https://github.com/microsoft/vscode-html-languageservice/blob/master/docs/customData.md).\n\n!!APP_NAME!! loads custom data on startup to enhance its HTML support for the custom HTML tags, attributes and attribute values you specify in the JSON files.\n\nThe file paths are relative to workspace and only workspace folder settings are considered.",
  	"html.format.enable.desc": "Enable/disable default HTML formatter.",
 @@ -25,3 +25,3 @@
-	"html.suggest.html5.desc": "Controls whether the built-in HTML language support suggests HTML5 tags, properties and values.",
+ 	"html.suggest.html5.desc": "Controls whether the built-in HTML language support suggests HTML5 tags, properties and values.",
 -	"html.trace.server.desc": "Traces the communication between VS Code and the HTML language server.",
 +	"html.trace.server.desc": "Traces the communication between !!APP_NAME!! and the HTML language server.",
  	"html.validate.scripts": "Controls whether the built-in HTML language support validates embedded scripts.",
@@ -377,11 +377,11 @@ index 447359e..e40077c 100644
 +	"typescript.updateImportsOnFileMove.enabled": "Enable/disable automatic updating of import paths when you rename or move a file in !!APP_NAME!!.",
  	"typescript.updateImportsOnFileMove.enabled.prompt": "Prompt on each rename.",
 @@ -167,6 +167,6 @@
-	"configuration.suggest.completeJSDocs": "Enable/disable suggestion to complete JSDoc comments.",
+ 	"configuration.suggest.completeJSDocs": "Enable/disable suggestion to complete JSDoc comments.",
 -	"configuration.tsserver.useVsCodeWatcher": "Use VS Code's file watchers instead of TypeScript's. Requires using TypeScript 5.4+ in the workspace.",
 +	"configuration.tsserver.useVsCodeWatcher": "Use !!APP_NAME!!'s file watchers instead of TypeScript's. Requires using TypeScript 5.4+ in the workspace.",
-	"configuration.tsserver.useVsCodeWatcher.deprecation": "Please use the `#typescript.tsserver.watchOptions#` setting instead.",
-	"configuration.tsserver.watchOptions": "Configure which watching strategies should be used to keep track of files and directories.",
+ 	"configuration.tsserver.useVsCodeWatcher.deprecation": "Please use the `#typescript.tsserver.watchOptions#` setting instead.",
+ 	"configuration.tsserver.watchOptions": "Configure which watching strategies should be used to keep track of files and directories.",
 -	"configuration.tsserver.watchOptions.vscode": "Use VS Code's file watchers instead of TypeScript's. Requires using TypeScript 5.4+ in the workspace.",
 +	"configuration.tsserver.watchOptions.vscode": "Use !!APP_NAME!!'s file watchers instead of TypeScript's. Requires using TypeScript 5.4+ in the workspace.",
  	"configuration.tsserver.watchOptions.watchFile": "Strategy for how individual files are watched.",
@@ -653,7 +653,7 @@ index 0535ddd..79f12dc 100644
 --- a/src/vs/server/node/server.cli.ts
 +++ b/src/vs/server/node/server.cli.ts
 @@ -470,3 +470,3 @@ function asExtensionIdOrVSIX(inputs: string[] | undefined) {
-function fatal(message: string, err: any): void {
+ function fatal(message: string, err: any): void {
 -	console.error('Unable to connect to VS Code server: ' + message);
 +	console.error('Unable to connect to !!APP_NAME!! server: ' + message);
  	console.error(err);

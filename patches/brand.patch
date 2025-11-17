@@ -246,16 +246,16 @@ index f36ecf3..9545ba2 100644
 --- a/extensions/html-language-features/package.nls.json
 +++ b/extensions/html-language-features/package.nls.json
 @@ -3,4 +3,4 @@
-	"description": "Provides rich language support for HTML and Handlebar files",
+ "description": "Provides rich language support for HTML and Handlebar files",
 -	"html.customData.desc": "A list of relative file paths pointing to JSON files following the [custom data format](https://github.com/microsoft/vscode-html-languageservice/blob/master/docs/customData.md).\n\nVS Code loads custom data on startup to enhance its HTML support for the custom HTML tags, attributes and attribute values you specify in the JSON files.\n\nThe file paths are relative to workspace and only workspace folder settings are considered.",
 +	"html.customData.desc": "A list of relative file paths pointing to JSON files following the [custom data format](https://github.com/microsoft/vscode-html-languageservice/blob/master/docs/customData.md).\n\n!!APP_NAME!! loads custom data on startup to enhance its HTML support for the custom HTML tags, attributes and attribute values you specify in the JSON files.\n\nThe file paths are relative to workspace and only workspace folder settings are considered.",
-	"html.format.enable.desc": "Enable/disable default HTML formatter.",
+ "html.format.enable.desc": "Enable/disable default HTML formatter.",
 @@ -26,4 +26,4 @@
-	"html.suggest.html5.desc": "Controls whether the built-in HTML language support suggests HTML5 tags, properties and values.",
-	"html.suggest.hideEndTagSuggestions.desc": "Controls whether the built-in HTML language support suggests closing tags. When disabled, end tag completions like `</div>` will not be shown.",
+ "html.suggest.html5.desc": "Controls whether the built-in HTML language support suggests HTML5 tags, properties and values.",
+ "html.suggest.hideEndTagSuggestions.desc": "Controls whether the built-in HTML language support suggests closing tags. When disabled, end tag completions like `</div>` will not be shown.",
 -	"html.trace.server.desc": "Traces the communication between VS Code and the HTML language server.",
 +	"html.trace.server.desc": "Traces the communication between !!APP_NAME!! and the HTML language server.",
-	"html.validate.scripts": "Controls whether the built-in HTML language support validates embedded scripts.",
+ "html.validate.scripts": "Controls whether the built-in HTML language support validates embedded scripts.",
 diff --git a/extensions/html-language-features/schemas/package.schema.json b/extensions/html-language-features/schemas/package.schema.json
 index 205143c..5a069c6 100644
 --- a/extensions/html-language-features/schemas/package.schema.json
@@ -379,9 +379,9 @@ index 447359e..e40077c 100644
 +	"typescript.updateImportsOnFileMove.enabled": "Enable/disable automatic updating of import paths when you rename or move a file in !!APP_NAME!!.",
  	"typescript.updateImportsOnFileMove.enabled.prompt": "Prompt on each rename.",
 @@ -170,6 +170,6 @@
-	"typescript.autoClosingTags": "Enable/disable automatic closing of JSX tags.",
-	"typescript.suggest.enabled": "Enable/disable autocomplete suggestions.",
-	"configuration.suggest.completeJSDocs": "Enable/disable suggestion to complete JSDoc comments.",
+ "typescript.autoClosingTags": "Enable/disable automatic closing of JSX tags.",
+ "typescript.suggest.enabled": "Enable/disable autocomplete suggestions.",
+ "configuration.suggest.completeJSDocs": "Enable/disable suggestion to complete JSDoc comments.",
 -	"configuration.tsserver.useVsCodeWatcher": "Use VS Code's file watchers instead of TypeScript's. Requires using TypeScript 5.4+ in the workspace.",
 +	"configuration.tsserver.useVsCodeWatcher": "Use !!APP_NAME!!'s file watchers instead of TypeScript's. Requires using TypeScript 5.4+ in the workspace.",
  	"configuration.tsserver.useVsCodeWatcher.deprecation": "Please use the `#typescript.tsserver.watchOptions#` setting instead.",
@@ -787,8 +787,8 @@ index 572bb26..53f5740 100644
 +			alert(localize('uninstallExtensionComplete', "Please reload !!APP_NAME!! to complete the uninstallation of the extension {0}.", this.extension.displayName));
  		} catch (error) {
 @@ -2598,4 +2598,4 @@ export class ExtensionStatusAction extends ExtensionAction {
-			} else if (this.extension.deprecationInfo.settings) {
-				const link = `[${localize('settings', "settings")}](${createCommandUri('workbench.action.openSettings', this.extension.deprecationInfo.settings.map(setting => `@id:${setting}`).join(' '))}})`;
+ 		} else if (this.extension.deprecationInfo.settings) {
+ 			const link = `[${localize('settings', "settings")}](${createCommandUri('workbench.action.openSettings', this.extension.deprecationInfo.settings.map(setting => `@id:${setting}`).join(' '))}})`;
 -				this.updateStatus({ icon: warningIcon, message: new MarkdownString(localize('deprecated with alternate settings tooltip', "This extension is deprecated as this functionality is now built-in to VS Code. Configure these {0} to use this functionality.", link)) }, true);
 +				this.updateStatus({ icon: warningIcon, message: new MarkdownString(localize('deprecated with alternate settings tooltip', "This extension is deprecated as this functionality is now built-in to !!APP_NAME!!. Configure these {0} to use this functionality.", link)) }, true);
  			} else {
@@ -1067,24 +1067,24 @@ index c7074a5..4fd9ae7 100644
 -
  export const walkthroughs: GettingStartedWalkthroughContent = [
 @@ -253,3 +229,3 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
-		id: 'Setup',
+ 	id: 'Setup',
 -		title: localize('gettingStarted.setup.title', "Get Started with VS Code"),
 +		title: localize('gettingStarted.setup.title', "Get Started with !!APP_NAME!!"),
  		description: localize('gettingStarted.setup.description', "Customize your editor, learn the basics, and start coding"),
 @@ -259,3 +235,3 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
-		when: '!isWeb',
+ 	when: '!isWeb',
 -		walkthroughPageTitle: localize('gettingStarted.setup.walkthroughPageTitle', 'Setup VS Code'),
 +		walkthroughPageTitle: localize('gettingStarted.setup.walkthroughPageTitle', 'Setup !!APP_NAME!!'),
  		next: 'Beginner',
 @@ -264,5 +240,2 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
-			steps: [
+ 		steps: [
 -				createCopilotSetupStep('CopilotSetupSignedOut', CopilotSignedOutButton, 'chatSetupSignedOut', true),
 -				createCopilotSetupStep('CopilotSetupComplete', CopilotCompleteButton, 'chatSetupInstalled && (chatPlanPro || chatPlanLimited)', false),
 -				createCopilotSetupStep('CopilotSetupSignedIn', CopilotSignedInButton, '!chatSetupSignedOut && (!chatSetupInstalled || chatPlanCanSignUp)', true),
  				{
 @@ -321,6 +297,6 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
-					id: 'extensionsWebWeb',
-					title: localize('gettingStarted.extensions.title', "Code with extensions"),
+ 				id: 'extensionsWebWeb',
+ 				title: localize('gettingStarted.extensions.title', "Code with extensions"),
 -					description: localize('gettingStarted.extensionsWeb.description.interpolated', "Extensions are VS Code's power-ups. A growing number are becoming available in the web.\n{0}", Button(localize('browsePopularWeb', "Browse Popular Web Extensions"), 'command:workbench.extensions.action.showPopularExtensions')),
 +					description: localize('gettingStarted.extensionsWeb.description.interpolated', "Extensions are !!APP_NAME!!'s power-ups. A growing number are becoming available in the web.\n{0}", Button(localize('browsePopularWeb', "Browse Popular Web Extensions"), 'command:workbench.extensions.action.showPopularExtensions')),
  					when: 'workspacePlatform == \'webworker\'',

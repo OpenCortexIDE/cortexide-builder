@@ -65,7 +65,8 @@ diff --git a/extensions/extension-editing/src/extensionLinter.ts b/extensions/ex
 index be7eea1..389e89e 100644
 --- a/extensions/extension-editing/src/extensionLinter.ts
 +++ b/extensions/extension-editing/src/extensionLinter.ts
-@@ -33,4 +33,4 @@ const relativeUrlRequiresHttpsRepository = l10n.t("Relative image URLs require a
+@@ -32,5 +32,5 @@ const dataUrlsNotValid = l10n.t("Data URLs are not a valid image source.");
+ const relativeUrlRequiresHttpsRepository = l10n.t("Relative image URLs require a repository with HTTPS protocol to be specified in the package.json.");
  const relativeBadgeUrlRequiresHttpsRepository = l10n.t("Relative badge URLs require a repository with HTTPS protocol to be specified in this package.json.");
 -const apiProposalNotListed = l10n.t("This proposal cannot be used because for this extension the product defines a fixed set of API proposals. You can test your extension but before publishing you MUST reach out to the VS Code team.");
 -const bumpEngineForImplicitActivationEvents = l10n.t("This activation event can be removed for extensions targeting engine version ^1.75.0 as VS Code will generate these automatically from your package.json contribution declarations.");
@@ -249,7 +250,7 @@ index f36ecf3..9545ba2 100644
 -	"html.customData.desc": "A list of relative file paths pointing to JSON files following the [custom data format](https://github.com/microsoft/vscode-html-languageservice/blob/master/docs/customData.md).\n\nVS Code loads custom data on startup to enhance its HTML support for the custom HTML tags, attributes and attribute values you specify in the JSON files.\n\nThe file paths are relative to workspace and only workspace folder settings are considered.",
 +	"html.customData.desc": "A list of relative file paths pointing to JSON files following the [custom data format](https://github.com/microsoft/vscode-html-languageservice/blob/master/docs/customData.md).\n\n!!APP_NAME!! loads custom data on startup to enhance its HTML support for the custom HTML tags, attributes and attribute values you specify in the JSON files.\n\nThe file paths are relative to workspace and only workspace folder settings are considered.",
  	"html.format.enable.desc": "Enable/disable default HTML formatter.",
-@@ -26,3 +26,3 @@
+@@ -25,3 +25,3 @@
 	"html.suggest.html5.desc": "Controls whether the built-in HTML language support suggests HTML5 tags, properties and values.",
 	"html.suggest.hideEndTagSuggestions.desc": "Controls whether the built-in HTML language support suggests closing tags. When disabled, end tag completions like `</div>` will not be shown.",
 -	"html.trace.server.desc": "Traces the communication between VS Code and the HTML language server.",
@@ -377,10 +378,10 @@ index 447359e..e40077c 100644
 -	"typescript.updateImportsOnFileMove.enabled": "Enable/disable automatic updating of import paths when you rename or move a file in VS Code.",
 +	"typescript.updateImportsOnFileMove.enabled": "Enable/disable automatic updating of import paths when you rename or move a file in !!APP_NAME!!.",
  	"typescript.updateImportsOnFileMove.enabled.prompt": "Prompt on each rename.",
-@@ -172,6 +172,6 @@
-	"configuration.suggest.completeJSDocs": "Enable/disable suggestion to complete JSDoc comments.",
+@@ -170,6 +170,6 @@
 	"typescript.autoClosingTags": "Enable/disable automatic closing of JSX tags.",
 	"typescript.suggest.enabled": "Enable/disable autocomplete suggestions.",
+	"configuration.suggest.completeJSDocs": "Enable/disable suggestion to complete JSDoc comments.",
 -	"configuration.tsserver.useVsCodeWatcher": "Use VS Code's file watchers instead of TypeScript's. Requires using TypeScript 5.4+ in the workspace.",
 +	"configuration.tsserver.useVsCodeWatcher": "Use !!APP_NAME!!'s file watchers instead of TypeScript's. Requires using TypeScript 5.4+ in the workspace.",
  	"configuration.tsserver.useVsCodeWatcher.deprecation": "Please use the `#typescript.tsserver.watchOptions#` setting instead.",
@@ -655,8 +656,8 @@ diff --git a/src/vs/server/node/server.cli.ts b/src/vs/server/node/server.cli.ts
 index 0535ddd..79f12dc 100644
 --- a/src/vs/server/node/server.cli.ts
 +++ b/src/vs/server/node/server.cli.ts
-@@ -470,3 +470,3 @@ function asExtensionIdOrVSIX(inputs: string[] | undefined) {
- function fatal(message: string, err: any): void {
+@@ -469,3 +469,3 @@ function asExtensionIdOrVSIX(inputs: string[] | undefined) {
+ function fatal(message: string, err: unknown): void {
 -	console.error('Unable to connect to VS Code server: ' + message);
 +	console.error('Unable to connect to !!APP_NAME!! server: ' + message);
  	console.error(err);
@@ -784,8 +785,8 @@ index 572bb26..53f5740 100644
 -			alert(localize('uninstallExtensionComplete', "Please reload Visual Studio Code to complete the uninstallation of the extension {0}.", this.extension.displayName));
 +			alert(localize('uninstallExtensionComplete', "Please reload !!APP_NAME!! to complete the uninstallation of the extension {0}.", this.extension.displayName));
  		} catch (error) {
-@@ -2600,3 +2600,3 @@ export class ExtensionStatusAction extends ExtensionAction {
-				} else if (this.extension.deprecationInfo.settings) {
+@@ -2599,4 +2599,4 @@ export class ExtensionStatusAction extends ExtensionAction {
+			} else if (this.extension.deprecationInfo.settings) {
 				const link = `[${localize('settings', "settings")}](${createCommandUri('workbench.action.openSettings', this.extension.deprecationInfo.settings.map(setting => `@id:${setting}`).join(' '))}})`;
 -				this.updateStatus({ icon: warningIcon, message: new MarkdownString(localize('deprecated with alternate settings tooltip', "This extension is deprecated as this functionality is now built-in to VS Code. Configure these {0} to use this functionality.", link)) }, true);
 +				this.updateStatus({ icon: warningIcon, message: new MarkdownString(localize('deprecated with alternate settings tooltip', "This extension is deprecated as this functionality is now built-in to !!APP_NAME!!. Configure these {0} to use this functionality.", link)) }, true);
@@ -1033,11 +1034,11 @@ diff --git a/src/vs/workbench/contrib/welcomeGettingStarted/common/gettingStarte
 index c7074a5..4fd9ae7 100644
 --- a/src/vs/workbench/contrib/welcomeGettingStarted/common/gettingStartedContent.ts
 +++ b/src/vs/workbench/contrib/welcomeGettingStarted/common/gettingStartedContent.ts
-@@ -16,2 +16,1 @@ import { CONTEXT_ACCESSIBILITY_MODE_ENABLED } from '../../../../platform/accessi
+@@ -15,2 +15,1 @@ import { CONTEXT_ACCESSIBILITY_MODE_ENABLED } from '../../../../platform/accessi
  import { URI } from '../../../../base/common/uri.js';
 -import product from '../../../../platform/product/common/product.js';
  
-@@ -227,24 +227,2 @@ const Button = (title: string, href: string) => `[${title}](${href})`;
+@@ -225,24 +225,2 @@ const Button = (title: string, href: string) => `[${title}](${href})`;
  
 -const CopilotStepTitle = localize('gettingStarted.copilotSetup.title', "Use AI features with Copilot for free");
 -const CopilotDescription = localize({ key: 'gettingStarted.copilotSetup.description', comment: ['{Locked="["}', '{Locked="]({0})"}'] }, "You can use [Copilot]({0}) to generate code across multiple files, fix errors, ask questions about your code, and much more using natural language.", defaultChat.documentationUrl ?? '');

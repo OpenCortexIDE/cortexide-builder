@@ -49,7 +49,7 @@ index 2a58c39..af508f3 100644
 --- a/extensions/emmet/package.nls.json
 +++ b/extensions/emmet/package.nls.json
 @@ -1,3 +1,3 @@
- {
+ 	{
 -	"description": "Emmet support for VS Code",
 +	"description": "Emmet support for !!APP_NAME!!",
  	"command.wrapWithAbbreviation": "Wrap with Abbreviation",
@@ -58,7 +58,7 @@ index 1be4d0e..73a8f3e 100644
 --- a/extensions/extension-editing/src/constants.ts
 +++ b/extensions/extension-editing/src/constants.ts
 @@ -8,2 +8,2 @@ import { l10n } from 'vscode';
- export const implicitActivationEvent = l10n.t("This activation event cannot be explicitly listed by your extension.");
+ 	export const implicitActivationEvent = l10n.t("This activation event cannot be explicitly listed by your extension.");
 -export const redundantImplicitActivationEvent = l10n.t("This activation event can be removed as VS Code generates these automatically from your package.json contribution declarations.");
 +export const redundantImplicitActivationEvent = l10n.t("This activation event can be removed as !!APP_NAME!! generates these automatically from your package.json contribution declarations.");
 diff --git a/extensions/extension-editing/src/extensionLinter.ts b/extensions/extension-editing/src/extensionLinter.ts
@@ -66,13 +66,13 @@ index be7eea1..389e89e 100644
 --- a/extensions/extension-editing/src/extensionLinter.ts
 +++ b/extensions/extension-editing/src/extensionLinter.ts
 @@ -32,5 +32,5 @@ const dataUrlsNotValid = l10n.t("Data URLs are not a valid image source.");
- const relativeUrlRequiresHttpsRepository = l10n.t("Relative image URLs require a repository with HTTPS protocol to be specified in the package.json.");
- const relativeBadgeUrlRequiresHttpsRepository = l10n.t("Relative badge URLs require a repository with HTTPS protocol to be specified in this package.json.");
+ 	const relativeUrlRequiresHttpsRepository = l10n.t("Relative image URLs require a repository with HTTPS protocol to be specified in the package.json.");
+ 	const relativeBadgeUrlRequiresHttpsRepository = l10n.t("Relative badge URLs require a repository with HTTPS protocol to be specified in this package.json.");
 -const apiProposalNotListed = l10n.t("This proposal cannot be used because for this extension the product defines a fixed set of API proposals. You can test your extension but before publishing you MUST reach out to the VS Code team.");
 -const bumpEngineForImplicitActivationEvents = l10n.t("This activation event can be removed for extensions targeting engine version ^1.75.0 as VS Code will generate these automatically from your package.json contribution declarations.");
 +const apiProposalNotListed = l10n.t("This proposal cannot be used because for this extension the product defines a fixed set of API proposals. You can test your extension but before publishing you MUST reach out to the !!APP_NAME!! team.");
 +const bumpEngineForImplicitActivationEvents = l10n.t("This activation event can be removed for extensions targeting engine version ^1.75.0 as !!APP_NAME!! will generate these automatically from your package.json contribution declarations.");
- const starActivation = l10n.t("Using '*' activation is usually a bad idea as it impacts performance.");
+ 	const starActivation = l10n.t("Using '*' activation is usually a bad idea as it impacts performance.");
 diff --git a/extensions/git/package.nls.json b/extensions/git/package.nls.json
 index 52ba381..8a42701 100644
 --- a/extensions/git/package.nls.json
@@ -196,7 +196,7 @@ index 52ba381..8a42701 100644
  	},
 -	"view.workbench.learnMore": "To learn more about how to use Git and source control in VS Code [read our docs](https://aka.ms/vscode-scm)."
 +	"view.workbench.learnMore": "To learn more about how to use Git and source control in !!APP_NAME!! [read our docs](https://aka.ms/vscode-scm)."
- }
+ 	}
 diff --git a/extensions/github/package.nls.json b/extensions/github/package.nls.json
 index 40271be..b52ff0f 100644
 --- a/extensions/github/package.nls.json
@@ -226,7 +226,7 @@ index 789a579..fcf39ff 100644
 --- a/extensions/grunt/package.nls.json
 +++ b/extensions/grunt/package.nls.json
 @@ -1,4 +1,4 @@
- {
+ 	{
 -	"description": "Extension to add Grunt capabilities to VS Code.",
 -	"displayName": "Grunt support for VS Code",
 +	"description": "Extension to add Grunt capabilities to !!APP_NAME!!.",
@@ -246,16 +246,16 @@ index f36ecf3..9545ba2 100644
 --- a/extensions/html-language-features/package.nls.json
 +++ b/extensions/html-language-features/package.nls.json
 @@ -3,4 +3,4 @@
- "description": "Provides rich language support for HTML and Handlebar files",
+	"description": "Provides rich language support for HTML and Handlebar files",
 -	"html.customData.desc": "A list of relative file paths pointing to JSON files following the [custom data format](https://github.com/microsoft/vscode-html-languageservice/blob/master/docs/customData.md).\n\nVS Code loads custom data on startup to enhance its HTML support for the custom HTML tags, attributes and attribute values you specify in the JSON files.\n\nThe file paths are relative to workspace and only workspace folder settings are considered.",
 +	"html.customData.desc": "A list of relative file paths pointing to JSON files following the [custom data format](https://github.com/microsoft/vscode-html-languageservice/blob/master/docs/customData.md).\n\n!!APP_NAME!! loads custom data on startup to enhance its HTML support for the custom HTML tags, attributes and attribute values you specify in the JSON files.\n\nThe file paths are relative to workspace and only workspace folder settings are considered.",
- "html.format.enable.desc": "Enable/disable default HTML formatter.",
+	"html.format.enable.desc": "Enable/disable default HTML formatter.",
 @@ -26,4 +26,4 @@
- "html.suggest.html5.desc": "Controls whether the built-in HTML language support suggests HTML5 tags, properties and values.",
- "html.suggest.hideEndTagSuggestions.desc": "Controls whether the built-in HTML language support suggests closing tags. When disabled, end tag completions like `</div>` will not be shown.",
+	"html.suggest.html5.desc": "Controls whether the built-in HTML language support suggests HTML5 tags, properties and values.",
+	"html.suggest.hideEndTagSuggestions.desc": "Controls whether the built-in HTML language support suggests closing tags. When disabled, end tag completions like `</div>` will not be shown.",
 -	"html.trace.server.desc": "Traces the communication between VS Code and the HTML language server.",
 +	"html.trace.server.desc": "Traces the communication between !!APP_NAME!! and the HTML language server.",
- "html.validate.scripts": "Controls whether the built-in HTML language support validates embedded scripts.",
+	"html.validate.scripts": "Controls whether the built-in HTML language support validates embedded scripts.",
 diff --git a/extensions/html-language-features/schemas/package.schema.json b/extensions/html-language-features/schemas/package.schema.json
 index 205143c..5a069c6 100644
 --- a/extensions/html-language-features/schemas/package.schema.json
@@ -270,7 +270,7 @@ index e82030e..1a634bd 100644
 --- a/extensions/jake/package.nls.json
 +++ b/extensions/jake/package.nls.json
 @@ -1,4 +1,4 @@
- {
+ 	{
 -	"description": "Extension to add Jake capabilities to VS Code.",
 -	"displayName": "Jake support for VS Code",
 +	"description": "Extension to add Jake capabilities to !!APP_NAME!!.",
@@ -379,9 +379,9 @@ index 447359e..e40077c 100644
 +	"typescript.updateImportsOnFileMove.enabled": "Enable/disable automatic updating of import paths when you rename or move a file in !!APP_NAME!!.",
  	"typescript.updateImportsOnFileMove.enabled.prompt": "Prompt on each rename.",
 @@ -170,6 +170,6 @@
- "typescript.autoClosingTags": "Enable/disable automatic closing of JSX tags.",
- "typescript.suggest.enabled": "Enable/disable autocomplete suggestions.",
- "configuration.suggest.completeJSDocs": "Enable/disable suggestion to complete JSDoc comments.",
+ 	"typescript.autoClosingTags": "Enable/disable automatic closing of JSX tags.",
+ 	"typescript.suggest.enabled": "Enable/disable autocomplete suggestions.",
+ 	"configuration.suggest.completeJSDocs": "Enable/disable suggestion to complete JSDoc comments.",
 -	"configuration.tsserver.useVsCodeWatcher": "Use VS Code's file watchers instead of TypeScript's. Requires using TypeScript 5.4+ in the workspace.",
 +	"configuration.tsserver.useVsCodeWatcher": "Use !!APP_NAME!!'s file watchers instead of TypeScript's. Requires using TypeScript 5.4+ in the workspace.",
  	"configuration.tsserver.useVsCodeWatcher.deprecation": "Please use the `#typescript.tsserver.watchOptions#` setting instead.",
@@ -413,7 +413,7 @@ index 447359e..e40077c 100644
 -	"walkthroughs.nodejsWelcome.learnMoreAboutJs.altText": "Learn more about JavaScript and Node.js in Visual Studio Code."
 +	"walkthroughs.nodejsWelcome.learnMoreAboutJs.description": "Want to get more comfortable with JavaScript, Node.js, and !!APP_NAME!!? Be sure to check out our docs!\nWe've got lots of resources for learning [JavaScript](https://code.visualstudio.com/docs/nodejs/working-with-javascript) and [Node.js](https://code.visualstudio.com/docs/nodejs/nodejs-tutorial).\n\n[Learn More](https://code.visualstudio.com/docs/nodejs/nodejs-tutorial)",
 +	"walkthroughs.nodejsWelcome.learnMoreAboutJs.altText": "Learn more about JavaScript and Node.js in !!APP_NAME!!."
- }
+ 	}
 diff --git a/extensions/typescript-language-features/src/tsServer/versionManager.ts b/extensions/typescript-language-features/src/tsServer/versionManager.ts
 index 43a2413..277a089 100644
 --- a/extensions/typescript-language-features/src/tsServer/versionManager.ts
@@ -428,7 +428,7 @@ index 239519e..a308077 100644
 --- a/extensions/typescript-language-features/src/tsServer/versionProvider.electron.ts
 +++ b/extensions/typescript-language-features/src/tsServer/versionProvider.electron.ts
 @@ -70,3 +70,3 @@ export class DiskTypeScriptVersionProvider implements ITypeScriptVersionProvider
- 
+ 	
 -		vscode.window.showErrorMessage(vscode.l10n.t("VS Code\'s tsserver was deleted by another application such as a misbehaving virus detection tool. Please reinstall VS Code."));
 +		vscode.window.showErrorMessage(vscode.l10n.t("!!APP_NAME!!\'s tsserver was deleted by another application such as a misbehaving virus detection tool. Please reinstall !!APP_NAME!!."));
  		throw new Error('Could not find bundled tsserver.js');
@@ -524,7 +524,7 @@ index a351aa7..32bfdb6 100644
 +				reject('Failed to get !!APP_NAME!! server archive location');
  				res.resume(); // read the rest of the response data and discard it
 @@ -68,3 +68,3 @@ async function downloadVSCodeServerArchive(updateUrl: string, commit: string, qu
- /**
+ 	/**
 - * Unzip a .zip or .tar.gz VS Code archive
 + * Unzip a .zip or .tar.gz !!APP_NAME!! archive
   */
@@ -570,10 +570,10 @@ index c256dba..0ae2e47 100644
 --- a/src/vs/platform/contextkey/common/contextkeys.ts
 +++ b/src/vs/platform/contextkey/common/contextkeys.ts
 @@ -19,3 +19,3 @@ export const IsMobileContext = new RawContextKey<boolean>('isMobile', isMobile,
- export const IsDevelopmentContext = new RawContextKey<boolean>('isDevelopment', false, true);
+ 	export const IsDevelopmentContext = new RawContextKey<boolean>('isDevelopment', false, true);
 -export const ProductQualityContext = new RawContextKey<string>('productQualityType', '', localize('productQualityType', "Quality type of VS Code"));
 +export const ProductQualityContext = new RawContextKey<string>('productQualityType', '', localize('productQualityType', "Quality type of !!APP_NAME!!"));
- 
+ 	
 diff --git a/src/vs/platform/extensionManagement/node/extensionManagementService.ts b/src/vs/platform/extensionManagement/node/extensionManagementService.ts
 index 696ef6f..801aba0 100644
 --- a/src/vs/platform/extensionManagement/node/extensionManagementService.ts
@@ -610,10 +610,10 @@ index ca6c82b..346647c 100644
 --- a/src/vs/platform/externalTerminal/node/externalTerminalService.ts
 +++ b/src/vs/platform/externalTerminal/node/externalTerminalService.ts
 @@ -17,3 +17,3 @@ import { ITerminalEnvironment } from '../../terminal/common/terminal.js';
- 
+ 	
 -const TERMINAL_TITLE = nls.localize('console.title', "VS Code Console");
 +const TERMINAL_TITLE = nls.localize('console.title', "!!APP_NAME!! Console");
- 
+ 	
 diff --git a/src/vs/platform/terminal/common/terminalPlatformConfiguration.ts b/src/vs/platform/terminal/common/terminalPlatformConfiguration.ts
 index 7d8d78b..390d3da 100644
 --- a/src/vs/platform/terminal/common/terminalPlatformConfiguration.ts
@@ -640,7 +640,7 @@ index a1ec3fe..c974cf7 100644
  	messageHash: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The hash of the error message.' };
 -	comment: 'This is used to know how often VS Code updates have failed.';
 +	comment: 'This is used to know how often !!APP_NAME!! updates have failed.';
- };
+ 	};
 diff --git a/src/vs/platform/update/electron-main/updateService.darwin.ts b/src/vs/platform/update/electron-main/updateService.darwin.ts
 index 57398fb..9129f54 100644
 --- a/src/vs/platform/update/electron-main/updateService.darwin.ts
@@ -657,8 +657,8 @@ index 0535ddd..79f12dc 100644
 --- a/src/vs/server/node/server.cli.ts
 +++ b/src/vs/server/node/server.cli.ts
 @@ -468,3 +468,3 @@ function asExtensionIdOrVSIX(inputs: string[] | undefined) {
- 
- function fatal(message: string, err: unknown): void {
+ 	
+ 	function fatal(message: string, err: unknown): void {
 -	console.error('Unable to connect to VS Code server: ' + message);
 +	console.error('Unable to connect to !!APP_NAME!! server: ' + message);
  	console.error(err);
@@ -699,13 +699,13 @@ index 0c170ec..7683cb4 100644
 -	static readonly TestProfile = new ApiCommandArgument('testProfile', 'A VS Code test profile', v => v instanceof extHostTypes.TestRunProfileBase, extHostTypeConverter.TestRunProfile.from);
 +	static readonly TestItem = new ApiCommandArgument('testItem', 'A !!APP_NAME!! TestItem', v => v instanceof TestItemImpl, extHostTypeConverter.TestItem.from);
 +	static readonly TestProfile = new ApiCommandArgument('testProfile', 'A !!APP_NAME!! test profile', v => v instanceof extHostTypes.TestRunProfileBase, extHostTypeConverter.TestRunProfile.from);
- 
+ 	
 diff --git a/src/vs/workbench/api/test/browser/extHostNotebook.test.ts b/src/vs/workbench/api/test/browser/extHostNotebook.test.ts
 index 0d71384..45f7923 100644
 --- a/src/vs/workbench/api/test/browser/extHostNotebook.test.ts
 +++ b/src/vs/workbench/api/test/browser/extHostNotebook.test.ts
 @@ -364,3 +364,3 @@ suite('NotebookCell#Document', function () {
- 
+ 	
 -	test('Opening a notebook results in VS Code firing the event onDidChangeActiveNotebookEditor twice #118470', function () {
 +	test('Opening a notebook results in !!APP_NAME!! firing the event onDidChangeActiveNotebookEditor twice #118470', function () {
  		let count = 0;
@@ -780,7 +780,7 @@ index 572bb26..53f5740 100644
  			} else if (this.extension.deprecationInfo.settings) {
 -				detail = localize('deprecated with alternate settings message', "This extension is deprecated as this functionality is now built-in to VS Code.");
 +				detail = localize('deprecated with alternate settings message', "This extension is deprecated as this functionality is now built-in to !!APP_NAME!!.");
- 
+ 	
 @@ -912,3 +912,3 @@ export class UninstallAction extends ExtensionAction {
  			await this.extensionsWorkbenchService.uninstall(this.extension);
 -			alert(localize('uninstallExtensionComplete', "Please reload Visual Studio Code to complete the uninstallation of the extension {0}.", this.extension.displayName));
@@ -800,7 +800,7 @@ index bcf99d6..d473bf9 100644
  			return Promise.resolve(`# ${this.displayName || this.name}
 -**Notice:** This extension is bundled with Visual Studio Code. It can be disabled but not uninstalled.
 +**Notice:** This extension is bundled with !!APP_NAME!!. It can be disabled but not uninstalled.
- ## Features
+ 	## Features
 @@ -501,3 +501,3 @@ ${this.description}
  		if (this.type === ExtensionType.System) {
 -			return Promise.resolve(`Please check the [VS Code Release Notes](command:${ShowCurrentReleaseNotesActionId}) for changes to the built-in extensions.`);
@@ -855,7 +855,7 @@ index b533feb..7a11449 100644
 --- a/src/vs/workbench/contrib/preferences/browser/keyboardLayoutPicker.ts
 +++ b/src/vs/workbench/contrib/preferences/browser/keyboardLayoutPicker.ts
 @@ -95,4 +95,4 @@ interface IUnknownLayout {
- const DEFAULT_CONTENT: string = [
+ 	const DEFAULT_CONTENT: string = [
 -	`// ${nls.localize('displayLanguage', 'Defines the keyboard layout used in VS Code in the browser environment.')}`,
 -	`// ${nls.localize('doc', 'Open VS Code and run "Developer: Inspect Key Mappings (JSON)" from Command Palette.')}`,
 +	`// ${nls.localize('displayLanguage', 'Defines the keyboard layout used in !!APP_NAME!! in the browser environment.')}`,
@@ -1036,11 +1036,11 @@ index c7074a5..4fd9ae7 100644
 --- a/src/vs/workbench/contrib/welcomeGettingStarted/common/gettingStartedContent.ts
 +++ b/src/vs/workbench/contrib/welcomeGettingStarted/common/gettingStartedContent.ts
 @@ -14,2 +14,1 @@ import { CONTEXT_ACCESSIBILITY_MODE_ENABLED } from '../../../../platform/accessi
- import { URI } from '../../../../base/common/uri.js';
+ 	import { URI } from '../../../../base/common/uri.js';
 -import product from '../../../../platform/product/common/product.js';
- 
+ 	
 @@ -225,24 +225,2 @@ const Button = (title: string, href: string) => `[${title}](${href})`;
- 
+ 	
 -const CopilotStepTitle = localize('gettingStarted.copilotSetup.title', "Use AI features with Copilot for free");
 -const CopilotDescription = localize({ key: 'gettingStarted.copilotSetup.description', comment: ['{Locked="["}', '{Locked="]({0})"}'] }, "You can use [Copilot]({0}) to generate code across multiple files, fix errors, ask questions about your code, and much more using natural language.", defaultChat.documentationUrl ?? '');
 -const CopilotTermsString = localize({ key: 'gettingStarted.copilotSetup.terms', comment: ['{Locked="]({2})"}', '{Locked="]({3})"}'] }, "By continuing with {0} Copilot, you agree to {1}'s [Terms]({2}) and [Privacy Statement]({3})", defaultChat.provider.default.name, defaultChat.provider.default.name, defaultChat.termsStatementUrl, defaultChat.privacyStatementUrl);
@@ -1065,7 +1065,7 @@ index c7074a5..4fd9ae7 100644
 -	};
 -}
 -
- export const walkthroughs: GettingStartedWalkthroughContent = [
+ 	export const walkthroughs: GettingStartedWalkthroughContent = [
 @@ -253,3 +229,3 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
  	id: 'Setup',
 -		title: localize('gettingStarted.setup.title', "Get Started with VS Code"),
@@ -1190,25 +1190,25 @@ index bdd30bf..5023e82 100644
 --- a/src/vs/workbench/contrib/welcomeWalkthrough/browser/editor/vs_code_editor_walkthrough.ts
 +++ b/src/vs/workbench/contrib/welcomeWalkthrough/browser/editor/vs_code_editor_walkthrough.ts
 @@ -13,3 +13,3 @@ export default function content(accessor: ServicesAccessor) {
- ## Interactive Editor Playground
+ 	## Interactive Editor Playground
 -The core editor in VS Code is packed with features.  This page highlights a number of them and lets you interactively try them out through the use of a number of embedded editors.  For full details on the editor features for VS Code and more head over to our [documentation](https://code.visualstudio.com/docs).
 +The core editor in !!APP_NAME!! is packed with features.  This page highlights a number of them and lets you interactively try them out through the use of a number of embedded editors.  For full details on the editor features for !!APP_NAME!! and more head over to our [documentation](https://code.visualstudio.com/docs).
- 
+ 	
 @@ -46,3 +46,3 @@ That is the tip of the iceberg for multi-cursor editing. Have a look at the sele
- 
+ 	
 -Visual Studio Code comes with the powerful IntelliSense for JavaScript and TypeScript pre-installed. In the below example, position the text cursor right after the dot and press kb(editor.action.triggerSuggest) to invoke IntelliSense.  Notice how the suggestions come from the Canvas API.
 +!!APP_NAME!! comes with the powerful IntelliSense for JavaScript and TypeScript pre-installed. In the below example, position the text cursor right after the dot and press kb(editor.action.triggerSuggest) to invoke IntelliSense.  Notice how the suggestions come from the Canvas API.
- 
+ 	
 @@ -97,3 +97,3 @@ function Book(title, author) {
- 
+ 	
 -> **JSDoc Tip:** VS Code's IntelliSense uses JSDoc comments to provide richer suggestions. The types and documentation from JSDoc comments show up when you hover over a reference to |Book| or in IntelliSense when you create a new instance of |Book|.
 +> **JSDoc Tip:** !!APP_NAME!!'s IntelliSense uses JSDoc comments to provide richer suggestions. The types and documentation from JSDoc comments show up when you hover over a reference to |Book| or in IntelliSense when you create a new instance of |Book|.
- 
+ 	
 @@ -183,3 +183,3 @@ easy = 42;
- ## Thanks!
+ 	## Thanks!
 -Well if you have got this far then you will have touched on some of the editing features in Visual Studio Code.  But don't stop now :)  We have lots of additional [documentation](https://code.visualstudio.com/docs), [introductory videos](https://code.visualstudio.com/docs/getstarted/introvideos) and [tips and tricks](https://go.microsoft.com/fwlink/?linkid=852118) for the product that will help you learn how to use it.  And while you are here, here are a few additional things you can try:
 +Well if you have got this far then you will have touched on some of the editing features in !!APP_NAME!!.  But don't stop now :)  We have lots of additional [documentation](https://code.visualstudio.com/docs), [introductory videos](https://code.visualstudio.com/docs/getstarted/introvideos) and [tips and tricks](https://go.microsoft.com/fwlink/?linkid=852118) for the product that will help you learn how to use it.  And while you are here, here are a few additional things you can try:
- - Open the Integrated Terminal by pressing kb(workbench.action.terminal.toggleTerminal), then see what's possible by [reviewing the terminal documentation](https://code.visualstudio.com/docs/editor/integrated-terminal)
+ 	- Open the Integrated Terminal by pressing kb(workbench.action.terminal.toggleTerminal), then see what's possible by [reviewing the terminal documentation](https://code.visualstudio.com/docs/editor/integrated-terminal)
 diff --git a/src/vs/workbench/contrib/workspace/browser/workspace.contribution.ts b/src/vs/workbench/contrib/workspace/browser/workspace.contribution.ts
 index c512b64..8034183 100644
 --- a/src/vs/workbench/contrib/workspace/browser/workspace.contribution.ts
@@ -1247,7 +1247,7 @@ index 798de91..3727e24 100644
 --- a/src/vs/workbench/services/extensionManagement/common/extensionManagementService.ts
 +++ b/src/vs/workbench/services/extensionManagement/common/extensionManagementService.ts
 @@ -1044,3 +1044,3 @@ export class ExtensionManagementService extends Disposable implements IWorkbench
- 
+ 	
 -		const productName = localize('VS Code for Web', "{0} for the Web", this.productService.nameLong);
 +		const productName = localize('!!APP_NAME!! for Web', "{0} for the Web", this.productService.nameLong);
  		const virtualWorkspaceSupport = this.extensionManifestPropertiesService.getExtensionVirtualWorkspaceSupportType(manifest);

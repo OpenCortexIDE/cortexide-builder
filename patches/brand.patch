@@ -1039,7 +1039,7 @@ index c7074a5..4fd9ae7 100644
  import { URI } from '../../../../base/common/uri.js';
 -import product from '../../../../platform/product/common/product.js';
  
-@@ -224,24 +224,2 @@ const Button = (title: string, href: string) => `[${title}](${href})`;
+@@ -225,24 +225,2 @@ const Button = (title: string, href: string) => `[${title}](${href})`;
  
 -const CopilotStepTitle = localize('gettingStarted.copilotSetup.title', "Use AI features with Copilot for free");
 -const CopilotDescription = localize({ key: 'gettingStarted.copilotSetup.description', comment: ['{Locked="["}', '{Locked="]({0})"}'] }, "You can use [Copilot]({0}) to generate code across multiple files, fix errors, ask questions about your code, and much more using natural language.", defaultChat.documentationUrl ?? '');

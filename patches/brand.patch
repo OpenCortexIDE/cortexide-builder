@@ -1066,18 +1066,18 @@ index c7074a5..4fd9ae7 100644
 -}
 -
  export const walkthroughs: GettingStartedWalkthroughContent = [
-@@ -238,3 +214,3 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
- 		id: 'Setup',
+@@ -253,3 +229,3 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
+		id: 'Setup',
 -		title: localize('gettingStarted.setup.title', "Get Started with VS Code"),
 +		title: localize('gettingStarted.setup.title', "Get Started with !!APP_NAME!!"),
  		description: localize('gettingStarted.setup.description', "Customize your editor, learn the basics, and start coding"),
-@@ -243,3 +219,3 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
- 		when: '!isWeb',
+@@ -259,3 +235,3 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
+		when: '!isWeb',
 -		walkthroughPageTitle: localize('gettingStarted.setup.walkthroughPageTitle', 'Setup VS Code'),
 +		walkthroughPageTitle: localize('gettingStarted.setup.walkthroughPageTitle', 'Setup !!APP_NAME!!'),
  		next: 'Beginner',
-@@ -248,5 +224,2 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
- 			steps: [
+@@ -264,5 +240,2 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
+			steps: [
 -				createCopilotSetupStep('CopilotSetupSignedOut', CopilotSignedOutButton, 'chatSetupSignedOut', true),
 -				createCopilotSetupStep('CopilotSetupComplete', CopilotCompleteButton, 'chatSetupInstalled && (chatPlanPro || chatPlanLimited)', false),
 -				createCopilotSetupStep('CopilotSetupSignedIn', CopilotSignedInButton, '!chatSetupSignedOut && (!chatSetupInstalled || chatPlanCanSignUp)', true),

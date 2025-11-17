@@ -30,9 +30,31 @@ apply_patch() {
   replace "s|!!ORG_NAME!!|${ORG_NAME}|g" "$1"
   replace "s|!!RELEASE_VERSION!!|${RELEASE_VERSION}|g" "$1"
 
-  if ! git apply --ignore-whitespace "$1"; then
-    echo failed to apply patch "$1" >&2
-    exit 1
+  # Try to apply the patch, capturing errors
+  PATCH_ERROR=$(git apply --ignore-whitespace "$1" 2>&1) || PATCH_FAILED=1
+  if [[ -n "$PATCH_FAILED" ]]; then
+    # Check if the failure is due to missing files
+    if echo "$PATCH_ERROR" | grep -q "No such file or directory"; then
+      # Try with --reject to apply what we can
+      echo "Warning: Some files in patch do not exist, attempting partial apply..."
+      if git apply --reject --ignore-whitespace "$1" 2>&1; then
+        # Remove .rej files for missing files (they're expected)
+        find . -name "*.rej" -type f -delete 2>/dev/null || true
+        echo "Applied patch partially (some files skipped)"
+      else
+        # Check if we have actual patch failures (not just missing files)
+        if find . -name "*.rej" -type f 2>/dev/null | grep -q .; then
+          echo "Error: Patch has conflicts that need to be resolved" >&2
+          exit 1
+        else
+          echo "Applied patch partially (some files skipped)"
+        fi
+      fi
+    else
+      echo failed to apply patch "$1" >&2
+      echo "$PATCH_ERROR" >&2
+      exit 1
+    fi
   fi
 
   mv -f $1{.bak,}

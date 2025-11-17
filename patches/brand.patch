@@ -250,7 +250,7 @@ index f36ecf3..9545ba2 100644
 -	"html.customData.desc": "A list of relative file paths pointing to JSON files following the [custom data format](https://github.com/microsoft/vscode-html-languageservice/blob/master/docs/customData.md).\n\nVS Code loads custom data on startup to enhance its HTML support for the custom HTML tags, attributes and attribute values you specify in the JSON files.\n\nThe file paths are relative to workspace and only workspace folder settings are considered.",
 +	"html.customData.desc": "A list of relative file paths pointing to JSON files following the [custom data format](https://github.com/microsoft/vscode-html-languageservice/blob/master/docs/customData.md).\n\n!!APP_NAME!! loads custom data on startup to enhance its HTML support for the custom HTML tags, attributes and attribute values you specify in the JSON files.\n\nThe file paths are relative to workspace and only workspace folder settings are considered.",
  	"html.format.enable.desc": "Enable/disable default HTML formatter.",
-@@ -25,3 +25,3 @@
+@@ -26,3 +26,3 @@
 	"html.suggest.html5.desc": "Controls whether the built-in HTML language support suggests HTML5 tags, properties and values.",
 	"html.suggest.hideEndTagSuggestions.desc": "Controls whether the built-in HTML language support suggests closing tags. When disabled, end tag completions like `</div>` will not be shown.",
 -	"html.trace.server.desc": "Traces the communication between VS Code and the HTML language server.",

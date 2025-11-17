@@ -65,7 +65,7 @@ diff --git a/extensions/extension-editing/src/extensionLinter.ts b/extensions/ex
 index be7eea1..389e89e 100644
 --- a/extensions/extension-editing/src/extensionLinter.ts
 +++ b/extensions/extension-editing/src/extensionLinter.ts
-@@ -34,4 +34,4 @@ const relativeUrlRequiresHttpsRepository = l10n.t("Relative image URLs require a
+@@ -35,4 +35,4 @@ const relativeUrlRequiresHttpsRepository = l10n.t("Relative image URLs require a
  const relativeBadgeUrlRequiresHttpsRepository = l10n.t("Relative badge URLs require a repository with HTTPS protocol to be specified in this package.json.");
 -const apiProposalNotListed = l10n.t("This proposal cannot be used because for this extension the product defines a fixed set of API proposals. You can test your extension but before publishing you MUST reach out to the VS Code team.");
 -const bumpEngineForImplicitActivationEvents = l10n.t("This activation event can be removed for extensions targeting engine version ^1.75 as VS Code will generate these automatically from your package.json contribution declarations.");
@@ -249,7 +249,7 @@ index f36ecf3..9545ba2 100644
 -	"html.customData.desc": "A list of relative file paths pointing to JSON files following the [custom data format](https://github.com/microsoft/vscode-html-languageservice/blob/master/docs/customData.md).\n\nVS Code loads custom data on startup to enhance its HTML support for the custom HTML tags, attributes and attribute values you specify in the JSON files.\n\nThe file paths are relative to workspace and only workspace folder settings are considered.",
 +	"html.customData.desc": "A list of relative file paths pointing to JSON files following the [custom data format](https://github.com/microsoft/vscode-html-languageservice/blob/master/docs/customData.md).\n\n!!APP_NAME!! loads custom data on startup to enhance its HTML support for the custom HTML tags, attributes and attribute values you specify in the JSON files.\n\nThe file paths are relative to workspace and only workspace folder settings are considered.",
  	"html.format.enable.desc": "Enable/disable default HTML formatter.",
-@@ -25,3 +25,3 @@
+@@ -26,3 +26,3 @@
  	"html.suggest.html5.desc": "Controls whether the built-in HTML language support suggests HTML5 tags, properties and values.",
 -	"html.trace.server.desc": "Traces the communication between VS Code and the HTML language server.",
 +	"html.trace.server.desc": "Traces the communication between !!APP_NAME!! and the HTML language server.",
@@ -376,7 +376,7 @@ index 447359e..e40077c 100644
 -	"typescript.updateImportsOnFileMove.enabled": "Enable/disable automatic updating of import paths when you rename or move a file in VS Code.",
 +	"typescript.updateImportsOnFileMove.enabled": "Enable/disable automatic updating of import paths when you rename or move a file in !!APP_NAME!!.",
  	"typescript.updateImportsOnFileMove.enabled.prompt": "Prompt on each rename.",
-@@ -167,6 +167,6 @@
+@@ -168,6 +168,6 @@
  	"configuration.suggest.completeJSDocs": "Enable/disable suggestion to complete JSDoc comments.",
 -	"configuration.tsserver.useVsCodeWatcher": "Use VS Code's file watchers instead of TypeScript's. Requires using TypeScript 5.4+ in the workspace.",
 +	"configuration.tsserver.useVsCodeWatcher": "Use !!APP_NAME!!'s file watchers instead of TypeScript's. Requires using TypeScript 5.4+ in the workspace.",
@@ -859,7 +859,7 @@ diff --git a/src/vs/workbench/contrib/remoteTunnel/electron-sandbox/remoteTunnel
 index b716bcd..07b107b 100644
 --- a/src/vs/workbench/contrib/remoteTunnel/electron-sandbox/remoteTunnel.contribution.ts
 +++ b/src/vs/workbench/contrib/remoteTunnel/electron-sandbox/remoteTunnel.contribution.ts
-@@ -560,3 +560,3 @@ export class RemoteTunnelWorkbenchContribution extends Disposable implements IWo
+@@ -561,3 +561,3 @@ export class RemoteTunnelWorkbenchContribution extends Disposable implements IWo
  								},
 -								"You can now access this machine anywhere via the secure tunnel [{0}](command:{4}). To connect via a different machine, use the generated [{1}]({2}) link or use the [{6}]({7}) extension in the desktop or web. You can [configure](command:{3}) or [turn off](command:{5}) this access via the VS Code Accounts menu.",
 +								"You can now access this machine anywhere via the secure tunnel [{0}](command:{4}). To connect via a different machine, use the generated [{1}]({2}) link or use the [{6}]({7}) extension in the desktop or web. You can [configure](command:{3}) or [turn off](command:{5}) this access via the !!APP_NAME!! Accounts menu.",
@@ -900,7 +900,7 @@ diff --git a/src/vs/workbench/contrib/tasks/electron-sandbox/taskService.ts b/sr
 index 6a5728c..2c561bd 100644
 --- a/src/vs/workbench/contrib/tasks/electron-sandbox/taskService.ts
 +++ b/src/vs/workbench/contrib/tasks/electron-sandbox/taskService.ts
-@@ -213,3 +213,3 @@ export class TaskService extends AbstractTaskService {
+@@ -214,3 +214,3 @@ export class TaskService extends AbstractTaskService {
  						return this._dialogService.confirm({
 -							message: nls.localize('TaskSystem.noProcess', 'The launched task doesn\'t exist anymore. If the task spawned background processes exiting VS Code might result in orphaned processes. To avoid this start the last background process with a wait flag.'),
 +							message: nls.localize('TaskSystem.noProcess', 'The launched task doesn\'t exist anymore. If the task spawned background processes exiting !!APP_NAME!! might result in orphaned processes. To avoid this start the last background process with a wait flag.'),
@@ -1029,11 +1029,11 @@ diff --git a/src/vs/workbench/contrib/welcomeGettingStarted/common/gettingStarte
 index c7074a5..4fd9ae7 100644
 --- a/src/vs/workbench/contrib/welcomeGettingStarted/common/gettingStartedContent.ts
 +++ b/src/vs/workbench/contrib/welcomeGettingStarted/common/gettingStartedContent.ts
-@@ -14,3 +14,2 @@ import { CONTEXT_ACCESSIBILITY_MODE_ENABLED } from '../../../../platform/accessi
+@@ -15,3 +15,2 @@ import { CONTEXT_ACCESSIBILITY_MODE_ENABLED } from '../../../../platform/accessi
  import { URI } from '../../../../base/common/uri.js';
 -import product from '../../../../platform/product/common/product.js';
  
-@@ -213,24 +212,2 @@ const Button = (title: string, href: string) => `[${title}](${href})`;
+@@ -214,24 +213,2 @@ const Button = (title: string, href: string) => `[${title}](${href})`;
  
 -const CopilotStepTitle = localize('gettingStarted.copilotSetup.title', "Use AI features with Copilot for free");
 -const CopilotDescription = localize({ key: 'gettingStarted.copilotSetup.description', comment: ['{Locked="["}', '{Locked="]({0})"}'] }, "You can use [Copilot]({0}) to generate code across multiple files, fix errors, ask questions about your code and much more using natural language.", product.defaultChatAgent?.documentationUrl ?? '');
@@ -1058,7 +1058,7 @@ index c7074a5..4fd9ae7 100644
 -}
 -
  export const walkthroughs: GettingStartedWalkthroughContent = [
-@@ -238,3 +215,3 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
+@@ -239,3 +216,3 @@ export const walkthroughs: GettingStartedWalkthroughContent = [
  		id: 'Setup',
 -		title: localize('gettingStarted.setup.title', "Get Started with VS Code"),
 +		title: localize('gettingStarted.setup.title', "Get Started with !!APP_NAME!!"),
@@ -1218,7 +1218,7 @@ diff --git a/src/vs/workbench/electron-sandbox/desktop.contribution.ts b/src/vs/
 index d57c6d6..6d846f7 100644
 --- a/src/vs/workbench/electron-sandbox/desktop.contribution.ts
 +++ b/src/vs/workbench/electron-sandbox/desktop.contribution.ts
-@@ -361,3 +361,3 @@ import { registerWorkbenchContribution2, WorkbenchPhase } from '../common/contri
+@@ -362,3 +362,3 @@ import { registerWorkbenchContribution2, WorkbenchPhase } from '../common/contri
  		allowTrailingCommas: true,
 -		description: 'VSCode static command line definition file',
 +		description: '!!APP_NAME!! static command line definition file',
@@ -1304,7 +1304,7 @@ diff --git a/src/vs/workbench/services/extensions/electron-sandbox/nativeExtensi
 index d38ab6b..8f704b1 100644
 --- a/src/vs/workbench/services/extensions/electron-sandbox/nativeExtensionService.ts
 +++ b/src/vs/workbench/services/extensions/electron-sandbox/nativeExtensionService.ts
-@@ -167,3 +167,3 @@ export class NativeExtensionService extends AbstractExtensionService implements
+@@ -168,3 +168,3 @@ export class NativeExtensionService extends AbstractExtensionService implements
  					[{
 -						label: nls.localize('relaunch', "Relaunch VS Code"),
 +						label: nls.localize('relaunch', "Relaunch !!APP_NAME!!"),

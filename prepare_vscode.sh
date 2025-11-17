@@ -18,7 +18,8 @@ set -e
 
 cd vscode || { echo "'vscode' dir not found"; exit 1; }
 
-../update_settings.sh
+echo "Updating settings..."
+../update_settings.sh || { echo "Error: Failed to update settings. Check update_settings.sh for issues." >&2; exit 1; }
 
 # apply patches
 { set +x; } 2>/dev/null
@@ -30,11 +31,17 @@ echo "GH_REPO_PATH=\"${GH_REPO_PATH}\""
 echo "ORG_NAME=\"${ORG_NAME}\""
 
 echo "Applying patches at ../patches/*.patch..."
+PATCH_COUNT=0
 for file in ../patches/*.patch; do
   if [[ -f "${file}" ]]; then
-    apply_patch "${file}"
+    PATCH_COUNT=$((PATCH_COUNT + 1))
+    apply_patch "${file}" || {
+      echo "Error: Failed to apply patch ${file}" >&2
+      exit 1
+    }
   fi
 done
+echo "Successfully applied ${PATCH_COUNT} patches"
 
 if [[ "${VSCODE_QUALITY}" == "insider" ]]; then
   echo "Applying insider patches..."

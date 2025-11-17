@@ -14,16 +14,29 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
 
   export NODE_OPTIONS="--max-old-space-size=8192"
 
+  # Verify Node.js version compatibility (VS Code 1.106 requires Node 20.x)
+  NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+  if [[ "${NODE_VERSION}" -lt 20 ]]; then
+    echo "Warning: VS Code 1.106 requires Node.js 20.x or higher. Current version: $(node -v)"
+    echo "Build may fail. Please update Node.js."
+  fi
+
   # Skip monaco-compile-check as it's failing due to searchUrl property
   # Skip valid-layers-check as well since it might depend on monaco
   # Void commented these out
   # npm run monaco-compile-check
   # npm run valid-layers-check
 
-  npm run buildreact
-  npm run gulp compile-build-without-mangling
-  npm run gulp compile-extension-media
-  npm run gulp compile-extensions-build
+  echo "Building React components..."
+  npm run buildreact || { echo "Error: buildreact failed. Check for dependency or compilation issues." >&2; exit 1; }
+  echo "Compiling build without mangling..."
+  npm run gulp compile-build-without-mangling || { echo "Error: compile-build-without-mangling failed." >&2; exit 1; }
+  
+  echo "Compiling extension media..."
+  npm run gulp compile-extension-media || { echo "Error: compile-extension-media failed." >&2; exit 1; }
+  
+  echo "Compiling extensions build..."
+  npm run gulp compile-extensions-build || { echo "Error: compile-extensions-build failed." >&2; exit 1; }
   
   # Fix CSS paths in out-build directory before minify
   # This fixes paths that get incorrectly modified during the build process
@@ -84,17 +97,19 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
     fi
   done
   
-  npm run gulp minify-vscode
+  echo "Minifying VS Code..."
+  npm run gulp minify-vscode || { echo "Error: minify-vscode failed. Check for CSS path issues or minification errors." >&2; exit 1; }
 
   if [[ "${OS_NAME}" == "osx" ]]; then
     # generate Group Policy definitions
     # node build/lib/policies darwin # Void commented this out
 
-    npm run gulp "vscode-darwin-${VSCODE_ARCH}-min-ci"
+    echo "Building macOS package for ${VSCODE_ARCH}..."
+    npm run gulp "vscode-darwin-${VSCODE_ARCH}-min-ci" || { echo "Error: macOS build failed for ${VSCODE_ARCH}." >&2; exit 1; }
 
     find "../VSCode-darwin-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
 
-    . ../build_cli.sh
+    . ../build_cli.sh || { echo "Error: CLI build failed for macOS." >&2; exit 1; }
 
     VSCODE_PLATFORM="darwin"
   elif [[ "${OS_NAME}" == "windows" ]]; then
@@ -105,38 +120,42 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
     if [[ "${CI_BUILD}" == "no" ]]; then
       . ../build/windows/rtf/make.sh
 
-      npm run gulp "vscode-win32-${VSCODE_ARCH}-min-ci"
+      echo "Building Windows package for ${VSCODE_ARCH}..."
+      npm run gulp "vscode-win32-${VSCODE_ARCH}-min-ci" || { echo "Error: Windows build failed for ${VSCODE_ARCH}." >&2; exit 1; }
 
       if [[ "${VSCODE_ARCH}" != "x64" ]]; then
         SHOULD_BUILD_REH="no"
         SHOULD_BUILD_REH_WEB="no"
       fi
 
-      . ../build_cli.sh
+      . ../build_cli.sh || { echo "Error: CLI build failed for Windows." >&2; exit 1; }
     fi
 
     VSCODE_PLATFORM="win32"
   else # linux
     # in CI, packaging will be done by a different job
     if [[ "${CI_BUILD}" == "no" ]]; then
-      npm run gulp "vscode-linux-${VSCODE_ARCH}-min-ci"
+      echo "Building Linux package for ${VSCODE_ARCH}..."
+      npm run gulp "vscode-linux-${VSCODE_ARCH}-min-ci" || { echo "Error: Linux build failed for ${VSCODE_ARCH}." >&2; exit 1; }
 
       find "../VSCode-linux-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
 
-      . ../build_cli.sh
+      . ../build_cli.sh || { echo "Error: CLI build failed for Linux." >&2; exit 1; }
     fi
 
     VSCODE_PLATFORM="linux"
   fi
 
   if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
-    npm run gulp minify-vscode-reh
-    npm run gulp "vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
+    echo "Building REH (Remote Extension Host)..."
+    npm run gulp minify-vscode-reh || { echo "Error: minify-vscode-reh failed." >&2; exit 1; }
+    npm run gulp "vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci" || { echo "Error: REH build failed for ${VSCODE_PLATFORM}-${VSCODE_ARCH}." >&2; exit 1; }
   fi
 
   if [[ "${SHOULD_BUILD_REH_WEB}" != "no" ]]; then
-    npm run gulp minify-vscode-reh-web
-    npm run gulp "vscode-reh-web-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
+    echo "Building REH-web (Remote Extension Host Web)..."
+    npm run gulp minify-vscode-reh-web || { echo "Error: minify-vscode-reh-web failed." >&2; exit 1; }
+    npm run gulp "vscode-reh-web-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci" || { echo "Error: REH-web build failed for ${VSCODE_PLATFORM}-${VSCODE_ARCH}." >&2; exit 1; }
   fi
 
   cd ..

@@ -45,14 +45,35 @@ apply_patch() {
         # Check if we have actual patch failures (not just missing files)
         if find . -name "*.rej" -type f 2>/dev/null | grep -q .; then
           echo "Error: Patch has conflicts that need to be resolved" >&2
+          echo "Patch file: $1" >&2
+          echo "Rejected hunks found. Please review and update the patch." >&2
           exit 1
         else
           echo "Applied patch partially (some files skipped)"
         fi
       fi
+    elif echo "$PATCH_ERROR" | grep -qE "patch does not apply|hunk.*failed|error:|fatal:"; then
+      # Try with --3way for better conflict resolution
+      echo "Warning: Patch failed to apply cleanly, trying with 3-way merge..."
+      PATCH_ERROR_3WAY=$(git apply --3way --ignore-whitespace "$1" 2>&1) || PATCH_FAILED_3WAY=1
+      if [[ -n "$PATCH_FAILED_3WAY" ]]; then
+        # Check if 3-way merge left any conflicts
+        if find . -name "*.rej" -type f 2>/dev/null | grep -q .; then
+          echo "Error: Patch failed to apply even with 3-way merge" >&2
+          echo "Patch file: $1" >&2
+          echo "Error details: $PATCH_ERROR_3WAY" >&2
+          echo "This patch may need to be updated for VS Code 1.106" >&2
+          exit 1
+        else
+          echo "Applied patch with 3-way merge (some conflicts auto-resolved)"
+        fi
+      else
+        echo "Applied patch successfully with 3-way merge"
+      fi
     else
-      echo failed to apply patch "$1" >&2
-      echo "$PATCH_ERROR" >&2
+      echo "Failed to apply patch: $1" >&2
+      echo "Error: $PATCH_ERROR" >&2
+      echo "This patch may need to be updated for VS Code 1.106" >&2
       exit 1
     fi
   fi

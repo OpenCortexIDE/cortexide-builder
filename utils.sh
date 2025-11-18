@@ -83,12 +83,38 @@ apply_patch() {
   # First try normal apply for other patches
   PATCH_ERROR=$(git apply --ignore-whitespace "$1" 2>&1) || PATCH_FAILED=1
   
+  # Helper function to check if patch is non-critical
+  is_non_critical_patch() {
+    local patch_name=$(basename "$1")
+    local non_critical="policies.patch report-issue.patch fix-node-gyp-env-paths.patch disable-signature-verification.patch merge-user-product.patch remove-mangle.patch terminal-suggest.patch version-1-update.patch cli.patch"
+    echo "$non_critical" | grep -q "$patch_name"
+  }
+  
   # Check if we have git history (required for --3way)
   # In CI, vscode is often a shallow clone, so --3way won't work
   HAS_GIT_HISTORY=$(git rev-list --count HEAD 2>/dev/null || echo "0")
   CAN_USE_3WAY="no"
   if [[ "$HAS_GIT_HISTORY" -gt 1 ]]; then
     CAN_USE_3WAY="yes"
+  fi
+  
+  # If patch failed and it's non-critical, skip it early
+  if [[ -n "$PATCH_FAILED" ]] && is_non_critical_patch "$1"; then
+    # Still try 3-way merge first if available, but don't fail if it doesn't work
+    if [[ "$CAN_USE_3WAY" == "yes" ]] && echo "$PATCH_ERROR" | grep -qE "patch does not apply|hunk.*failed"; then
+      PATCH_ERROR_3WAY=$(git apply --3way --ignore-whitespace "$1" 2>&1) || PATCH_FAILED_3WAY=1
+      if [[ -z "$PATCH_FAILED_3WAY" ]]; then
+        echo "Applied patch successfully with 3-way merge"
+        mv -f $1{.bak,}
+        return 0
+      fi
+    fi
+    # If still failed, skip it
+    echo "Warning: Non-critical patch $(basename "$1") failed to apply. Skipping..." >&2
+    echo "Error: $PATCH_ERROR" >&2
+    echo "This patch may need to be updated for VS Code 1.106" >&2
+    mv -f $1{.bak,}
+    return 0
   fi
   
   # If that fails, try with 3-way merge first (handles line number shifts better)
@@ -145,6 +171,17 @@ apply_patch() {
         done
         
         if [[ -n "$CONFLICT_FILES" ]]; then
+          # Check if this is a non-critical patch before exiting
+          PATCH_NAME=$(basename "$1")
+          NON_CRITICAL_PATCHES="policies.patch report-issue.patch fix-node-gyp-env-paths.patch disable-signature-verification.patch merge-user-product.patch remove-mangle.patch terminal-suggest.patch version-1-update.patch cli.patch"
+          if echo "$NON_CRITICAL_PATCHES" | grep -q "$PATCH_NAME"; then
+            echo "Warning: Non-critical patch $PATCH_NAME has conflicts. Skipping..." >&2
+            echo -e "Conflicts in: $CONFLICT_FILES" >&2
+            echo "This patch may need to be updated for VS Code 1.106" >&2
+            find . -name "*.rej" -type f -delete 2>/dev/null || true
+            mv -f $1{.bak,}
+            return 0
+          fi
           echo "Error: Patch has conflicts in existing files:" >&2
           echo -e "$CONFLICT_FILES" >&2
           echo "Patch file: $1" >&2
@@ -166,6 +203,16 @@ apply_patch() {
         echo "Warning: Patch failed to apply cleanly, trying with 3-way merge..."
         PATCH_ERROR_3WAY=$(git apply --3way --ignore-whitespace "$1" 2>&1) || PATCH_FAILED_3WAY=1
       else
+        # Check if this is a non-critical patch before exiting
+        PATCH_NAME=$(basename "$1")
+        NON_CRITICAL_PATCHES="policies.patch report-issue.patch fix-node-gyp-env-paths.patch disable-signature-verification.patch merge-user-product.patch remove-mangle.patch terminal-suggest.patch version-1-update.patch cli.patch"
+        if echo "$NON_CRITICAL_PATCHES" | grep -q "$PATCH_NAME"; then
+          echo "Warning: Non-critical patch $PATCH_NAME failed to apply. Skipping..." >&2
+          echo "Error: $PATCH_ERROR" >&2
+          echo "This patch may need to be updated for VS Code 1.106" >&2
+          mv -f $1{.bak,}
+          return 0
+        fi
         echo "Error: Patch failed to apply and 3-way merge not available (shallow clone)" >&2
         echo "Patch file: $1" >&2
         echo "Error: $PATCH_ERROR" >&2
@@ -176,6 +223,17 @@ apply_patch() {
         # Check if 3-way merge left any conflicts
         REJ_COUNT=$(find . -name "*.rej" -type f 2>/dev/null | wc -l | tr -d ' ')
         if [[ "$REJ_COUNT" -gt 0 ]]; then
+          # Check if this is a non-critical patch before exiting
+          PATCH_NAME=$(basename "$1")
+          NON_CRITICAL_PATCHES="policies.patch report-issue.patch fix-node-gyp-env-paths.patch disable-signature-verification.patch merge-user-product.patch remove-mangle.patch terminal-suggest.patch version-1-update.patch cli.patch"
+          if echo "$NON_CRITICAL_PATCHES" | grep -q "$PATCH_NAME"; then
+            echo "Warning: Non-critical patch $PATCH_NAME failed to apply even with 3-way merge. Skipping..." >&2
+            echo "Rejected hunks: ${REJ_COUNT}" >&2
+            echo "This patch may need to be updated for VS Code 1.106" >&2
+            find . -name "*.rej" -type f -delete 2>/dev/null || true
+            mv -f $1{.bak,}
+            return 0
+          fi
           echo "Error: Patch failed to apply even with 3-way merge" >&2
           echo "Patch file: $1" >&2
           echo "Rejected hunks: ${REJ_COUNT}" >&2

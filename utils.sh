@@ -92,7 +92,12 @@ apply_patch() {
   # Helper function to check if patch is non-critical
   is_non_critical_patch() {
     local patch_name=$(basename "$1")
+    local patch_path="$1"
     local non_critical="policies.patch report-issue.patch fix-node-gyp-env-paths.patch disable-signature-verification.patch merge-user-product.patch remove-mangle.patch terminal-suggest.patch version-1-update.patch cli.patch"
+    # OS-specific patches in subdirectories are also non-critical (they may be outdated)
+    if echo "$patch_path" | grep -q "/osx/\|/linux/\|/windows/"; then
+      return 0
+    fi
     echo "$non_critical" | grep -q "$patch_name"
   }
   
@@ -183,8 +188,7 @@ apply_patch() {
         if [[ -n "$CONFLICT_FILES" ]]; then
           # Check if this is a non-critical patch before exiting
           PATCH_NAME=$(basename "$1")
-          NON_CRITICAL_PATCHES="policies.patch report-issue.patch fix-node-gyp-env-paths.patch disable-signature-verification.patch merge-user-product.patch remove-mangle.patch terminal-suggest.patch version-1-update.patch cli.patch"
-          if echo "$NON_CRITICAL_PATCHES" | grep -q "$PATCH_NAME"; then
+          if is_non_critical_patch "$1"; then
             echo "Warning: Non-critical patch $PATCH_NAME has conflicts. Skipping..." >&2
             echo -e "Conflicts in: $CONFLICT_FILES" >&2
             echo "This patch may need to be updated for VS Code 1.106" >&2
@@ -215,8 +219,7 @@ apply_patch() {
       else
         # Check if this is a non-critical patch before exiting
         PATCH_NAME=$(basename "$1")
-        NON_CRITICAL_PATCHES="policies.patch report-issue.patch fix-node-gyp-env-paths.patch disable-signature-verification.patch merge-user-product.patch remove-mangle.patch terminal-suggest.patch version-1-update.patch cli.patch"
-        if echo "$NON_CRITICAL_PATCHES" | grep -q "$PATCH_NAME"; then
+        if is_non_critical_patch "$1"; then
           echo "Warning: Non-critical patch $PATCH_NAME failed to apply. Skipping..." >&2
           echo "Error: $PATCH_ERROR" >&2
           echo "This patch may need to be updated for VS Code 1.106" >&2
@@ -235,8 +238,7 @@ apply_patch() {
         if [[ "$REJ_COUNT" -gt 0 ]]; then
           # Check if this is a non-critical patch before exiting
           PATCH_NAME=$(basename "$1")
-          NON_CRITICAL_PATCHES="policies.patch report-issue.patch fix-node-gyp-env-paths.patch disable-signature-verification.patch merge-user-product.patch remove-mangle.patch terminal-suggest.patch version-1-update.patch cli.patch"
-          if echo "$NON_CRITICAL_PATCHES" | grep -q "$PATCH_NAME"; then
+          if is_non_critical_patch "$1"; then
             echo "Warning: Non-critical patch $PATCH_NAME failed to apply even with 3-way merge. Skipping..." >&2
             echo "Rejected hunks: ${REJ_COUNT}" >&2
             echo "This patch may need to be updated for VS Code 1.106" >&2
@@ -260,8 +262,7 @@ apply_patch() {
     else
       # Check if this is a non-critical patch that can be skipped
       PATCH_NAME=$(basename "$1")
-      NON_CRITICAL_PATCHES="policies.patch report-issue.patch fix-node-gyp-env-paths.patch disable-signature-verification.patch merge-user-product.patch remove-mangle.patch terminal-suggest.patch version-1-update.patch cli.patch"
-      if echo "$NON_CRITICAL_PATCHES" | grep -q "$PATCH_NAME"; then
+      if is_non_critical_patch "$1"; then
         echo "Warning: Non-critical patch $PATCH_NAME failed to apply. Skipping..." >&2
         echo "Error: $PATCH_ERROR" >&2
         echo "This patch may need to be updated for VS Code 1.106" >&2

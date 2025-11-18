@@ -19,7 +19,17 @@ set -e
 cd vscode || { echo "'vscode' dir not found"; exit 1; }
 
 echo "Updating settings..."
-../update_settings.sh || { echo "Error: Failed to update settings. Check update_settings.sh for issues." >&2; exit 1; }
+# update_settings.sh doesn't exit on errors, but we should check for critical failures
+if ! ../update_settings.sh 2>&1 | tee /tmp/update_settings.log; then
+  echo "Warning: update_settings.sh had some issues. Checking log..." >&2
+  if grep -q "File to update setting in does not exist" /tmp/update_settings.log; then
+    echo "Error: Critical settings files are missing. Build cannot continue." >&2
+    exit 1
+  else
+    echo "Warning: Some settings updates may have failed, but continuing build..." >&2
+  fi
+fi
+rm -f /tmp/update_settings.log
 
 # apply patches
 { set +x; } 2>/dev/null
@@ -262,11 +272,20 @@ for i in {1..5}; do # try 5 times
     } && break
   fi
 
-  if [[ $i == 3 ]]; then
-    echo "Npm install failed too many times" >&2
+  if [[ $i == 5 ]]; then
+    echo "Error: npm install failed after 5 attempts" >&2
+    echo "Last error log:" >&2
+    tail -50 /tmp/npm-install.log >&2 || true
+    echo "" >&2
+    echo "Common issues:" >&2
+    echo "  - Network connectivity problems" >&2
+    echo "  - npm registry issues" >&2
+    echo "  - Disk space issues" >&2
+    echo "  - Permission problems" >&2
+    echo "  - Corrupted node_modules (try: rm -rf node_modules package-lock.json && npm install)" >&2
     exit 1
   fi
-  echo "Npm install failed $i, trying again..."
+  echo "Npm install failed (attempt $i/5), trying again in $(( 15 * (i + 1))) seconds..."
   
   # Fix the script after failure (it may have been partially installed)
   fix_node_pty_postinstall

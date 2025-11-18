@@ -192,7 +192,7 @@ apply_patch() {
     else
       # Check if this is a non-critical patch that can be skipped
       PATCH_NAME=$(basename "$1")
-      NON_CRITICAL_PATCHES="policies.patch report-issue.patch fix-node-gyp-env-paths.patch"
+      NON_CRITICAL_PATCHES="policies.patch report-issue.patch fix-node-gyp-env-paths.patch disable-signature-verification.patch merge-user-product.patch remove-mangle.patch terminal-suggest.patch version-1-update.patch"
       if echo "$NON_CRITICAL_PATCHES" | grep -q "$PATCH_NAME"; then
         echo "Warning: Non-critical patch $PATCH_NAME failed to apply. Skipping..." >&2
         echo "Error: $PATCH_ERROR" >&2

@@ -99,9 +99,16 @@ apply_patch() {
   # First try normal apply for other patches
   PATCH_FAILED=""
   # Use explicit exit code check to ensure PATCH_FAILED is set correctly
+  # Capture both stdout and stderr to get all error messages
   PATCH_ERROR=$(git apply --ignore-whitespace "$1" 2>&1)
   PATCH_EXIT_CODE=$?
   if [[ $PATCH_EXIT_CODE -ne 0 ]]; then
+    PATCH_FAILED=1
+  fi
+  
+  # Also check for partial application (some hunks applied, some failed)
+  # This can happen when a patch creates new files but fails on modifications
+  if [[ $PATCH_EXIT_CODE -ne 0 ]] && echo "$PATCH_ERROR" | grep -qE "error:|patch does not apply|hunk.*failed"; then
     PATCH_FAILED=1
   fi
   
@@ -150,6 +157,25 @@ apply_patch() {
   fi
   
   if [[ -n "$PATCH_FAILED" ]]; then
+    # First check if this is a non-critical patch - if so, skip it immediately
+    if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
+      # Still try 3-way merge first if available, but don't fail if it doesn't work
+      if [[ "$CAN_USE_3WAY" == "yes" ]] && echo "$PATCH_ERROR" | grep -qE "patch does not apply|hunk.*failed"; then
+        PATCH_ERROR_3WAY=$(git apply --3way --ignore-whitespace "$1" 2>&1) || PATCH_FAILED_3WAY=1
+        if [[ -z "$PATCH_FAILED_3WAY" ]]; then
+          echo "Applied patch successfully with 3-way merge"
+          mv -f $1{.bak,}
+          return 0
+        fi
+      fi
+      # If still failed, skip it
+      echo "Warning: Non-critical patch $(basename "$1") failed to apply. Skipping..." >&2
+      echo "Error: $PATCH_ERROR" >&2
+      echo "This patch may need to be updated for VS Code 1.106" >&2
+      mv -f $1{.bak,}
+      return 0
+    fi
+    
     # Check if the failure is due to missing files OR line number issues
     HAS_MISSING_FILES=$(echo "$PATCH_ERROR" | grep -q "No such file or directory" && echo "yes" || echo "no")
     HAS_LINE_ISSUES=$(echo "$PATCH_ERROR" | grep -qE "patch does not apply|hunk.*failed" && echo "yes" || echo "no")

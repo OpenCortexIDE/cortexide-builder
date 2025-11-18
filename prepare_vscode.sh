@@ -35,10 +35,14 @@ PATCH_COUNT=0
 for file in ../patches/*.patch; do
   if [[ -f "${file}" ]]; then
     PATCH_COUNT=$((PATCH_COUNT + 1))
-    apply_patch "${file}" || {
-      echo "Error: Failed to apply patch ${file}" >&2
+    # apply_patch handles non-critical patches internally and returns 0 for them
+    # Only exit if it's a critical patch that failed
+    if ! apply_patch "${file}"; then
+      # Check if this was a non-critical patch (apply_patch should have handled it)
+      # If we get here, it means a critical patch failed
+      echo "Error: Critical patch ${file} failed to apply" >&2
       exit 1
-    }
+    fi
   fi
 done
 echo "Successfully applied ${PATCH_COUNT} patches"

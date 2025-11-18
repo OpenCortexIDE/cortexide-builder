@@ -346,15 +346,15 @@ if [[ -f "build/package.json" ]]; then
   fi
 fi
 
-# Fix @vscode/gulp-electron to use dynamic import for @electron/get (ESM compatibility)
-# @electron/get v2.0.0+ is ESM-only, but @vscode/gulp-electron uses require()
+# Fix @vscode/gulp-electron to use dynamic import for ESM-only modules
+# @electron/get v2.0.0+ and @octokit/rest are ESM-only, but @vscode/gulp-electron uses require()
 echo "Fixing @vscode/gulp-electron for ESM compatibility..."
 if [[ -f "node_modules/@vscode/gulp-electron/src/download.js" ]]; then
   # Check if already patched (look for dynamic import pattern)
   if ! grep -q "await import.*@electron/get" "node_modules/@vscode/gulp-electron/src/download.js" 2>/dev/null; then
-    # Check if it needs patching (has require("@electron/get"))
-    if grep -q 'require("@electron/get")' "node_modules/@vscode/gulp-electron/src/download.js" 2>/dev/null; then
-      echo "Patching @vscode/gulp-electron to use dynamic import for @electron/get..." >&2
+    # Check if it needs patching (has require("@electron/get") or require("@octokit/rest"))
+    if grep -q 'require("@electron/get")\|require("@octokit/rest")' "node_modules/@vscode/gulp-electron/src/download.js" 2>/dev/null; then
+      echo "Patching @vscode/gulp-electron to use dynamic import for ESM modules..." >&2
       # Create a backup
       cp "node_modules/@vscode/gulp-electron/src/download.js" "node_modules/@vscode/gulp-electron/src/download.js.bak" 2>/dev/null || true
       
@@ -366,23 +366,49 @@ const path = require('path');
 const filePath = process.argv[2];
 let content = fs.readFileSync(filePath, 'utf8');
 
-// Replace the require statement
+// Replace @electron/get require
 content = content.replace(
   /const \{ downloadArtifact \} = require\("@electron\/get"\);/,
   'let downloadArtifact;'
 );
 
-// Add dynamic import at the start of download function
+// Replace @octokit/rest require
+content = content.replace(
+  /const \{ Octokit \} = require\("@octokit\/rest"\);/,
+  'let Octokit;'
+);
+
+// Add dynamic imports at the start of download function
 if (content.includes('async function download(opts) {')) {
   const importCode = `  if (!downloadArtifact) {
     const electronGet = await import("@electron/get");
     downloadArtifact = electronGet.downloadArtifact;
+  }
+  if (!Octokit) {
+    const octokitRest = await import("@octokit/rest");
+    Octokit = octokitRest.Octokit;
   }
 `;
   content = content.replace(
     /(async function download\(opts\) \{)/,
     `$1\n${importCode}`
   );
+}
+
+// Also fix getDownloadUrl function if it uses Octokit
+if (content.includes('async function getDownloadUrl(')) {
+  const importCode = `  if (!Octokit) {
+    const octokitRest = await import("@octokit/rest");
+    Octokit = octokitRest.Octokit;
+  }
+`;
+  // Only add if not already added in download function
+  if (!content.includes('if (!Octokit) {')) {
+    content = content.replace(
+      /(async function getDownloadUrl\([^)]+\) \{)/,
+      `$1\n${importCode}`
+    );
+  }
 }
 
 fs.writeFileSync(filePath, content, 'utf8');

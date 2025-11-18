@@ -325,6 +325,27 @@ if [[ $MISSING_DEPS -eq 1 ]]; then
   }
 fi
 
+# Verify build directory dependencies are installed
+echo "Verifying build directory dependencies..."
+if [[ -f "build/package.json" ]]; then
+  # Check if build dependencies need to be installed
+  if [[ ! -d "build/node_modules" ]] || [[ ! -d "node_modules/ternary-stream" ]]; then
+    echo "Installing build directory dependencies..." >&2
+    # Try installing in build directory first
+    if [[ -f "build/package-lock.json" ]] || [[ -f "build/package.json" ]]; then
+      (cd build && npm install 2>&1 | tail -30) || {
+        echo "Warning: Failed to install build dependencies in build/ directory" >&2
+        # Try installing at root level (dependencies might be hoisted)
+        echo "Attempting to install build dependencies at root level..." >&2
+        npm install ternary-stream 2>&1 | tail -20 || {
+          echo "Error: Failed to install ternary-stream. The build may fail." >&2
+          echo "Try running: cd vscode && npm install ternary-stream" >&2
+        }
+      }
+    fi
+  fi
+fi
+
 # Handle @vscode/ripgrep download manually after npm install
 # This allows us to use GITHUB_TOKEN and handle errors gracefully
 if [[ -d "node_modules/@vscode/ripgrep" ]] && [[ ! -f "node_modules/@vscode/ripgrep/bin/rg" ]]; then

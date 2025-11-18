@@ -86,10 +86,31 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   fi
   
   echo "Compiling build without mangling..."
+  # Verify ternary-stream is available before running gulp
+  if [[ ! -d "node_modules/ternary-stream" ]] && [[ ! -f "node_modules/ternary-stream/package.json" ]]; then
+    echo "Error: ternary-stream dependency is missing. Installing..." >&2
+    # Try installing in build directory first
+    if [[ -f "build/package.json" ]]; then
+      (cd build && npm install ternary-stream 2>&1 | tail -20) || {
+        echo "Trying to install at root level..." >&2
+        npm install ternary-stream 2>&1 | tail -20 || {
+          echo "Error: Failed to install ternary-stream. Cannot continue." >&2
+          echo "Try running: cd vscode && npm install ternary-stream" >&2
+          exit 1
+        }
+      }
+    else
+      npm install ternary-stream 2>&1 | tail -20 || {
+        echo "Error: Failed to install ternary-stream. Cannot continue." >&2
+        exit 1
+      }
+    fi
+  fi
+  
   if ! npm run gulp compile-build-without-mangling; then
     echo "Error: compile-build-without-mangling failed. Check for:" >&2
     echo "  - TypeScript compilation errors" >&2
-    echo "  - Missing build dependencies" >&2
+    echo "  - Missing build dependencies (ternary-stream)" >&2
     echo "  - Gulp task configuration issues" >&2
     echo "  - Check logs above for specific errors" >&2
     exit 1

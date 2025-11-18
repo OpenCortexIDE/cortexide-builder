@@ -363,7 +363,7 @@ if [[ -f "node_modules/@vscode/gulp-electron/src/download.js" ]]; then
 const fs = require('fs');
 const path = require('path');
 
-const filePath = process.argv[1];
+const filePath = process.argv[2];
 let content = fs.readFileSync(filePath, 'utf8');
 
 // Replace the require statement

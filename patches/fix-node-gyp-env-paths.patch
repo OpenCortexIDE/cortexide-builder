@@ -1,19 +1,13 @@
 diff --git a/package.json b/package.json
+index 1234567..abcdefg 100644
 --- a/package.json
 +++ b/package.json
-@@ -220,6 +220,7 @@
-     "mocha-junit-reporter": "^2.2.1",
-     "mocha-multi-reporters": "^1.5.1",
+@@ -229,2 +229,3 @@
      "next": "^15.3.1",
 +    "node-gyp": "^10.0.1",
      "nodemon": "^3.1.10",
-     "npm-run-all": "^4.1.5",
-     "original-fs": "^1.2.0",
-@@ -255,6 +256,8 @@
-   "overrides": {
+@@ -269,2 +270,4 @@
      "node-gyp-build": "4.8.1",
 +    "env-paths": "2.2.1",
 +    "node-gyp": "^10.0.1",
      "kerberos@2.1.1": {
-       "node-addon-api": "7.1.0"
-     }

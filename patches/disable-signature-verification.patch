@@ -6,9 +6,10 @@ index 680e0dd..0b04279 100644
  		@IFileService private readonly fileService: IFileService,
 +		// @ts-expect-error no-unused-variable
  		@IConfigurationService private readonly configurationService: IConfigurationService,
-@@ -347,4 +348,3 @@ export class ExtensionManagementService extends AbstractExtensionManagementServi
+@@ -341,3 +342,2 @@ private async downloadExtension(extension: IGalleryExtension, operation: Insta
  		if (verifySignature) {
--			const value = this.configurationService.getValue('extensions.verifySignature');
+-			const value = this.configurationService.getValue(VerifyExtensionSignatureConfigKey);
 -			verifySignature = isBoolean(value) ? value : true;
 +			verifySignature = false;
  		}
+		const { location, verificationStatus } = await this.extensionsDownloader.download(extension, operation, verifySignature, clientTargetPlatform);

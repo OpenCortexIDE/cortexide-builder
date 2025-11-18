@@ -346,41 +346,46 @@ if [[ -f "build/package.json" ]]; then
   fi
 fi
 
-# Fix @vscode/gulp-electron to use dynamic import for ESM-only modules
-# @electron/get v2.0.0+ and @octokit/rest are ESM-only, but @vscode/gulp-electron uses require()
-echo "Fixing @vscode/gulp-electron for ESM compatibility..."
+# PERMANENT FIX: Convert all ESM-only modules to dynamic imports in @vscode/gulp-electron
+# This handles @electron/get, @octokit/rest, got, and any future ESM-only modules
+echo "Applying permanent ESM compatibility fix to @vscode/gulp-electron..."
 if [[ -f "node_modules/@vscode/gulp-electron/src/download.js" ]]; then
   # Check if already patched (look for dynamic import pattern)
-  if ! grep -q "await import.*@electron/get" "node_modules/@vscode/gulp-electron/src/download.js" 2>/dev/null; then
-    # Check if it needs patching (has require("@electron/get") or require("@octokit/rest"))
-    if grep -q 'require("@electron/get")\|require("@octokit/rest")' "node_modules/@vscode/gulp-electron/src/download.js" 2>/dev/null; then
-      echo "Patching @vscode/gulp-electron to use dynamic import for ESM modules..." >&2
+  if ! grep -q "async function ensureESMModules" "node_modules/@vscode/gulp-electron/src/download.js" 2>/dev/null; then
+    # Check if it needs patching (has any ESM-only requires)
+    if grep -qE 'require\("@electron/get"\)|require\("@octokit/rest"\)|require\("got"\)' "node_modules/@vscode/gulp-electron/src/download.js" 2>/dev/null; then
+      echo "Patching @vscode/gulp-electron to use dynamic imports for ALL ESM modules..." >&2
       # Create a backup
       cp "node_modules/@vscode/gulp-electron/src/download.js" "node_modules/@vscode/gulp-electron/src/download.js.bak" 2>/dev/null || true
       
-      # Use a temporary file for the patch to handle multi-line replacements
-      cat > /tmp/fix-electron-get.js << 'EOF'
+      # Comprehensive patch script that handles ALL ESM modules
+      cat > /tmp/fix-esm-modules.js << 'EOF'
 const fs = require('fs');
-const path = require('path');
 
 const filePath = process.argv[2];
 let content = fs.readFileSync(filePath, 'utf8');
 
-// Replace @electron/get require
-content = content.replace(
-  /const \{ downloadArtifact \} = require\("@electron\/get"\);/,
-  'let downloadArtifact;'
-);
+// List of ESM-only modules that need dynamic import
+const esmModules = {
+  '@electron/get': { exports: ['downloadArtifact'], varName: 'downloadArtifact' },
+  '@octokit/rest': { exports: ['Octokit'], varName: 'Octokit' },
+  'got': { exports: ['got'], varName: 'got' }
+};
 
-// Replace @octokit/rest require
-content = content.replace(
-  /const \{ Octokit \} = require\("@octokit\/rest"\);/,
-  'let Octokit;'
-);
+// Step 1: Replace all require() statements for ESM modules with let declarations
+Object.keys(esmModules).forEach(moduleName => {
+  const moduleInfo = esmModules[moduleName];
+  const exportsList = moduleInfo.exports.join(', ');
+  const pattern = new RegExp(`const \\{ ${exportsList} \\} = require\\(\"${moduleName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\"\\);`, 'g');
+  const replacement = `let ${exportsList.split(', ').map(e => e.trim()).join(', ')};`;
+  content = content.replace(pattern, replacement);
+});
 
-// Add dynamic imports at the start of download function
-if (content.includes('async function download(opts) {')) {
-  const importCode = `  if (!downloadArtifact) {
+// Step 2: Create a helper function to ensure all ESM modules are loaded
+const ensureFunction = `
+// Helper function to dynamically import ESM-only modules
+async function ensureESMModules() {
+  if (!downloadArtifact) {
     const electronGet = await import("@electron/get");
     downloadArtifact = electronGet.downloadArtifact;
   }
@@ -388,42 +393,61 @@ if (content.includes('async function download(opts) {')) {
     const octokitRest = await import("@octokit/rest");
     Octokit = octokitRest.Octokit;
   }
+  if (!got) {
+    const gotModule = await import("got");
+    got = gotModule.got;
+  }
+}
 `;
-  content = content.replace(
-    /(async function download\(opts\) \{)/,
-    `$1\n${importCode}`
-  );
+
+// Insert the helper function after the last require statement (before first function)
+const lastRequireMatch = content.match(/require\([^)]+\);/g);
+if (lastRequireMatch) {
+  const lastRequireIndex = content.lastIndexOf(lastRequireMatch[lastRequireMatch.length - 1]);
+  const insertIndex = content.indexOf('\n', lastRequireIndex) + 1;
+  content = content.slice(0, insertIndex) + ensureFunction + content.slice(insertIndex);
 }
 
-// Also fix getDownloadUrl function if it uses Octokit
-if (content.includes('async function getDownloadUrl(')) {
-  const importCode = `  if (!Octokit) {
-    const octokitRest = await import("@octokit/rest");
-    Octokit = octokitRest.Octokit;
+// Step 3: Add ensureESMModules() call at the start of async functions that use ESM modules
+const asyncFunctions = [
+  { name: 'async function getDownloadUrl', needs: ['Octokit', 'got'] },
+  { name: 'async function download', needs: ['downloadArtifact', 'Octokit'] }
+];
+
+asyncFunctions.forEach(funcInfo => {
+  if (content.includes(funcInfo.name)) {
+    const needsCheck = funcInfo.needs.map(n => `!${n}`).join(' || ');
+    const callCode = `  await ensureESMModules();\n`;
+    
+    // Only add if not already present
+    if (!content.includes('await ensureESMModules()')) {
+      content = content.replace(
+        new RegExp(`(${funcInfo.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\([^)]+\\) \\{)`),
+        `$1\n${callCode}`
+      );
+    }
   }
-`;
-  // Only add if not already added in download function
-  if (!content.includes('if (!Octokit) {')) {
-    content = content.replace(
-      /(async function getDownloadUrl\([^)]+\) \{)/,
-      `$1\n${importCode}`
-    );
-  }
-}
+});
 
 fs.writeFileSync(filePath, content, 'utf8');
+console.log('Successfully patched @vscode/gulp-electron for ESM compatibility');
 EOF
       
-      # Run the Node.js script to patch the file
-      node /tmp/fix-electron-get.js "node_modules/@vscode/gulp-electron/src/download.js" 2>&1 || {
-        echo "Warning: Failed to patch @vscode/gulp-electron. Build may fail with ERR_REQUIRE_ESM." >&2
+      # Run the comprehensive patch script
+      node /tmp/fix-esm-modules.js "node_modules/@vscode/gulp-electron/src/download.js" 2>&1 || {
+        echo "Error: Failed to patch @vscode/gulp-electron. Restoring backup..." >&2
         # Restore backup if patch failed
         if [[ -f "node_modules/@vscode/gulp-electron/src/download.js.bak" ]]; then
           mv "node_modules/@vscode/gulp-electron/src/download.js.bak" "node_modules/@vscode/gulp-electron/src/download.js" 2>/dev/null || true
+          echo "Backup restored. Build may fail with ERR_REQUIRE_ESM." >&2
         fi
       }
-      rm -f /tmp/fix-electron-get.js
+      rm -f /tmp/fix-esm-modules.js
+    else
+      echo "No ESM modules detected in @vscode/gulp-electron. Skipping patch." >&2
     fi
+  else
+    echo "@vscode/gulp-electron already patched for ESM compatibility." >&2
   fi
 fi
 

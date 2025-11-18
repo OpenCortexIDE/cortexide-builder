@@ -410,21 +410,28 @@ if (lastRequireMatch) {
 
 // Step 3: Add ensureESMModules() call at the start of async functions that use ESM modules
 const asyncFunctions = [
-  { name: 'async function getDownloadUrl', needs: ['Octokit', 'got'] },
-  { name: 'async function download', needs: ['downloadArtifact', 'Octokit'] }
+  { name: 'async function getDownloadUrl', pattern: /(async function getDownloadUrl\([^)]+\) \{)/ },
+  { name: 'async function download', pattern: /(async function download\(opts\) \{)/ }
 ];
 
 asyncFunctions.forEach(funcInfo => {
-  if (content.includes(funcInfo.name)) {
-    const needsCheck = funcInfo.needs.map(n => `!${n}`).join(' || ');
+  if (funcInfo.pattern.test(content)) {
     const callCode = `  await ensureESMModules();\n`;
     
-    // Only add if not already present
-    if (!content.includes('await ensureESMModules()')) {
-      content = content.replace(
-        new RegExp(`(${funcInfo.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\([^)]+\\) \\{)`),
-        `$1\n${callCode}`
-      );
+    // Check if this specific function already has the call
+    const funcMatch = content.match(funcInfo.pattern);
+    if (funcMatch) {
+      const funcStart = funcMatch.index;
+      const funcBodyStart = funcStart + funcMatch[0].length;
+      const next50Chars = content.substring(funcBodyStart, funcBodyStart + 50);
+      
+      // Only add if not already present in this function
+      if (!next50Chars.includes('ensureESMModules()')) {
+        content = content.replace(
+          funcInfo.pattern,
+          `$1\n${callCode}`
+        );
+      }
     }
   }
 });

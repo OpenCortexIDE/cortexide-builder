@@ -16,6 +16,10 @@ echo "ORG_NAME=\"${ORG_NAME}\""
 # All common functions can be added to this file
 
 apply_patch() {
+  # Store original exit behavior
+  local ORIG_SET_E
+  [[ $- == *e* ]] && ORIG_SET_E=1 || ORIG_SET_E=0
+  
   if [[ -z "$2" ]]; then
     echo applying patch: "$1";
   fi
@@ -233,6 +237,13 @@ apply_patch() {
             mv -f $1{.bak,}
             return 0
           fi
+          # CRITICAL: Check one more time if this is non-critical before exiting
+          if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
+            echo "Warning: Non-critical patch $(basename "$1") has conflicts. Skipping..." >&2
+            find . -name "*.rej" -type f -delete 2>/dev/null || true
+            mv -f $1{.bak,}
+            return 0
+          fi
           echo "Error: Patch has conflicts in existing files:" >&2
           echo -e "$CONFLICT_FILES" >&2
           echo "Patch file: $1" >&2
@@ -260,6 +271,12 @@ apply_patch() {
           echo "Warning: Non-critical patch $PATCH_NAME failed to apply. Skipping..." >&2
           echo "Error: $PATCH_ERROR" >&2
           echo "This patch may need to be updated for VS Code 1.106" >&2
+          mv -f $1{.bak,}
+          return 0
+        fi
+        # CRITICAL: Check one more time if this is non-critical before exiting
+        if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
+          echo "Warning: Non-critical patch $(basename "$1") failed. Skipping..." >&2
           mv -f $1{.bak,}
           return 0
         fi
@@ -291,6 +308,13 @@ apply_patch() {
             mv -f $1{.bak,}
             return 0
           fi
+          # CRITICAL: Check one more time if this is non-critical before exiting
+          if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
+            echo "Warning: Non-critical patch $(basename "$1") failed with 3-way merge. Skipping..." >&2
+            find . -name "*.rej" -type f -delete 2>/dev/null || true
+            mv -f $1{.bak,}
+            return 0
+          fi
           echo "Error: Patch failed to apply even with 3-way merge" >&2
           echo "Patch file: $1" >&2
           echo "Rejected hunks: ${REJ_COUNT}" >&2
@@ -314,15 +338,17 @@ apply_patch() {
         mv -f $1{.bak,}
         return 0
       fi
-      echo "Failed to apply patch: $1" >&2
-      echo "Error: $PATCH_ERROR" >&2
-      echo "This patch may need to be updated for VS Code 1.106" >&2
-      # Final safety check: if this is a non-critical patch, skip it instead of failing
+      # CRITICAL: Check if this is non-critical before any exit
       if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
-        echo "Warning: Non-critical patch $(basename "$1") failed unexpectedly. Skipping to prevent build failure..." >&2
+        echo "Warning: Non-critical patch $(basename "$1") failed. Skipping..." >&2
+        echo "Error: $PATCH_ERROR" >&2
+        echo "This patch may need to be updated for VS Code 1.106" >&2
         mv -f $1{.bak,}
         return 0
       fi
+      echo "Failed to apply patch: $1" >&2
+      echo "Error: $PATCH_ERROR" >&2
+      echo "This patch may need to be updated for VS Code 1.106" >&2
       exit 1
     fi
   fi
@@ -331,8 +357,18 @@ apply_patch() {
   
   # Final safety net: if we somehow got here with a non-critical patch that failed, ensure we return 0
   # This should never happen, but it's a safety measure
-  if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]] && [[ -n "$PATCH_FAILED" ]]; then
-    echo "Warning: Non-critical patch $(basename "$1") had unexpected failure. Skipping..." >&2
+  if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
+    if [[ -n "$PATCH_FAILED" ]]; then
+      echo "Warning: Non-critical patch $(basename "$1") had unexpected failure. Skipping..." >&2
+    fi
+    # CRITICAL: For non-critical patches, ALWAYS return 0, never exit
+    # This ensures set -e doesn't kill the build
+    return 0
+  fi
+  
+  # Only critical patches that failed should reach here
+  # But if we somehow got here with a non-critical patch, return 0 anyway
+  if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
     return 0
   fi
 }

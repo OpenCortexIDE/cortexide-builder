@@ -68,17 +68,19 @@ fi
 
 if [[ -d "../patches/${OS_NAME}/" ]]; then
   echo "Applying OS patches (${OS_NAME})..."
+  # Temporarily disable set -e for OS patches since they're all non-critical
+  set +e
   for file in "../patches/${OS_NAME}/"*.patch; do
     if [[ -f "${file}" ]]; then
-      # OS patches are non-critical, so they should always return 0
-      # Use || true to ensure we don't exit on failure
+      # OS patches are non-critical - apply_patch should handle them gracefully
+      # but we disable set -e to be absolutely sure we don't exit
       apply_patch "${file}" || {
-        # This should never happen for non-critical patches, but safety check
-        echo "Warning: OS patch $(basename "${file}") had unexpected failure, but continuing..." >&2
-        true
+        echo "Warning: OS patch $(basename "${file}") failed, but continuing build..." >&2
       }
     fi
   done
+  # Re-enable set -e after OS patches
+  set -e
 fi
 
 echo "Applying user patches..."

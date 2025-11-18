@@ -546,6 +546,7 @@ if (content.includes('const webpackRootConfig = require(path_1.default.join(exte
 if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
   // First, make sure flatMap is converted to Promise.all with async map
   if (content.includes('const webpackStreams = webpackConfigLocations.flatMap(webpackConfigPath => {')) {
+    // Replace flatMap with Promise.all + map
     content = content.replace(
       /const webpackStreams = webpackConfigLocations\.flatMap\(webpackConfigPath => \{/,
       'const webpackStreams = await Promise.all(webpackConfigLocations.map(async webpackConfigPath => {'
@@ -557,41 +558,47 @@ if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
       'const exportedConfig = (await import(webpackConfigPath.replace(/\\\\\\\\/g, "/"))).default;'
     );
     
-    // Fix the closing - find and replace .flat() or the closing bracket
-    // Look for the pattern: }).flat() or just });
-    if (content.includes('}).flat()')) {
-      content = content.replace(/\}\)\.flat\(\)/g, '}))');
-    } else {
-      // Find the closing bracket of the map callback and replace it
-      // This is trickier - we need to find the right closing bracket
+    // Fix the closing bracket - find the pattern: }); followed by event_stream_1.default.merge
+    // The structure is: }); closes inner map, }); closes outer map callback
+    // We need: })); closes Promise.all, then .flat() to flatten array of arrays
+    if (content.includes('event_stream_1.default.merge(...webpackStreams')) {
+      // Find the line with }); that's right before the merge call
+      // Pattern: });\n        });\n        event_stream_1.default.merge(...webpackStreams
+      // Replace with: }));\n        }).flat();\n        event_stream_1.default.merge(...webpackStreams
+      // Actually, we need to find the SECOND }); (the one closing the map callback)
       const lines = content.split('\n');
       let result = [];
-      let inMapCallback = false;
+      let foundMapStart = false;
       let braceCount = 0;
+      let mapStartLine = -1;
       
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
+        
+        // Find where we start the Promise.all(map(async
         if (line.includes('const webpackStreams = await Promise.all(webpackConfigLocations.map(async')) {
-          inMapCallback = true;
-          braceCount = (line.match(/\{/g) || []).length;
+          foundMapStart = true;
+          mapStartLine = i;
+          braceCount = (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+          result.push(line);
+          continue;
         }
         
-        if (inMapCallback) {
+        if (foundMapStart) {
           braceCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+          
+          // When we reach braceCount === 0, we've closed the map callback
           if (braceCount === 0 && line.includes('}')) {
-            inMapCallback = false;
-            // Check if next line has .flat() or if this is the end
-            if (i + 1 < lines.length && lines[i + 1].trim() === '.flat()') {
-              result.push(line);
-              i++; // Skip .flat() line
-              result.push('));');
-              continue;
-            } else if (line.trim() === '});') {
-              result.push('}));');
+            // Check if next line is event_stream merge
+            if (i + 1 < lines.length && lines[i + 1].includes('event_stream_1.default.merge(...webpackStreams')) {
+              // This is the closing of the map callback - replace }); with })).flat();
+              result.push('})).flat();');
+              foundMapStart = false;
               continue;
             }
           }
         }
+        
         result.push(line);
       }
       content = result.join('\n');

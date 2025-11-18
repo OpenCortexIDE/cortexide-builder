@@ -346,6 +346,61 @@ if [[ -f "build/package.json" ]]; then
   fi
 fi
 
+# Fix @vscode/gulp-electron to use dynamic import for @electron/get (ESM compatibility)
+# @electron/get v2.0.0+ is ESM-only, but @vscode/gulp-electron uses require()
+echo "Fixing @vscode/gulp-electron for ESM compatibility..."
+if [[ -f "node_modules/@vscode/gulp-electron/src/download.js" ]]; then
+  # Check if already patched (look for dynamic import pattern)
+  if ! grep -q "await import.*@electron/get" "node_modules/@vscode/gulp-electron/src/download.js" 2>/dev/null; then
+    # Check if it needs patching (has require("@electron/get"))
+    if grep -q 'require("@electron/get")' "node_modules/@vscode/gulp-electron/src/download.js" 2>/dev/null; then
+      echo "Patching @vscode/gulp-electron to use dynamic import for @electron/get..." >&2
+      # Create a backup
+      cp "node_modules/@vscode/gulp-electron/src/download.js" "node_modules/@vscode/gulp-electron/src/download.js.bak" 2>/dev/null || true
+      
+      # Use a temporary file for the patch to handle multi-line replacements
+      cat > /tmp/fix-electron-get.js << 'EOF'
+const fs = require('fs');
+const path = require('path');
+
+const filePath = process.argv[1];
+let content = fs.readFileSync(filePath, 'utf8');
+
+// Replace the require statement
+content = content.replace(
+  /const \{ downloadArtifact \} = require\("@electron\/get"\);/,
+  'let downloadArtifact;'
+);
+
+// Add dynamic import at the start of download function
+if (content.includes('async function download(opts) {')) {
+  const importCode = `  if (!downloadArtifact) {
+    const electronGet = await import("@electron/get");
+    downloadArtifact = electronGet.downloadArtifact;
+  }
+`;
+  content = content.replace(
+    /(async function download\(opts\) \{)/,
+    `$1\n${importCode}`
+  );
+}
+
+fs.writeFileSync(filePath, content, 'utf8');
+EOF
+      
+      # Run the Node.js script to patch the file
+      node /tmp/fix-electron-get.js "node_modules/@vscode/gulp-electron/src/download.js" 2>&1 || {
+        echo "Warning: Failed to patch @vscode/gulp-electron. Build may fail with ERR_REQUIRE_ESM." >&2
+        # Restore backup if patch failed
+        if [[ -f "node_modules/@vscode/gulp-electron/src/download.js.bak" ]]; then
+          mv "node_modules/@vscode/gulp-electron/src/download.js.bak" "node_modules/@vscode/gulp-electron/src/download.js" 2>/dev/null || true
+        fi
+      }
+      rm -f /tmp/fix-electron-get.js
+    fi
+  fi
+fi
+
 # Handle @vscode/ripgrep download manually after npm install
 # This allows us to use GITHUB_TOKEN and handle errors gracefully
 if [[ -d "node_modules/@vscode/ripgrep" ]] && [[ ! -f "node_modules/@vscode/ripgrep/bin/rg" ]]; then

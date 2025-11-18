@@ -209,6 +209,12 @@ jobs:
           python-version: '3.11'
         if: env.SHOULD_BUILD == 'yes'
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.vscode_arch == 'x64' && 'x86_64-pc-windows-msvc' || 'aarch64-pc-windows-msvc' }}
+        if: env.SHOULD_BUILD == 'yes'
+
       - name: Check existing VSCodium tags/releases
         env:
           DISABLE_MSI: ${{ vars.DISABLE_STABLE_MSI }}

@@ -495,12 +495,19 @@ const filePath = process.argv[2];
 let content = fs.readFileSync(filePath, 'utf8');
 
 // Fix 1: Make the then() callback async FIRST
+// The pattern in the compiled JS is: vsce.listFiles({ cwd: extensionPath, packageManager: vsce.PackageManager.None, packagedDependencies }).then(fileNames => {
 if (content.includes('vsce.listFiles({ cwd: extensionPath')) {
   // Make the then callback async if it's not already
-  if (!content.includes('.then(async (fileNames)')) {
+  // Match: .then(fileNames => { or .then((fileNames) => {
+  if (!content.includes('.then(async')) {
+    // Try multiple patterns
     content = content.replace(
-      /vsce\.listFiles\(\{ cwd: extensionPath[^}]+\}\)\.then\(\(fileNames\) => \{/g,
-      'vsce.listFiles({ cwd: extensionPath, packageManager: vsce.PackageManager.None, packagedDependencies }).then(async (fileNames) => {'
+      /\.then\(\(fileNames\) => \{/g,
+      '.then(async (fileNames) => {'
+    );
+    content = content.replace(
+      /\.then\(fileNames => \{/g,
+      '.then(async (fileNames) => {'
     );
   }
 }

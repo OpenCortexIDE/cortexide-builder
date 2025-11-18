@@ -307,6 +307,24 @@ mv .npmrc.bak .npmrc
 # Ensure the script is fixed after successful install
 fix_node_pty_postinstall
 
+# Verify critical dependencies are installed (especially for buildreact)
+echo "Verifying critical dependencies..."
+MISSING_DEPS=0
+for dep in cross-spawn; do
+  if [[ ! -d "node_modules/${dep}" ]] && [[ ! -f "node_modules/${dep}/package.json" ]]; then
+    echo "Warning: Critical dependency '${dep}' is missing from node_modules" >&2
+    MISSING_DEPS=1
+  fi
+done
+
+if [[ $MISSING_DEPS -eq 1 ]]; then
+  echo "Attempting to install missing dependencies..." >&2
+  npm install cross-spawn 2>&1 | tail -20 || {
+    echo "Error: Failed to install missing dependencies. The build may fail." >&2
+    echo "Try running: cd vscode && npm install cross-spawn" >&2
+  }
+fi
+
 # Handle @vscode/ripgrep download manually after npm install
 # This allows us to use GITHUB_TOKEN and handle errors gracefully
 if [[ -d "node_modules/@vscode/ripgrep" ]] && [[ ! -f "node_modules/@vscode/ripgrep/bin/rg" ]]; then

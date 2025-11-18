@@ -35,7 +35,16 @@ apply_patch() {
   # This allows partial application which is acceptable for branding changes
   if [[ "$(basename "$1")" == "brand.patch" ]]; then
     echo "Note: Using --reject for brand.patch to handle hunk header mismatches..."
+    # Try to apply with reject - this will skip corrupt hunks but apply what it can
     PATCH_ERROR=$(git apply --reject --ignore-whitespace "$1" 2>&1) || PATCH_FAILED=1
+    # If patch is completely corrupt and can't be parsed, skip it with a warning
+    if [[ -n "$PATCH_FAILED" ]] && echo "$PATCH_ERROR" | grep -q "corrupt patch"; then
+      echo "Warning: brand.patch is corrupt and cannot be applied. Skipping this patch." >&2
+      echo "Branding changes may be incomplete. Consider regenerating this patch." >&2
+      find . -name "*.rej" -type f -delete 2>/dev/null || true
+      mv -f $1{.bak,}
+      return 0
+    fi
     if [[ -n "$PATCH_FAILED" ]]; then
       # Count rejected hunks
       REJ_COUNT=$(find . -name "*.rej" -type f 2>/dev/null | wc -l | tr -d ' ')
@@ -181,6 +190,16 @@ apply_patch() {
         echo "Applied patch successfully with 3-way merge"
       fi
     else
+      # Check if this is a non-critical patch that can be skipped
+      PATCH_NAME=$(basename "$1")
+      NON_CRITICAL_PATCHES="policies.patch report-issue.patch fix-node-gyp-env-paths.patch"
+      if echo "$NON_CRITICAL_PATCHES" | grep -q "$PATCH_NAME"; then
+        echo "Warning: Non-critical patch $PATCH_NAME failed to apply. Skipping..." >&2
+        echo "Error: $PATCH_ERROR" >&2
+        echo "This patch may need to be updated for VS Code 1.106" >&2
+        mv -f $1{.bak,}
+        return 0
+      fi
       echo "Failed to apply patch: $1" >&2
       echo "Error: $PATCH_ERROR" >&2
       echo "This patch may need to be updated for VS Code 1.106" >&2

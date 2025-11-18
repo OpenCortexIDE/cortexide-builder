@@ -82,7 +82,12 @@ apply_patch() {
   
   # First try normal apply for other patches
   PATCH_FAILED=""
-  PATCH_ERROR=$(git apply --ignore-whitespace "$1" 2>&1) || PATCH_FAILED=1
+  # Use explicit exit code check to ensure PATCH_FAILED is set correctly
+  PATCH_ERROR=$(git apply --ignore-whitespace "$1" 2>&1)
+  PATCH_EXIT_CODE=$?
+  if [[ $PATCH_EXIT_CODE -ne 0 ]]; then
+    PATCH_FAILED=1
+  fi
   
   # Helper function to check if patch is non-critical
   is_non_critical_patch() {
@@ -100,7 +105,8 @@ apply_patch() {
   fi
   
   # If patch failed and it's non-critical, skip it early
-  if [[ "$PATCH_FAILED" == "1" ]] && is_non_critical_patch "$1"; then
+  # Check both PATCH_FAILED and PATCH_EXIT_CODE to be safe
+  if [[ ("$PATCH_FAILED" == "1" || $PATCH_EXIT_CODE -ne 0) ]] && is_non_critical_patch "$1"; then
     # Still try 3-way merge first if available, but don't fail if it doesn't work
     if [[ "$CAN_USE_3WAY" == "yes" ]] && echo "$PATCH_ERROR" | grep -qE "patch does not apply|hunk.*failed"; then
       PATCH_ERROR_3WAY=$(git apply --3way --ignore-whitespace "$1" 2>&1) || PATCH_FAILED_3WAY=1

@@ -475,6 +475,118 @@ if [[ -d "extensions" ]]; then
   done
 fi
 
+# Fix extension webpack config loading for ES modules
+# VS Code 1.106 changed webpack configs to ES modules, but the loader uses require()
+echo "Fixing extension webpack config loader for ES modules..."
+if [[ -f "build/lib/extensions.js" ]]; then
+  # Check if already patched
+  if ! grep -q "import.*webpackConfigPath" "build/lib/extensions.js" 2>/dev/null; then
+    # Check if it needs patching (has require for webpack config)
+    if grep -q "require.*webpackConfigPath\|require.*webpackConfigFileName" "build/lib/extensions.js" 2>/dev/null; then
+      echo "Patching extensions.js to use dynamic import for webpack configs..." >&2
+      # Create backup
+      cp "build/lib/extensions.js" "build/lib/extensions.js.bak" 2>/dev/null || true
+      
+      # Create comprehensive patch script
+      cat > /tmp/fix-extension-webpack-loader.js << 'EOF'
+const fs = require('fs');
+
+const filePath = process.argv[2];
+let content = fs.readFileSync(filePath, 'utf8');
+
+// Fix 1: Replace require() with dynamic import for webpack root config
+// This is used to get externals before the promise chain
+// We need to wrap it in an async IIFE since the function isn't async
+if (content.includes('const webpackRootConfig = require(path')) {
+  // Replace the synchronous require with a promise-based approach
+  // We'll load it inside the vsce.listFiles promise
+  const pattern1 = /if \(packageJsonConfig\.dependencies\) \{[\s\S]*?const webpackRootConfig = require\(path[^)]+\)\.default;[\s\S]*?\}/;
+  const replacement1 = `if (packageJsonConfig.dependencies) {
+        // Webpack config will be loaded asynchronously inside the promise chain
+        // Store the path for later use
+        const webpackConfigPath = path_1.default.join(extensionPath, webpackConfigFileName);
+    }`;
+  
+  if (pattern1.test(content)) {
+    content = content.replace(pattern1, replacement1);
+    
+    // Now we need to load it inside the vsce.listFiles().then() callback
+    // Find the vsce.listFiles().then() and add webpack config loading at the start
+    if (content.includes('vsce.listFiles({')) {
+      // Add webpack config loading at the start of the then() callback
+      const thenPattern = /vsce\.listFiles\([^)]+\)\.then\(async \(fileNames\) => \{/;
+      if (thenPattern.test(content)) {
+        // Already async, just add the import
+        content = content.replace(
+          /vsce\.listFiles\([^)]+\)\.then\(async \(fileNames\) => \{/,
+          `vsce.listFiles({ cwd: extensionPath, packageManager: vsce.PackageManager.None, packagedDependencies }).then(async (fileNames) => {
+        // Load webpack config as ES module
+        const webpackRootConfig = packageJsonConfig.dependencies ? (await import(path_1.default.join(extensionPath, webpackConfigFileName).replace(/\\\\/g, "/"))).default : null;`
+        );
+      } else {
+        // Make it async and add the import
+        content = content.replace(
+          /vsce\.listFiles\([^)]+\)\.then\(\(fileNames\) => \{/,
+          `vsce.listFiles({ cwd: extensionPath, packageManager: vsce.PackageManager.None, packagedDependencies }).then(async (fileNames) => {
+        // Load webpack config as ES module
+        const webpackRootConfig = packageJsonConfig.dependencies ? (await import(path_1.default.join(extensionPath, webpackConfigFileName).replace(/\\\\/g, "/"))).default : null;
+        if (webpackRootConfig) {
+            for (const key in webpackRootConfig.externals) {
+                if (key in packageJsonConfig.dependencies) {
+                    packagedDependencies.push(key);
+                }
+            }
+        }`
+        );
+      }
+    }
+  }
+}
+
+// Fix 2: Replace require() with dynamic import inside webpackStreams
+if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
+  // Replace with dynamic import
+  content = content.replace(
+    /const exportedConfig = require\(webpackConfigPath\)\.default;/g,
+    'const exportedConfig = (await import(webpackConfigPath.replace(/\\\\/g, "/"))).default;'
+  );
+  
+  // Make sure the flatMap callback is async
+  if (content.includes('const webpackStreams = webpackConfigLocations.flatMap(webpackConfigPath => {')) {
+    content = content.replace(
+      /const webpackStreams = webpackConfigLocations\.flatMap\(webpackConfigPath => \{/,
+      'const webpackStreams = await Promise.all(webpackConfigLocations.map(async webpackConfigPath => {'
+    );
+    
+    // Fix the closing - replace .flat() with Promise.all result
+    content = content.replace(
+      /\}\)\.flat\(\)/g,
+      '}))'
+    );
+  }
+}
+
+fs.writeFileSync(filePath, content, 'utf8');
+console.log('Successfully patched extensions.js for ES module webpack configs');
+EOF
+      
+      # Run the patch script
+      node /tmp/fix-extension-webpack-loader.js "build/lib/extensions.js" 2>&1 || {
+        echo "Error: Failed to patch extensions.js. Restoring backup..." >&2
+        if [[ -f "build/lib/extensions.js.bak" ]]; then
+          mv "build/lib/extensions.js.bak" "build/lib/extensions.js" 2>/dev/null || true
+          echo "Backup restored. Build may fail with SyntaxError." >&2
+        fi
+      }
+      rm -f /tmp/fix-extension-webpack-loader.js
+    else
+      echo "No webpack config requires detected. Skipping patch." >&2
+    fi
+  else
+    echo "extensions.js already patched for ES module webpack configs." >&2
+  fi
+fi
+
 # Handle @vscode/ripgrep download manually after npm install
 # This allows us to use GITHUB_TOKEN and handle errors gracefully
 if [[ -d "node_modules/@vscode/ripgrep" ]] && [[ ! -f "node_modules/@vscode/ripgrep/bin/rg" ]]; then

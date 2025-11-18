@@ -458,6 +458,23 @@ EOF
   fi
 fi
 
+# Install extension dependencies
+# Extensions have their own package.json files and need dependencies installed
+echo "Installing extension dependencies..."
+if [[ -d "extensions" ]]; then
+  # Find all extensions with package.json files
+  find extensions -name "package.json" -type f | while read -r ext_package_json; do
+    ext_dir=$(dirname "$ext_package_json")
+    # Skip if node_modules already exists (already installed)
+    if [[ ! -d "${ext_dir}/node_modules" ]]; then
+      echo "Installing dependencies for extension: ${ext_dir}..." >&2
+      (cd "$ext_dir" && npm install --no-save 2>&1 | tail -30) || {
+        echo "Warning: Failed to install dependencies for ${ext_dir}" >&2
+      }
+    fi
+  done
+fi
+
 # Handle @vscode/ripgrep download manually after npm install
 # This allows us to use GITHUB_TOKEN and handle errors gracefully
 if [[ -d "node_modules/@vscode/ripgrep" ]] && [[ ! -f "node_modules/@vscode/ripgrep/bin/rg" ]]; then

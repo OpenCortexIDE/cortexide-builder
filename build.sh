@@ -65,9 +65,20 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   # npm run valid-layers-check
 
   echo "Building React components..."
+  # Verify cross-spawn is available before running buildreact
+  if [[ ! -d "node_modules/cross-spawn" ]] && [[ ! -f "node_modules/cross-spawn/package.json" ]]; then
+    echo "Error: cross-spawn dependency is missing. Installing..." >&2
+    if ! npm install cross-spawn; then
+      echo "Error: Failed to install cross-spawn. Cannot continue with buildreact." >&2
+      echo "Try running: npm install" >&2
+      exit 1
+    fi
+  fi
+  
   if ! npm run buildreact; then
     echo "Error: buildreact failed. Check for:" >&2
     echo "  - Missing dependencies (run: npm install)" >&2
+    echo "  - cross-spawn not installed (run: npm install cross-spawn)" >&2
     echo "  - TypeScript compilation errors" >&2
     echo "  - React build script issues" >&2
     echo "  - Check logs above for specific errors" >&2

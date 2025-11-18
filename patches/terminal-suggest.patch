@@ -37,7 +37,8 @@ index 863cd21..a33e440 100644
 +import codiumCompletionSpec from './completions/codium';
 +import codiumInsidersCompletionSpec from './completions/codium-insiders';
  import copilotSpec from './completions/copilot';
-@@ -71,2 +71,4 @@ export const availableSpecs: Fig.Spec[] = [
+@@ -71,3 +71,5 @@ export const availableSpecs: Fig.Spec[] = [
+ 	ghCompletionSpec,
  	npxCompletionSpec,
 +	codiumInsidersCompletionSpec,
 +	codiumCompletionSpec,

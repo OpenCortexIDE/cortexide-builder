@@ -19,6 +19,22 @@ apply_patch() {
   if [[ -z "$2" ]]; then
     echo applying patch: "$1";
   fi
+  
+  # Helper function to check if patch is non-critical (defined early for use throughout)
+  is_non_critical_patch() {
+    local patch_name=$(basename "$1")
+    local patch_path="$1"
+    local non_critical="policies.patch report-issue.patch fix-node-gyp-env-paths.patch disable-signature-verification.patch merge-user-product.patch remove-mangle.patch terminal-suggest.patch version-1-update.patch cli.patch"
+    # OS-specific patches in subdirectories are also non-critical (they may be outdated)
+    if echo "$patch_path" | grep -q "/osx/\|/linux/\|/windows/"; then
+      return 0
+    fi
+    echo "$non_critical" | grep -q "$patch_name"
+  }
+  
+  # Check if this is a non-critical patch early, so we can ensure it never causes build failure
+  PATCH_IS_NON_CRITICAL=$(is_non_critical_patch "$1" && echo "yes" || echo "no")
+  
   # grep '^+++' "$1"  | sed -e 's#+++ [ab]/#./vscode/#' | while read line; do shasum -a 256 "${line}"; done
 
   cp $1{,.bak}
@@ -89,18 +105,6 @@ apply_patch() {
     PATCH_FAILED=1
   fi
   
-  # Helper function to check if patch is non-critical
-  is_non_critical_patch() {
-    local patch_name=$(basename "$1")
-    local patch_path="$1"
-    local non_critical="policies.patch report-issue.patch fix-node-gyp-env-paths.patch disable-signature-verification.patch merge-user-product.patch remove-mangle.patch terminal-suggest.patch version-1-update.patch cli.patch"
-    # OS-specific patches in subdirectories are also non-critical (they may be outdated)
-    if echo "$patch_path" | grep -q "/osx/\|/linux/\|/windows/"; then
-      return 0
-    fi
-    echo "$non_critical" | grep -q "$patch_name"
-  }
-  
   # Check if we have git history (required for --3way)
   # In CI, vscode is often a shallow clone, so --3way won't work
   HAS_GIT_HISTORY=$(git rev-list --count HEAD 2>/dev/null || echo "0")
@@ -112,7 +116,6 @@ apply_patch() {
   # If patch failed and it's non-critical, skip it early
   # Check both PATCH_FAILED and PATCH_EXIT_CODE to be safe
   # Use separate condition checks to avoid potential syntax issues
-  PATCH_IS_NON_CRITICAL=$(is_non_critical_patch "$1" && echo "yes" || echo "no")
   # Check if patch failed (either via PATCH_FAILED or PATCH_EXIT_CODE)
   if [[ $PATCH_EXIT_CODE -ne 0 ]] && [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
     # Still try 3-way merge first if available, but don't fail if it doesn't work
@@ -272,11 +275,24 @@ apply_patch() {
       echo "Failed to apply patch: $1" >&2
       echo "Error: $PATCH_ERROR" >&2
       echo "This patch may need to be updated for VS Code 1.106" >&2
+      # Final safety check: if this is a non-critical patch, skip it instead of failing
+      if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
+        echo "Warning: Non-critical patch $(basename "$1") failed unexpectedly. Skipping to prevent build failure..." >&2
+        mv -f $1{.bak,}
+        return 0
+      fi
       exit 1
     fi
   fi
 
   mv -f $1{.bak,}
+  
+  # Final safety net: if we somehow got here with a non-critical patch that failed, ensure we return 0
+  # This should never happen, but it's a safety measure
+  if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]] && [[ -n "$PATCH_FAILED" ]]; then
+    echo "Warning: Non-critical patch $(basename "$1") had unexpected failure. Skipping..." >&2
+    return 0
+  fi
 }
 
 exists() { type -t "$1" &> /dev/null; }

@@ -225,6 +225,14 @@ apply_patch() {
             mv -f $1{.bak,}
             return 0
           fi
+          # Double-check: if somehow we got here with a non-critical patch, skip it
+          if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
+            echo "Warning: Non-critical patch $PATCH_NAME has conflicts but was not caught earlier. Skipping..." >&2
+            echo -e "Conflicts in: $CONFLICT_FILES" >&2
+            find . -name "*.rej" -type f -delete 2>/dev/null || true
+            mv -f $1{.bak,}
+            return 0
+          fi
           echo "Error: Patch has conflicts in existing files:" >&2
           echo -e "$CONFLICT_FILES" >&2
           echo "Patch file: $1" >&2
@@ -271,6 +279,14 @@ apply_patch() {
             echo "Warning: Non-critical patch $PATCH_NAME failed to apply even with 3-way merge. Skipping..." >&2
             echo "Rejected hunks: ${REJ_COUNT}" >&2
             echo "This patch may need to be updated for VS Code 1.106" >&2
+            find . -name "*.rej" -type f -delete 2>/dev/null || true
+            mv -f $1{.bak,}
+            return 0
+          fi
+          # Double-check: if somehow we got here with a non-critical patch, skip it
+          if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
+            echo "Warning: Non-critical patch $PATCH_NAME failed with 3-way merge but was not caught earlier. Skipping..." >&2
+            echo "Rejected hunks: ${REJ_COUNT}" >&2
             find . -name "*.rej" -type f -delete 2>/dev/null || true
             mv -f $1{.bak,}
             return 0

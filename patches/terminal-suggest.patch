@@ -8,8 +8,8 @@ index 0000000..f3c0f9d
 +
 +const codiumInsidersCompletionSpec: Fig.Spec = {
 +	...code,
-+	name: '!!BINARY_NAME!!-insiders',
-+	description: '!!APP_NAME!! Insiders',
++	name: 'cortexide-insiders',
++	description: 'CortexIDE Insiders',
 +};
 +
 +export default codiumInsidersCompletionSpec;
@@ -23,8 +23,8 @@ index 0000000..1daa1fe
 +
 +const codiumCompletionSpec: Fig.Spec = {
 +	...code,
-+	name: '!!BINARY_NAME!!',
-+	description: '!!APP_NAME!!',
++	name: 'cortexide',
++	description: 'CortexIDE',
 +};
 +
 +export default codiumCompletionSpec;

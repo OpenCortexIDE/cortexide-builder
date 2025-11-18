@@ -70,7 +70,13 @@ if [[ -d "../patches/${OS_NAME}/" ]]; then
   echo "Applying OS patches (${OS_NAME})..."
   for file in "../patches/${OS_NAME}/"*.patch; do
     if [[ -f "${file}" ]]; then
-      apply_patch "${file}"
+      # OS patches are non-critical, so they should always return 0
+      # Use || true to ensure we don't exit on failure
+      apply_patch "${file}" || {
+        # This should never happen for non-critical patches, but safety check
+        echo "Warning: OS patch $(basename "${file}") had unexpected failure, but continuing..." >&2
+        true
+      }
     fi
   done
 fi

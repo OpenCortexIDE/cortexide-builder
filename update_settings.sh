@@ -50,6 +50,15 @@ update_setting () {
   replace "${DEFAULT_TRUE_TO_FALSE}" "${FILENAME}"
 }
 
-update_setting "${TELEMETRY_CRASH_REPORTER}" src/vs/workbench/electron-sandbox/desktop.contribution.ts
+# VS Code 1.106 moved desktop.contribution.ts from electron-sandbox to electron-browser
+# Try both paths for compatibility
+if [[ -f "src/vs/workbench/electron-browser/desktop.contribution.ts" ]]; then
+  update_setting "${TELEMETRY_CRASH_REPORTER}" src/vs/workbench/electron-browser/desktop.contribution.ts
+elif [[ -f "src/vs/workbench/electron-sandbox/desktop.contribution.ts" ]]; then
+  update_setting "${TELEMETRY_CRASH_REPORTER}" src/vs/workbench/electron-sandbox/desktop.contribution.ts
+else
+  echo "Warning: desktop.contribution.ts not found in expected locations. Telemetry crash reporter setting may not be updated."
+fi
+
 update_setting "${TELEMETRY_CONFIGURATION}" src/vs/platform/telemetry/common/telemetryService.ts
 update_setting "${NLS}" src/vs/workbench/contrib/preferences/common/preferencesContribution.ts

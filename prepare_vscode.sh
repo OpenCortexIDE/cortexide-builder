@@ -494,74 +494,106 @@ const fs = require('fs');
 const filePath = process.argv[2];
 let content = fs.readFileSync(filePath, 'utf8');
 
-// Fix 1: Replace require() with dynamic import for webpack root config
-// This is used to get externals before the promise chain
-// We need to wrap it in an async IIFE since the function isn't async
-if (content.includes('const webpackRootConfig = require(path')) {
-  // Replace the synchronous require with a promise-based approach
-  // We'll load it inside the vsce.listFiles promise
-  const pattern1 = /if \(packageJsonConfig\.dependencies\) \{[\s\S]*?const webpackRootConfig = require\(path[^)]+\)\.default;[\s\S]*?\}/;
-  const replacement1 = `if (packageJsonConfig.dependencies) {
-        // Webpack config will be loaded asynchronously inside the promise chain
-        // Store the path for later use
-        const webpackConfigPath = path_1.default.join(extensionPath, webpackConfigFileName);
-    }`;
-  
-  if (pattern1.test(content)) {
-    content = content.replace(pattern1, replacement1);
-    
-    // Now we need to load it inside the vsce.listFiles().then() callback
-    // Find the vsce.listFiles().then() and add webpack config loading at the start
-    if (content.includes('vsce.listFiles({')) {
-      // Add webpack config loading at the start of the then() callback
-      const thenPattern = /vsce\.listFiles\([^)]+\)\.then\(async \(fileNames\) => \{/;
-      if (thenPattern.test(content)) {
-        // Already async, just add the import
-        content = content.replace(
-          /vsce\.listFiles\([^)]+\)\.then\(async \(fileNames\) => \{/,
-          `vsce.listFiles({ cwd: extensionPath, packageManager: vsce.PackageManager.None, packagedDependencies }).then(async (fileNames) => {
-        // Load webpack config as ES module
-        const webpackRootConfig = packageJsonConfig.dependencies ? (await import(path_1.default.join(extensionPath, webpackConfigFileName).replace(/\\\\/g, "/"))).default : null;`
-        );
-      } else {
-        // Make it async and add the import
-        content = content.replace(
-          /vsce\.listFiles\([^)]+\)\.then\(\(fileNames\) => \{/,
-          `vsce.listFiles({ cwd: extensionPath, packageManager: vsce.PackageManager.None, packagedDependencies }).then(async (fileNames) => {
-        // Load webpack config as ES module
-        const webpackRootConfig = packageJsonConfig.dependencies ? (await import(path_1.default.join(extensionPath, webpackConfigFileName).replace(/\\\\/g, "/"))).default : null;
-        if (webpackRootConfig) {
-            for (const key in webpackRootConfig.externals) {
-                if (key in packageJsonConfig.dependencies) {
-                    packagedDependencies.push(key);
-                }
-            }
-        }`
-        );
-      }
-    }
+// Fix 1: Make the then() callback async FIRST
+if (content.includes('vsce.listFiles({ cwd: extensionPath')) {
+  // Make the then callback async if it's not already
+  if (!content.includes('.then(async (fileNames)')) {
+    content = content.replace(
+      /vsce\.listFiles\(\{ cwd: extensionPath[^}]+\}\)\.then\(\(fileNames\) => \{/g,
+      'vsce.listFiles({ cwd: extensionPath, packageManager: vsce.PackageManager.None, packagedDependencies }).then(async (fileNames) => {'
+    );
   }
 }
 
-// Fix 2: Replace require() with dynamic import inside webpackStreams
-if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
-  // Replace with dynamic import
+// Fix 2: Remove the synchronous require for webpackRootConfig and move it inside the async callback
+if (content.includes('const webpackRootConfig = require(path_1.default.join(extensionPath, webpackConfigFileName))')) {
+  // Remove the synchronous require block
   content = content.replace(
-    /const exportedConfig = require\(webpackConfigPath\)\.default;/g,
-    'const exportedConfig = (await import(webpackConfigPath.replace(/\\\\/g, "/"))).default;'
+    /if \(packageJsonConfig\.dependencies\) \{[\s\S]*?const webpackRootConfig = require\(path_1\.default\.join\(extensionPath, webpackConfigFileName\)\)\.default;[\s\S]*?for \(const key in webpackRootConfig\.externals\) \{[\s\S]*?packagedDependencies\.push\(key\);[\s\S]*?\}[\s\S]*?\}[\s\S]*?\}/,
+    '// Webpack config will be loaded asynchronously inside the promise chain'
   );
   
-  // Make sure the flatMap callback is async
+  // Add it inside the async then() callback, right after const files
+  if (content.includes('const files = fileNames')) {
+    content = content.replace(
+      /(const files = fileNames[\s\S]*?\);)/,
+      `$1
+        // Load webpack config as ES module
+        if (packageJsonConfig.dependencies) {
+            try {
+                const webpackRootConfig = (await import(path_1.default.join(extensionPath, webpackConfigFileName).replace(/\\\\\\\\/g, "/"))).default;
+                for (const key in webpackRootConfig.externals) {
+                    if (key in packageJsonConfig.dependencies) {
+                        packagedDependencies.push(key);
+                    }
+                }
+            } catch (err) {
+                console.warn('Failed to load webpack root config:', err);
+            }
+        }`
+    );
+  }
+}
+
+// Fix 3: Replace require() with dynamic import inside webpackStreams and make it async
+if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
+  // First, make sure flatMap is converted to Promise.all with async map
   if (content.includes('const webpackStreams = webpackConfigLocations.flatMap(webpackConfigPath => {')) {
     content = content.replace(
       /const webpackStreams = webpackConfigLocations\.flatMap\(webpackConfigPath => \{/,
       'const webpackStreams = await Promise.all(webpackConfigLocations.map(async webpackConfigPath => {'
     );
     
-    // Fix the closing - replace .flat() with Promise.all result
+    // Replace require with dynamic import
     content = content.replace(
-      /\}\)\.flat\(\)/g,
-      '}))'
+      /const exportedConfig = require\(webpackConfigPath\)\.default;/g,
+      'const exportedConfig = (await import(webpackConfigPath.replace(/\\\\\\\\/g, "/"))).default;'
+    );
+    
+    // Fix the closing - find and replace .flat() or the closing bracket
+    // Look for the pattern: }).flat() or just });
+    if (content.includes('}).flat()')) {
+      content = content.replace(/\}\)\.flat\(\)/g, '}))');
+    } else {
+      // Find the closing bracket of the map callback and replace it
+      // This is trickier - we need to find the right closing bracket
+      const lines = content.split('\n');
+      let result = [];
+      let inMapCallback = false;
+      let braceCount = 0;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.includes('const webpackStreams = await Promise.all(webpackConfigLocations.map(async')) {
+          inMapCallback = true;
+          braceCount = (line.match(/\{/g) || []).length;
+        }
+        
+        if (inMapCallback) {
+          braceCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+          if (braceCount === 0 && line.includes('}')) {
+            inMapCallback = false;
+            // Check if next line has .flat() or if this is the end
+            if (i + 1 < lines.length && lines[i + 1].trim() === '.flat()') {
+              result.push(line);
+              i++; // Skip .flat() line
+              result.push('));');
+              continue;
+            } else if (line.trim() === '});') {
+              result.push('}));');
+              continue;
+            }
+          }
+        }
+        result.push(line);
+      }
+      content = result.join('\n');
+    }
+  } else {
+    // Just replace require if flatMap wasn't found
+    content = content.replace(
+      /const exportedConfig = require\(webpackConfigPath\)\.default;/g,
+      'const exportedConfig = (await import(webpackConfigPath.replace(/\\\\\\\\/g, "/"))).default;'
     );
   }
 }

@@ -32,12 +32,12 @@ diff --git a/extensions/terminal-suggest/src/terminalSuggestMain.ts b/extensions
 index 863cd21..a33e440 100644
 --- a/extensions/terminal-suggest/src/terminalSuggestMain.ts
 +++ b/extensions/terminal-suggest/src/terminalSuggestMain.ts
-@@ -13,1 +13,3 @@ import codeTunnelCompletionSpec from './completions/code-tunnel';
+@@ -12,2 +12,4 @@ import codeTunnelCompletionSpec from './completions/code-tunnel';
  import codeTunnelInsidersCompletionSpec from './completions/code-tunnel-insiders';
 +import codiumCompletionSpec from './completions/codium';
 +import codiumInsidersCompletionSpec from './completions/codium-insiders';
  import copilotSpec from './completions/copilot';
-@@ -72,1 +74,3 @@ export const availableSpecs: Fig.Spec[] = [
+@@ -71,2 +71,4 @@ export const availableSpecs: Fig.Spec[] = [
  	npxCompletionSpec,
 +	codiumInsidersCompletionSpec,
 +	codiumCompletionSpec,

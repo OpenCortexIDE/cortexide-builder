@@ -119,6 +119,8 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   echo "Compiling extension media..."
   if ! npm run gulp compile-extension-media; then
     echo "Error: compile-extension-media failed. Check for:" >&2
+    echo "  - Missing extension dependencies (e.g., mermaid for mermaid-chat-features)" >&2
+    echo "  - Run: find extensions -name package.json -execdir npm install \\;" >&2
     echo "  - Missing media files" >&2
     echo "  - Asset compilation errors" >&2
     echo "  - Gulp task issues" >&2

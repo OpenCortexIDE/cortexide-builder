@@ -281,22 +281,58 @@ if (content.includes('flatMap')) {
 }
 
 // Then replace the require statement - try multiple patterns
+// The actual code has: const exportedConfig = require(webpackConfigPath).default;
+// We need to match this EXACTLY and replace it with dynamic import
 if (content.includes('require(webpackConfigPath)') || content.includes('require(webpackConfigPath).default')) {
-  const requirePatterns = [
-    /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default;/g,
-    /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default\s*;/g,
-    /exportedConfig\s*=\s*require\(webpackConfigPath\)\.default;/g
-  ];
-  
-  for (const pattern of requirePatterns) {
-    if (pattern.test(content)) {
-      content = content.replace(pattern, `const { pathToFileURL } = require("url");
+  // Try exact match first
+  const exactPattern = /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default;/g;
+  if (exactPattern.test(content)) {
+    content = content.replace(exactPattern, `const { pathToFileURL } = require("url");
             const path = require("path");
             let exportedConfig;
             const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;
             exportedConfig = (await import(configUrl)).default;`);
-      patchedRequire = true;
-      break;
+    patchedRequire = true;
+  } else {
+    // Try other patterns
+    const requirePatterns = [
+      /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default\s*;/g,
+      /exportedConfig\s*=\s*require\(webpackConfigPath\)\.default;/g,
+      /require\(webpackConfigPath\)\.default/g
+    ];
+    
+    for (const pattern of requirePatterns) {
+      if (pattern.test(content)) {
+        // For the last pattern, we need to be more careful
+        if (pattern === /require\(webpackConfigPath\)\.default/g) {
+          content = content.replace(pattern, (match, offset, string) => {
+            // Check if this is part of a const assignment
+            const before = string.substring(Math.max(0, offset - 50), offset);
+            if (before.includes('const exportedConfig') || before.includes('exportedConfig =')) {
+              return `(await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default`;
+            }
+            return match;
+          });
+          // Add the imports at the top of the function if not already there
+          if (!content.includes('const { pathToFileURL } = require("url")')) {
+            // Find the function start and add imports
+            const functionStart = content.indexOf('const webpackStreams');
+            if (functionStart !== -1) {
+              const beforeFunction = content.substring(0, functionStart);
+              const afterFunction = content.substring(functionStart);
+              content = beforeFunction + 'const { pathToFileURL } = require("url");\n            const path = require("path");\n            ' + afterFunction;
+            }
+          }
+        } else {
+          content = content.replace(pattern, `const { pathToFileURL } = require("url");
+            const path = require("path");
+            let exportedConfig;
+            const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;
+            exportedConfig = (await import(configUrl)).default;`);
+        }
+        patchedRequire = true;
+        break;
+      }
     }
   }
 }

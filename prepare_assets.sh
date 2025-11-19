@@ -41,6 +41,49 @@ if [[ "${OS_NAME}" == "osx" ]]; then
     echo "+ signing"
     export CODESIGN_IDENTITY AGENT_TEMPDIRECTORY
 
+    # Fix sign.js to use dynamic import for @electron/osx-sign (ESM-only module)
+    if [[ -f "vscode/build/darwin/sign.js" ]]; then
+      echo "Fixing sign.js to use dynamic import for @electron/osx-sign..." >&2
+      node << 'SIGNFIX' || {
+const fs = require('fs');
+const filePath = 'vscode/build/darwin/sign.js';
+let content = fs.readFileSync(filePath, 'utf8');
+
+// Check if already fixed
+if (content.includes('import("@electron/osx-sign")') || content.includes('const osx_sign_1 = await import')) {
+  console.error('sign.js already uses dynamic import');
+} else if (content.includes('require("@electron/osx-sign")')) {
+  // Replace: const osx_sign_1 = require("@electron/osx-sign");
+  // With: let osx_sign_1; (will be loaded dynamically)
+  content = content.replace(
+    /const osx_sign_1 = require\("@electron\/osx-sign"\);?/g,
+    'let osx_sign_1;'
+  );
+  
+  // Find the main function and add dynamic import at the start
+  // The main function is async, so we can use await
+  if (content.includes('async function main(')) {
+    // Add dynamic import at the start of main function
+    // The import returns { sign, SignOptions }, so we need to extract sign
+    content = content.replace(
+      /(async function main\([^)]*\) \{)/,
+      `$1\n    if (!osx_sign_1) {\n        const osxSignModule = await import("@electron/osx-sign");\n        osx_sign_1 = osxSignModule;\n    }`
+    );
+  }
+  
+  // The usage (0, osx_sign_1.sign) is fine - it's just calling the function
+  // No need to change it since osx_sign_1 will have the sign property
+  
+  fs.writeFileSync(filePath, content, 'utf8');
+  console.error('✓ Fixed sign.js to use dynamic import for @electron/osx-sign');
+} else {
+  console.error('Could not find require("@electron/osx-sign") in sign.js');
+}
+SIGNFIX
+        echo "Warning: Failed to patch sign.js, trying to continue anyway..." >&2
+      }
+    fi
+
     DEBUG="electron-osx-sign*" node vscode/build/darwin/sign.js "$( pwd )"
     
     # Verify code signing succeeded

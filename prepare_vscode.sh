@@ -514,9 +514,30 @@ if (content.includes('vsce.listFiles({ cwd: extensionPath')) {
 // Match the actual pattern: const webpackRootConfig = require(path_1.default.join(extensionPath, webpackConfigFileName)).default;
 if (content.includes('const webpackRootConfig = require') && content.includes('webpackConfigFileName')) {
   // Remove the synchronous require block - match more flexibly
-  const requirePattern = /if\s*\(packageJsonConfig\.dependencies\)\s*\{[\s\S]*?const\s+webpackRootConfig\s*=\s*require\([^)]+webpackConfigFileName[^)]+\)\.default;[\s\S]*?for\s*\(const\s+key\s+in\s+webpackRootConfig\.externals\)\s*\{[\s\S]*?packagedDependencies\.push\(key\);[\s\S]*?\}[\s\S]*?\}[\s\S]*?\}/;
-  if (requirePattern.test(content)) {
-    content = content.replace(requirePattern, '// Webpack config will be loaded asynchronously inside the promise chain');
+  // Pattern: if (packageJsonConfig.dependencies) { ... const webpackRootConfig = require(...).default; ... }
+  // Try multiple patterns to catch all variations
+  const patterns = [
+    /if\s*\(packageJsonConfig\.dependencies\)\s*\{[\s\S]*?const\s+webpackRootConfig\s*=\s*require\([^)]+webpackConfigFileName[^)]+\)\.default;[\s\S]*?for\s*\(const\s+key\s+in\s+webpackRootConfig\.externals\)\s*\{[\s\S]*?packagedDependencies\.push\(key\);[\s\S]*?\}[\s\S]*?\}[\s\S]*?\}/,
+    /if\s*\(packageJsonConfig\.dependencies\)\s*\{[\s\S]*?const\s+webpackRootConfig\s*=\s*require\(path_1\.default\.join\(extensionPath,\s*webpackConfigFileName\)\)\.default;[\s\S]*?for\s*\(const\s+key\s+in\s+webpackRootConfig\.externals\)\s*\{[\s\S]*?packagedDependencies\.push\(key\);[\s\S]*?\}[\s\S]*?\}[\s\S]*?\}/,
+    /const\s+webpackRootConfig\s*=\s*require\(path_1\.default\.join\(extensionPath,\s*webpackConfigFileName\)\)\.default;[\s\S]*?for\s*\(const\s+key\s+in\s+webpackRootConfig\.externals\)\s*\{[\s\S]*?packagedDependencies\.push\(key\);[\s\S]*?\}/
+  ];
+  
+  let replaced = false;
+  for (const pattern of patterns) {
+    if (pattern.test(content)) {
+      content = content.replace(pattern, '// Webpack config will be loaded asynchronously inside the promise chain');
+      replaced = true;
+      break;
+    }
+  }
+  
+  // If no pattern matched, try a simpler approach - just remove the require line
+  if (!replaced && content.includes('const webpackRootConfig = require(path_1.default.join(extensionPath, webpackConfigFileName))')) {
+    // Find and remove just the require line and the for loop that follows
+    content = content.replace(
+      /if\s*\(packageJsonConfig\.dependencies\)\s*\{[\s\S]{0,500}?const\s+webpackRootConfig\s*=\s*require\(path_1\.default\.join\(extensionPath,\s*webpackConfigFileName\)\)\.default;[\s\S]{0,500}?for\s*\(const\s+key\s+in\s+webpackRootConfig\.externals\)\s*\{[\s\S]{0,500}?packagedDependencies\.push\(key\);[\s\S]{0,500}?\}[\s\S]{0,500}?\}[\s\S]{0,500}?\}/,
+      '// Webpack config will be loaded asynchronously inside the promise chain'
+    );
   }
   
   // Add it inside the async then() callback, right after const files

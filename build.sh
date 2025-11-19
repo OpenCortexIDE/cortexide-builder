@@ -1449,6 +1449,55 @@ EOFPATCH2
     if [[ "${CI_BUILD}" == "no" ]]; then
       . ../build/windows/rtf/make.sh
 
+      # CRITICAL FIX: Make rcedit optional when wine is not available
+      # rcedit requires wine on Linux, but wine may not be installed
+      if [[ -f "build/gulpfile.vscode.js" ]]; then
+        echo "Patching gulpfile.vscode.js to make rcedit optional when wine is unavailable..." >&2
+        node << 'RCEDITFIX' || {
+const fs = require('fs');
+const filePath = 'build/gulpfile.vscode.js';
+let content = fs.readFileSync(filePath, 'utf8');
+
+if (content.includes('// RCEDIT_WINE_FIX')) {
+  console.error('gulpfile.vscode.js already patched for rcedit/wine');
+  process.exit(0);
+}
+
+const lines = content.split('\n');
+let modified = false;
+
+for (let i = 0; i < lines.length; i++) {
+  if (lines[i].includes('await rcedit(path.join(cwd, dep), {')) {
+    const indent = lines[i].match(/^\s*/)[0];
+    lines[i] = `${indent}try {\n${lines[i]}`;
+    
+    let rceditCloseLine = -1;
+    for (let j = i + 1; j < lines.length && j <= i + 15; j++) {
+      if (lines[j].includes('});') && lines[j].match(/^\s*/)[0].length === indent.length) {
+        rceditCloseLine = j;
+        break;
+      }
+    }
+    
+    if (rceditCloseLine >= 0) {
+      lines[rceditCloseLine] = `${lines[rceditCloseLine]}\n${indent}} catch (err) {\n${indent}  // RCEDIT_WINE_FIX: rcedit requires wine on Linux, skip if not available\n${indent}  if (err.message && (err.message.includes('wine') || err.message.includes('ENOENT') || err.code === 'ENOENT')) {\n${indent}    console.warn('Skipping rcedit (wine not available):', err.message);\n${indent}  } else {\n${indent}    throw err;\n${indent}  }\n${indent}}`;
+      modified = true;
+      console.error(`✓ Wrapped rcedit in try-catch at line ${i + 1}`);
+      break;
+    }
+  }
+}
+
+if (modified) {
+  content = lines.join('\n');
+  fs.writeFileSync(filePath, content, 'utf8');
+  console.error('✓ Successfully patched gulpfile.vscode.js to make rcedit optional');
+}
+RCEDITFIX
+          echo "Warning: Failed to patch gulpfile.vscode.js for rcedit, continuing anyway..." >&2
+        }
+      fi
+
       # CRITICAL FIX: Skip AppX building if win32ContextMenu is missing
       # AppX packages are for Windows Store and require win32ContextMenu in product.json
       if [[ -f "build/gulpfile.vscode.js" ]]; then

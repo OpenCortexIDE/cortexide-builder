@@ -808,6 +808,81 @@ PREBUILDPATCH
       fi
     else
       echo "No require(webpackConfigPath) found - patch may already be applied." >&2
+      echo "Ensuring .mjs copies for ESM configs..." >&2
+      PRE_BUILD_PATCH_SCRIPT=$(mktemp /tmp/fix-extensions-pre-build-ensure.XXXXXX.js) || {
+        PRE_BUILD_PATCH_SCRIPT="/tmp/fix-extensions-pre-build-ensure.js"
+      }
+      cp "build/lib/extensions.js" "build/lib/extensions.js.bak" 2>/dev/null || true
+      cat > "$PRE_BUILD_PATCH_SCRIPT" << 'PREBUILDPATCH_FORCE'
+const fs = require('fs');
+const filePath = process.argv[2];
+let content = fs.readFileSync(filePath, 'utf8');
+
+// Ensure fromLocalWebpack is async and has imports
+if (content.includes('function fromLocalWebpack(') && !content.includes('async function fromLocalWebpack')) {
+  content = content.replace(/function\s+fromLocalWebpack\(/g, 'async function fromLocalWebpack(');
+}
+if (content.includes('function fromLocalWebpack')) {
+  const funcStart = content.indexOf('async function fromLocalWebpack');
+  if (funcStart !== -1) {
+    const afterBrace = content.indexOf('{', funcStart) + 1;
+    const before = content.substring(0, afterBrace);
+    const after = content.substring(afterBrace);
+    if (!before.includes('pathToFileURL')) {
+      const firstLineMatch = after.match(/^(\s*)/);
+      const indent = firstLineMatch ? firstLineMatch[1] : '    ';
+      content = before + '\n' + indent + 'const { pathToFileURL } = require("url");\n' + indent + 'const path = require("path");' + after;
+    }
+  }
+}
+
+const rootImportPattern = /const\s+webpackRootConfig\s*=\s*\(await\s+import\([^;]+\)\)\.default;/g;
+const rootReplacement = `let rootConfigPath = path_1.default.join(extensionPath, webpackConfigFileName);
+        if (rootConfigPath.endsWith('.js')) {
+            const rootMjsPath = rootConfigPath.replace(/\.js$/, '.mjs');
+            try {
+                const srcStat = fs_1.default.statSync(rootConfigPath);
+                const destStat = fs_1.default.existsSync(rootMjsPath) ? fs_1.default.statSync(rootMjsPath) : undefined;
+                if (!destStat || srcStat.mtimeMs > destStat.mtimeMs) {
+                    fs_1.default.copyFileSync(rootConfigPath, rootMjsPath);
+                }
+            } catch (error) {
+                // ignore copy errors
+            }
+            rootConfigPath = rootMjsPath;
+        }
+        const webpackRootConfig = (await import(pathToFileURL(path_1.default.resolve(rootConfigPath)).href)).default;`;
+content = content.replace(rootImportPattern, rootReplacement);
+
+const exportedImportPattern = /const\s+exportedConfig\s*=\s*\(await\s+import\([^;]+\)\)\.default;/g;
+const exportedReplacement = `let configToLoad = webpackConfigPath;
+            if (configToLoad.endsWith('.js')) {
+                const mjsPath = configToLoad.replace(/\.js$/, '.mjs');
+                try {
+                    const srcStat = fs_1.default.statSync(configToLoad);
+                    const destStat = fs_1.default.existsSync(mjsPath) ? fs_1.default.statSync(mjsPath) : undefined;
+                    if (!destStat || srcStat.mtimeMs > destStat.mtimeMs) {
+                        fs_1.default.copyFileSync(configToLoad, mjsPath);
+                    }
+                } catch (error) {
+                    // ignore copy errors
+                }
+                configToLoad = mjsPath;
+            }
+            const exportedConfig = (await import(pathToFileURL(path_1.default.resolve(configToLoad)).href)).default;`;
+content = content.replace(exportedImportPattern, exportedReplacement);
+
+fs.writeFileSync(filePath, content, 'utf8');
+console.log('Ensured .mjs copies for ESM configs');
+PREBUILDPATCH_FORCE
+
+      node "$PRE_BUILD_PATCH_SCRIPT" "build/lib/extensions.js" 2>&1 || {
+        echo "Warning: ensure patch failed. Restoring backup..." >&2
+        if [[ -f "build/lib/extensions.js.bak" ]]; then
+          mv "build/lib/extensions.js.bak" "build/lib/extensions.js" 2>/dev/null || true
+        fi
+      }
+      rm -f "$PRE_BUILD_PATCH_SCRIPT"
     fi
   fi
   

@@ -488,7 +488,7 @@ EOFPATCH
         echo "extensions.js doesn't contain webpack config patterns. Skipping patch." >&2
       fi
     else
-      echo "extensions.js already patched (pathToFileURL found). Skipping." >&2
+      echo "extensions.js already fully patched (pathToFileURL found and no require patterns). Skipping." >&2
     fi
   else
     echo "Warning: build/lib/extensions.js not found after compilation." >&2

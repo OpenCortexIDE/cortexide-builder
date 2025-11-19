@@ -39,54 +39,44 @@ if (content.includes('// RCEDIT_WINE_FIX')) {
   process.exit(0);
 }
 
-// Find the rcedit usage and wrap it in try-catch
-const lines = content.split('\n');
-let modified = false;
+    // Find the rcedit usage and wrap it in try-catch
+    const lines = content.split('\n');
+    let modified = false;
 
-for (let i = 0; i < lines.length; i++) {
-  // Find: await rcedit(path.join(cwd, dep), {
-  if (lines[i].includes('await rcedit(path.join(cwd, dep), {')) {
-    // Check if already wrapped
-    if (lines[i - 1] && lines[i - 1].includes('try {')) {
-      console.error('rcedit already wrapped in try-catch');
-      break;
-    }
-    
-    // Find the closing of this rcedit call (should be a few lines later)
-    // Wrap the entire Promise.all block in try-catch
-    // Look backwards for the Promise.all line
-    let promiseAllLine = -1;
-    for (let j = i; j >= 0 && j >= i - 5; j--) {
-      if (lines[j].includes('Promise.all(deps.map')) {
-        promiseAllLine = j;
-        break;
-      }
-    }
-    
-    if (promiseAllLine >= 0) {
-      // Add try-catch around Promise.all
-      const indent = lines[promiseAllLine].match(/^\s*/)[0];
-      lines[promiseAllLine] = `${indent}// RCEDIT_WINE_FIX: Make rcedit optional when wine is unavailable\n${indent}try {\n${lines[promiseAllLine]}`;
-      
-      // Find the closing of Promise.all (should be after the rcedit call)
-      let closingLine = -1;
-      for (let j = i; j < lines.length && j <= i + 15; j++) {
-        if (lines[j].includes('}));') && lines[j].match(/^\s*/)[0].length === indent.length) {
-          closingLine = j;
+    for (let i = 0; i < lines.length; i++) {
+      // Find: await rcedit(path.join(cwd, dep), {
+      if (lines[i].includes('await rcedit(path.join(cwd, dep), {')) {
+        // Check if already wrapped
+        if (content.includes('// RCEDIT_WINE_FIX')) {
+          console.error('rcedit already wrapped in try-catch');
+          break;
+        }
+        
+        // Wrap the rcedit call itself in try-catch
+        // The rcedit call is inside a Promise.all map function
+        const indent = lines[i].match(/^\s*/)[0];
+        
+        // Insert try before rcedit
+        lines[i] = `${indent}try {\n${lines[i]}`;
+        
+        // Find the closing of rcedit call (should be a few lines later with });
+        let rceditCloseLine = -1;
+        for (let j = i + 1; j < lines.length && j <= i + 15; j++) {
+          if (lines[j].includes('});') && lines[j].match(/^\s*/)[0].length === indent.length) {
+            rceditCloseLine = j;
+            break;
+          }
+        }
+        
+        if (rceditCloseLine >= 0) {
+          // Add catch block after rcedit closing
+          lines[rceditCloseLine] = `${lines[rceditCloseLine]}\n${indent}} catch (err) {\n${indent}  // RCEDIT_WINE_FIX: rcedit requires wine on Linux, skip if not available\n${indent}  if (err.message && (err.message.includes('wine') || err.message.includes('ENOENT') || err.code === 'ENOENT')) {\n${indent}    console.warn('Skipping rcedit (wine not available):', err.message);\n${indent}  } else {\n${indent}    throw err;\n${indent}  }\n${indent}}`;
+          modified = true;
+          console.error(`✓ Wrapped rcedit in try-catch at line ${i + 1}`);
           break;
         }
       }
-      
-      if (closingLine >= 0) {
-        // Add catch block after the closing
-        lines[closingLine] = `${lines[closingLine]}\n${indent}} catch (err) {\n${indent}  // rcedit requires wine on Linux, skip if not available\n${indent}  if (err.message && err.message.includes('wine')) {\n${indent}    console.warn('Skipping rcedit (wine not available):', err.message);\n${indent}  } else {\n${indent}    throw err;\n${indent}  }\n${indent}}`;
-        modified = true;
-        console.error(`✓ Wrapped rcedit in try-catch at line ${promiseAllLine + 1}`);
-        break;
-      }
     }
-  }
-}
 
 if (modified) {
   content = lines.join('\n');

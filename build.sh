@@ -120,8 +120,10 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   # build/lib/extensions.js is created during compile-build-without-mangling
   echo "Fixing extension webpack config loader for ES modules..."
   if [[ -f "build/lib/extensions.js" ]]; then
-    # Check if it needs patching (has require for webpack config)
-    if grep -q "require.*webpackConfigFileName\|require.*webpackConfigPath" "build/lib/extensions.js" 2>/dev/null || grep -q "const webpackRootConfig = require" "build/lib/extensions.js" 2>/dev/null; then
+    # Check if it needs patching (has require for webpack config or flatMap)
+    # Always try to patch if file exists and hasn't been patched yet
+    if ! grep -q "pathToFileURL" "build/lib/extensions.js" 2>/dev/null; then
+      if grep -q "require.*webpackConfig\|flatMap.*webpackConfigPath\|require(webpackConfigPath)" "build/lib/extensions.js" 2>/dev/null; then
       echo "Patching extensions.js to use dynamic import for webpack configs..." >&2
       # Create backup
       cp "build/lib/extensions.js" "build/lib/extensions.js.bak" 2>/dev/null || true
@@ -226,25 +228,49 @@ if (content.includes('const webpackRootConfig = require') && content.includes('w
 let patchedFlatMap = false;
 let patchedRequire = false;
 
-// First replace flatMap if it exists
-if (content.includes('flatMap(webpackConfigPath') || content.includes('webpackConfigLocations.flatMap')) {
-  const flatMapPattern = /const\s+webpackStreams\s*=\s*webpackConfigLocations\.flatMap\(webpackConfigPath\s*=>\s*\{/g;
-  if (flatMapPattern.test(content)) {
-    content = content.replace(flatMapPattern, 'const webpackStreams = await Promise.all(webpackConfigLocations.map(async webpackConfigPath => {');
-    patchedFlatMap = true;
+// First replace flatMap if it exists - try multiple patterns
+if (content.includes('flatMap')) {
+  const flatMapPatterns = [
+    /const\s+webpackStreams\s*=\s*webpackConfigLocations\.flatMap\(webpackConfigPath\s*=>\s*\{/g,
+    /webpackConfigLocations\.flatMap\(webpackConfigPath\s*=>\s*\{/g,
+    /\.flatMap\(webpackConfigPath\s*=>\s*\{/g
+  ];
+  
+  for (const pattern of flatMapPatterns) {
+    if (pattern.test(content)) {
+      content = content.replace(pattern, (match) => {
+        if (match.includes('const webpackStreams')) {
+          return 'const webpackStreams = await Promise.all(webpackConfigLocations.map(async webpackConfigPath => {';
+        } else if (match.includes('webpackConfigLocations')) {
+          return 'webpackConfigLocations.map(async webpackConfigPath => {';
+        } else {
+          return '.map(async webpackConfigPath => {';
+        }
+      });
+      patchedFlatMap = true;
+      break;
+    }
   }
 }
 
-// Then replace the require statement
-if (content.includes('require(webpackConfigPath)')) {
-  const requirePattern = /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default;/g;
-  if (requirePattern.test(content)) {
-    content = content.replace(requirePattern, `const { pathToFileURL } = require("url");
+// Then replace the require statement - try multiple patterns
+if (content.includes('require(webpackConfigPath)') || content.includes('require(webpackConfigPath).default')) {
+  const requirePatterns = [
+    /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default;/g,
+    /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default\s*;/g,
+    /exportedConfig\s*=\s*require\(webpackConfigPath\)\.default;/g
+  ];
+  
+  for (const pattern of requirePatterns) {
+    if (pattern.test(content)) {
+      content = content.replace(pattern, `const { pathToFileURL } = require("url");
             const path = require("path");
             let exportedConfig;
             const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;
             exportedConfig = (await import(configUrl)).default;`);
-    patchedRequire = true;
+      patchedRequire = true;
+      break;
+    }
   }
 }
 

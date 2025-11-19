@@ -110,7 +110,59 @@ for i in {1..5}; do # try 5 times
 done
 
 if [[ -z "${VSCODE_SKIP_SETUPENV}" ]]; then
+  # CRITICAL FIX: setup-env.sh doesn't respect --skip-sysroot flag
+  # For armhf/arm64, we need to skip sysroot download entirely
   if [[ -n "${VSCODE_SKIP_SYSROOT}" ]]; then
+    # Patch setup-env.sh to skip sysroot downloads when --skip-sysroot is passed
+    if [[ -f "build/azure-pipelines/linux/setup-env.sh" ]]; then
+      echo "Patching setup-env.sh to skip sysroot downloads for ${VSCODE_ARCH}..." >&2
+      # Check if already patched
+      if ! grep -q "# SKIP_SYSROOT_PATCH" "build/azure-pipelines/linux/setup-env.sh" 2>/dev/null; then
+        # Use Node.js for more reliable patching
+        node << 'SETUPENVFIX' || {
+const fs = require('fs');
+const filePath = 'build/azure-pipelines/linux/setup-env.sh';
+let content = fs.readFileSync(filePath, 'utf8');
+
+// Check if already patched
+if (content.includes('# SKIP_SYSROOT_PATCH')) {
+  console.error('setup-env.sh already patched');
+  process.exit(0);
+}
+
+// Wrap sysroot download sections (lines 12-24) in a conditional
+const lines = content.split('\n');
+let newLines = [];
+
+for (let i = 0; i < lines.length; i++) {
+  // Before sysroot download section (line 12)
+  if (i === 11 && lines[i].includes('export VSCODE_CLIENT_SYSROOT_DIR')) {
+    newLines.push('# SKIP_SYSROOT_PATCH');
+    newLines.push('if [[ "$1" != "--skip-sysroot" ]] && [[ -z "${VSCODE_SKIP_SYSROOT}" ]]; then');
+  }
+  
+  newLines.push(lines[i]);
+  
+  // After sysroot download section (line 24), close the if
+  if (i === 23 && lines[i].includes('VSCODE_SYSROOT_PREFIX')) {
+    newLines.push('fi');
+  }
+}
+
+content = newLines.join('\n');
+fs.writeFileSync(filePath, content, 'utf8');
+console.error('✓ Successfully patched setup-env.sh to skip sysroot downloads');
+SETUPENVFIX
+          echo "Warning: Failed to patch setup-env.sh, trying alternative method..." >&2
+          # Fallback: simple sed approach
+          if [[ "$(uname)" == "Darwin" ]]; then
+            sed -i '' '12,24s/^/# SKIP_SYSROOT: /' "build/azure-pipelines/linux/setup-env.sh" 2>/dev/null || true
+          else
+            sed -i '12,24s/^/# SKIP_SYSROOT: /' "build/azure-pipelines/linux/setup-env.sh" 2>/dev/null || true
+          fi
+        }
+      fi
+    fi
     source ./build/azure-pipelines/linux/setup-env.sh --skip-sysroot
   else
     source ./build/azure-pipelines/linux/setup-env.sh

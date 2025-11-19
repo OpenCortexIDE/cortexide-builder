@@ -560,22 +560,64 @@ if (content.includes('flatMap')) {
   }
 }
 
-if (content.includes('require(webpackConfigPath)') || content.includes('require(webpackConfigPath).default')) {
-  const requirePatterns = [
-    /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default;/g,
-    /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default\s*;/g,
-    /exportedConfig\s*=\s*require\(webpackConfigPath\)\.default;/g
-  ];
-  for (const pattern of requirePatterns) {
-    if (pattern.test(content)) {
-      content = content.replace(pattern, `const { pathToFileURL } = require("url");
-            const path = require("path");
-            let exportedConfig;
-            const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;
-            exportedConfig = (await import(configUrl)).default;`);
-      patchedRequire = true;
-      break;
+// AGGRESSIVE: Replace ANY require(webpackConfigPath)
+if (content.includes('require(webpackConfigPath)')) {
+  // Ensure imports exist
+  if (!content.includes('const { pathToFileURL } = require("url")')) {
+    const webpackStreamsIndex = content.indexOf('const webpackStreams');
+    if (webpackStreamsIndex !== -1) {
+      let functionStart = webpackStreamsIndex;
+      for (let i = webpackStreamsIndex - 1; i >= 0; i--) {
+        if (content[i] === '{' || (content.substring(i, i + 3) === '=> ')) {
+          functionStart = i + 1;
+          break;
+        }
+      }
+      const before = content.substring(0, functionStart);
+      const after = content.substring(functionStart);
+      if (!before.includes('pathToFileURL')) {
+        content = before + '            const { pathToFileURL } = require("url");\n            const path = require("path");\n' + after;
+      }
     }
+  }
+  
+  // Replace ALL patterns
+  const patterns = [
+    { pattern: /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default\s*;/g, replacement: `const { pathToFileURL } = require("url");\n            const path = require("path");\n            let exportedConfig;\n            const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;\n            exportedConfig = (await import(configUrl)).default;` },
+    { pattern: /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default;/g, replacement: `const { pathToFileURL } = require("url");\n            const path = require("path");\n            let exportedConfig;\n            const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;\n            exportedConfig = (await import(configUrl)).default;` },
+    { pattern: /exportedConfig\s*=\s*require\(webpackConfigPath\)\.default\s*;/g, replacement: `const { pathToFileURL } = require("url");\n            const path = require("path");\n            exportedConfig = (await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default;` },
+    { pattern: /require\(webpackConfigPath\)\.default/g, replacement: `(await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default` }
+  ];
+  
+  for (const { pattern, replacement } of patterns) {
+    if (pattern.test(content)) {
+      content = content.replace(pattern, replacement);
+      patchedRequire = true;
+    }
+  }
+  
+  // Line-by-line fallback
+  if (!patchedRequire && content.includes('require(webpackConfigPath)')) {
+    const lines = content.split('\n');
+    const result = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.includes('require(webpackConfigPath)')) {
+        if (line.includes('const exportedConfig')) {
+          result.push('            const { pathToFileURL } = require("url");');
+          result.push('            const path = require("path");');
+          result.push('            let exportedConfig;');
+          result.push('            const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;');
+          result.push('            exportedConfig = (await import(configUrl)).default;');
+        } else {
+          result.push(line.replace(/require\(webpackConfigPath\)\.default/g, '(await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default'));
+        }
+        patchedRequire = true;
+      } else {
+        result.push(line);
+      }
+    }
+    content = result.join('\n');
   }
 }
 

@@ -224,8 +224,8 @@ if (content.includes('const webpackRootConfig = require') && content.includes('w
 }
 
 // Fix 3: Replace require() with dynamic import inside webpackStreams and make it async
-// Check for the require pattern first
-if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
+// Check for both flatMap and require patterns
+if (content.includes('flatMap(webpackConfigPath') || content.includes('const exportedConfig = require(webpackConfigPath)')) {
   // First replace flatMap if it exists
   if (content.includes('flatMap(webpackConfigPath')) {
     content = content.replace(
@@ -246,8 +246,9 @@ if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
             exportedConfig = (await import(configUrl)).default;`
     );
   }
-    
-    if (content.includes('event_stream_1.default.merge(...webpackStreams')) {
+  
+  // Fix the closing bracket and flattening
+  if (content.includes('event_stream_1.default.merge(...webpackStreams')) {
       const lines = content.split('\n');
       let result = [];
       let foundMapStart = false;

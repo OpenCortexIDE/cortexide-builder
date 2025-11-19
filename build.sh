@@ -116,6 +116,202 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
     exit 1
   fi
   
+  # Fix extension webpack config loading for ES modules AFTER compilation
+  # build/lib/extensions.js is created during compile-build-without-mangling
+  echo "Fixing extension webpack config loader for ES modules..."
+  if [[ -f "build/lib/extensions.js" ]]; then
+    # Check if it needs patching (has require for webpack config)
+    if grep -q "require.*webpackConfigFileName\|require.*webpackConfigPath" "build/lib/extensions.js" 2>/dev/null || grep -q "const webpackRootConfig = require" "build/lib/extensions.js" 2>/dev/null; then
+      echo "Patching extensions.js to use dynamic import for webpack configs..." >&2
+      # Create backup
+      cp "build/lib/extensions.js" "build/lib/extensions.js.bak" 2>/dev/null || true
+      
+      # Create comprehensive patch script
+      cat > /tmp/fix-extension-webpack-loader.js << 'EOFPATCH'
+const fs = require('fs');
+
+const filePath = process.argv[2];
+let content = fs.readFileSync(filePath, 'utf8');
+
+// Fix 1: Make the then() callback async FIRST
+if (content.includes('vsce.listFiles({ cwd: extensionPath')) {
+  if (!content.includes('.then(async')) {
+    content = content.replace(
+      /\.then\(\(fileNames\) => \{/g,
+      '.then(async (fileNames) => {'
+    );
+    content = content.replace(
+      /\.then\(fileNames => \{/g,
+      '.then(async (fileNames) => {'
+    );
+  }
+}
+
+// Fix 2: Remove the synchronous require for webpackRootConfig and move it inside the async callback
+if (content.includes('const webpackRootConfig = require') && content.includes('webpackConfigFileName')) {
+  // Try multiple patterns to catch all variations
+  const patterns = [
+    /if\s*\(packageJsonConfig\.dependencies\)\s*\{[\s\S]*?const\s+webpackRootConfig\s*=\s*require\([^)]+webpackConfigFileName[^)]+\)\.default;[\s\S]*?for\s*\(const\s+key\s+in\s+webpackRootConfig\.externals\)\s*\{[\s\S]*?packagedDependencies\.push\(key\);[\s\S]*?\}[\s\S]*?\}[\s\S]*?\}/,
+    /if\s*\(packageJsonConfig\.dependencies\)\s*\{[\s\S]*?const\s+webpackRootConfig\s*=\s*require\(path_1\.default\.join\(extensionPath,\s*webpackConfigFileName\)\)\.default;[\s\S]*?for\s*\(const\s+key\s+in\s+webpackRootConfig\.externals\)\s*\{[\s\S]*?packagedDependencies\.push\(key\);[\s\S]*?\}[\s\S]*?\}[\s\S]*?\}/,
+    /const\s+webpackRootConfig\s*=\s*require\(path_1\.default\.join\(extensionPath,\s*webpackConfigFileName\)\)\.default;[\s\S]*?for\s*\(const\s+key\s+in\s+webpackRootConfig\.externals\)\s*\{[\s\S]*?packagedDependencies\.push\(key\);[\s\S]*?\}/
+  ];
+  
+  let replaced = false;
+  for (const pattern of patterns) {
+    if (pattern.test(content)) {
+      content = content.replace(pattern, '// Webpack config will be loaded asynchronously inside the promise chain');
+      replaced = true;
+      break;
+    }
+  }
+  
+  // If no pattern matched, use line-by-line parsing
+  if (!replaced) {
+    const lines = content.split('\n');
+    let result = [];
+    let skipUntilClose = false;
+    let braceCount = 0;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      if (line.includes('if (packageJsonConfig.dependencies) {')) {
+        skipUntilClose = true;
+        braceCount = 1;
+        result.push('// Webpack config will be loaded asynchronously inside the promise chain');
+        continue;
+      }
+      
+      if (skipUntilClose) {
+        braceCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+        if (braceCount === 0) {
+          skipUntilClose = false;
+        }
+        continue;
+      }
+      
+      result.push(line);
+    }
+    content = result.join('\n');
+  }
+  
+  // Add it inside the async then() callback, right after const files
+  if (content.includes('const files = fileNames')) {
+    content = content.replace(
+      /(const files = fileNames[\s\S]*?\);)/,
+      `$1
+        // Load webpack config as ES module
+        if (packageJsonConfig.dependencies) {
+            try {
+                const { pathToFileURL } = require('url');
+                const path = require('path');
+                let webpackConfigPath = path_1.default.resolve(extensionPath, webpackConfigFileName);
+                let webpackConfigUrl = pathToFileURL(webpackConfigPath).href;
+                const webpackRootConfig = (await import(webpackConfigUrl)).default;
+                if (webpackRootConfig && webpackRootConfig.externals) {
+                    for (const key in webpackRootConfig.externals) {
+                        if (key in packageJsonConfig.dependencies) {
+                            packagedDependencies.push(key);
+                        }
+                    }
+                }
+            } catch (err) {
+                // Silently skip - this is optional
+            }
+        }`
+    );
+  }
+}
+
+// Fix 3: Replace require() with dynamic import inside webpackStreams and make it async
+if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
+  if (content.includes('const webpackStreams = webpackConfigLocations.flatMap(webpackConfigPath => {')) {
+    content = content.replace(
+      /const webpackStreams = webpackConfigLocations\.flatMap\(webpackConfigPath => \{/,
+      'const webpackStreams = await Promise.all(webpackConfigLocations.map(async webpackConfigPath => {'
+    );
+    
+    content = content.replace(
+      /const exportedConfig = require\(webpackConfigPath\)\.default;/g,
+      `const { pathToFileURL } = require("url");
+            const path = require("path");
+            let exportedConfig;
+            const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;
+            exportedConfig = (await import(configUrl)).default;`
+    );
+    
+    if (content.includes('event_stream_1.default.merge(...webpackStreams')) {
+      const lines = content.split('\n');
+      let result = [];
+      let foundMapStart = false;
+      let braceCount = 0;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        if (line.includes('const webpackStreams = await Promise.all(webpackConfigLocations.map(async')) {
+          foundMapStart = true;
+          braceCount = (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+          result.push(line);
+          continue;
+        }
+        
+        if (foundMapStart) {
+          braceCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+          
+          if (braceCount === 0 && line.includes('}')) {
+            if (i + 1 < lines.length && lines[i + 1].includes('event_stream_1.default.merge(...webpackStreams')) {
+              result.push('}));');
+              result.push('        const flattenedWebpackStreams = [].concat(...webpackStreams);');
+              foundMapStart = false;
+              continue;
+            }
+          }
+        }
+        
+        result.push(line);
+      }
+      content = result.join('\n');
+      
+      content = content.replace(
+        /event_stream_1\.default\.merge\(\.\.\.webpackStreams/g,
+        'event_stream_1.default.merge(...flattenedWebpackStreams'
+      );
+    }
+  }
+}
+
+fs.writeFileSync(filePath, content, 'utf8');
+console.log('Successfully patched extensions.js for ES module webpack configs');
+EOFPATCH
+      
+      # Run the patch script
+      if node /tmp/fix-extension-webpack-loader.js "build/lib/extensions.js" 2>&1; then
+        # Verify the patch was applied
+        if grep -q "pathToFileURL" "build/lib/extensions.js" 2>/dev/null; then
+          echo "Successfully patched extensions.js for ES module webpack configs." >&2
+        else
+          echo "Warning: Patch script ran but pathToFileURL not found. Patch may have failed." >&2
+          if [[ -f "build/lib/extensions.js.bak" ]]; then
+            mv "build/lib/extensions.js.bak" "build/lib/extensions.js" 2>/dev/null || true
+            echo "Backup restored." >&2
+          fi
+        fi
+      else
+        echo "Error: Failed to patch extensions.js. Restoring backup..." >&2
+        if [[ -f "build/lib/extensions.js.bak" ]]; then
+          mv "build/lib/extensions.js.bak" "build/lib/extensions.js" 2>/dev/null || true
+          echo "Backup restored. Build may fail with SyntaxError." >&2
+        fi
+      fi
+      rm -f /tmp/fix-extension-webpack-loader.js
+    else
+      echo "extensions.js already patched or doesn't need patching." >&2
+    fi
+  else
+    echo "Warning: build/lib/extensions.js not found after compilation." >&2
+  fi
+  
   echo "Compiling extension media..."
   if ! npm run gulp compile-extension-media; then
     echo "Error: compile-extension-media failed. Check for:" >&2

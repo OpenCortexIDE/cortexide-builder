@@ -528,7 +528,10 @@ if (content.includes('const webpackRootConfig = require(path_1.default.join(exte
         // Load webpack config as ES module
         if (packageJsonConfig.dependencies) {
             try {
-                const webpackRootConfig = (await import(path_1.default.join(extensionPath, webpackConfigFileName).replace(/\\\\\\\\/g, "/"))).default;
+                // Use file:// URL to ensure Node.js treats it as an ES module
+                const webpackConfigPath = path_1.default.join(extensionPath, webpackConfigFileName);
+                const webpackConfigUrl = 'file://' + webpackConfigPath.replace(/\\\\/g, '/');
+                const webpackRootConfig = (await import(webpackConfigUrl)).default;
                 for (const key in webpackRootConfig.externals) {
                     if (key in packageJsonConfig.dependencies) {
                         packagedDependencies.push(key);
@@ -552,10 +555,10 @@ if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
       'const webpackStreams = await Promise.all(webpackConfigLocations.map(async webpackConfigPath => {'
     );
     
-    // Replace require with dynamic import
+    // Replace require with dynamic import using file:// URL
     content = content.replace(
       /const exportedConfig = require\(webpackConfigPath\)\.default;/g,
-      'const exportedConfig = (await import(webpackConfigPath.replace(/\\\\\\\\/g, "/"))).default;'
+      'const exportedConfig = (await import("file://" + webpackConfigPath.replace(/\\\\\\\\/g, "/"))).default;'
     );
     
     // Fix the closing bracket - find the pattern: }); followed by event_stream_1.default.merge

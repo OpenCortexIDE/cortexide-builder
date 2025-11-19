@@ -319,27 +319,27 @@ console.log('Successfully patched extensions.js for ES module webpack configs');
 console.log('Patched flatMap:', patchedFlatMap);
 console.log('Patched require:', patchedRequire);
 EOFPATCH
-      
-      # Run the patch script
-      if node /tmp/fix-extension-webpack-loader.js "build/lib/extensions.js" 2>&1; then
-        # Verify the patch was applied
-        if grep -q "pathToFileURL" "build/lib/extensions.js" 2>/dev/null; then
-          echo "Successfully patched extensions.js for ES module webpack configs." >&2
+        
+        # Run the patch script
+        if node /tmp/fix-extension-webpack-loader.js "build/lib/extensions.js" 2>&1; then
+          # Verify the patch was applied
+          if grep -q "pathToFileURL" "build/lib/extensions.js" 2>/dev/null; then
+            echo "Successfully patched extensions.js for ES module webpack configs." >&2
+          else
+            echo "Warning: Patch script ran but pathToFileURL not found. Patch may have failed." >&2
+            if [[ -f "build/lib/extensions.js.bak" ]]; then
+              mv "build/lib/extensions.js.bak" "build/lib/extensions.js" 2>/dev/null || true
+              echo "Backup restored." >&2
+            fi
+          fi
         else
-          echo "Warning: Patch script ran but pathToFileURL not found. Patch may have failed." >&2
+          echo "Error: Failed to patch extensions.js. Restoring backup..." >&2
           if [[ -f "build/lib/extensions.js.bak" ]]; then
             mv "build/lib/extensions.js.bak" "build/lib/extensions.js" 2>/dev/null || true
-            echo "Backup restored." >&2
+            echo "Backup restored. Build may fail with SyntaxError." >&2
           fi
         fi
-      else
-        echo "Error: Failed to patch extensions.js. Restoring backup..." >&2
-        if [[ -f "build/lib/extensions.js.bak" ]]; then
-          mv "build/lib/extensions.js.bak" "build/lib/extensions.js" 2>/dev/null || true
-          echo "Backup restored. Build may fail with SyntaxError." >&2
-        fi
-      fi
-      rm -f /tmp/fix-extension-webpack-loader.js
+        rm -f /tmp/fix-extension-webpack-loader.js
     else
       echo "extensions.js already patched or doesn't need patching." >&2
     fi

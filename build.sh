@@ -330,6 +330,42 @@ if (fromLocalTailPattern.test(content)) {
     return input;`);
 }
 
+// Ensure root-level webpack config imports copy .js -> .mjs before import()
+const rootImportPattern = /let\s+webpackConfigPath\s*=\s*path_1\.default\.resolve\(extensionPath,\s*webpackConfigFileName\);\s+let\s+webpackConfigUrl\s*=\s*pathToFileURL\(webpackConfigPath\)\.href;/g;
+content = content.replace(rootImportPattern, `let webpackConfigPath = path_1.default.resolve(extensionPath, webpackConfigFileName);
+        if (webpackConfigPath.endsWith('.js')) {
+            const webpackConfigMjs = webpackConfigPath.replace(/\\.js$/, '.mjs');
+            try {
+                const srcStat = fs_1.default.statSync(webpackConfigPath);
+                const destStat = fs_1.default.existsSync(webpackConfigMjs) ? fs_1.default.statSync(webpackConfigMjs) : undefined;
+                if (!destStat || srcStat.mtimeMs > destStat.mtimeMs) {
+                    fs_1.default.copyFileSync(webpackConfigPath, webpackConfigMjs);
+                }
+            } catch (error) {
+                // ignore copy errors
+            }
+            webpackConfigPath = webpackConfigMjs;
+        }
+        let webpackConfigUrl = pathToFileURL(webpackConfigPath).href;`);
+
+// Ensure per-extension webpack config imports copy .js -> .mjs before import()
+const exportedImportPattern = /const\s+exportedConfig\s*=\s*\(await\s+import\(pathToFileURL\(path_1\.default\.resolve\(webpackConfigPath\)\)\.href\)\)\.default;/g;
+content = content.replace(exportedImportPattern, `let configToLoad = webpackConfigPath;
+        if (configToLoad.endsWith('.js')) {
+            const configMjsPath = configToLoad.replace(/\\.js$/, '.mjs');
+            try {
+                const srcStat = fs_1.default.statSync(configToLoad);
+                const destStat = fs_1.default.existsSync(configMjsPath) ? fs_1.default.statSync(configMjsPath) : undefined;
+                if (!destStat || srcStat.mtimeMs > destStat.mtimeMs) {
+                    fs_1.default.copyFileSync(configToLoad, configMjsPath);
+                }
+            } catch (error) {
+                // ignore copy errors
+            }
+            configToLoad = configMjsPath;
+        }
+        const exportedConfig = (await import(pathToFileURL(path_1.default.resolve(configToLoad)).href)).default;`);
+
 // Fix 1: Make the then() callback async FIRST
 // The actual code has: vsce.listFiles({ cwd: extensionPath, packageManager: vsce.PackageManager.None, packagedDependencies }).then(fileNames => {
 // We need to match this exact pattern and make it async

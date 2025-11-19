@@ -250,49 +250,44 @@ if (content.includes('require(webpackConfigPath)')) {
   }
 }
 
-// Only do closing bracket fix if we actually patched something
-if (patchedFlatMap || patchedRequire) {
+// Only do closing bracket fix if we actually patched flatMap
+if (patchedFlatMap && content.includes('event_stream_1.default.merge(...webpackStreams')) {
+  const lines = content.split('\n');
+  let result = [];
+  let foundMapStart = false;
+  let braceCount = 0;
   
-  // Fix the closing bracket and flattening
-  if (content.includes('event_stream_1.default.merge(...webpackStreams')) {
-      const lines = content.split('\n');
-      let result = [];
-      let foundMapStart = false;
-      let braceCount = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    if (line.includes('const webpackStreams = await Promise.all(webpackConfigLocations.map(async')) {
+      foundMapStart = true;
+      braceCount = (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+      result.push(line);
+      continue;
+    }
+    
+    if (foundMapStart) {
+      braceCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
       
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        
-        if (line.includes('const webpackStreams = await Promise.all(webpackConfigLocations.map(async')) {
-          foundMapStart = true;
-          braceCount = (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
-          result.push(line);
+      if (braceCount === 0 && line.includes('}')) {
+        if (i + 1 < lines.length && lines[i + 1].includes('event_stream_1.default.merge(...webpackStreams')) {
+          result.push('}));');
+          result.push('        const flattenedWebpackStreams = [].concat(...webpackStreams);');
+          foundMapStart = false;
           continue;
         }
-        
-        if (foundMapStart) {
-          braceCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
-          
-          if (braceCount === 0 && line.includes('}')) {
-            if (i + 1 < lines.length && lines[i + 1].includes('event_stream_1.default.merge(...webpackStreams')) {
-              result.push('}));');
-              result.push('        const flattenedWebpackStreams = [].concat(...webpackStreams);');
-              foundMapStart = false;
-              continue;
-            }
-          }
-        }
-        
-        result.push(line);
       }
-      content = result.join('\n');
-      
-      content = content.replace(
-        /event_stream_1\.default\.merge\(\.\.\.webpackStreams/g,
-        'event_stream_1.default.merge(...flattenedWebpackStreams'
-      );
     }
+    
+    result.push(line);
   }
+  content = result.join('\n');
+  
+  content = content.replace(
+    /event_stream_1\.default\.merge\(\.\.\.webpackStreams/g,
+    'event_stream_1.default.merge(...flattenedWebpackStreams'
+  );
 }
 
 fs.writeFileSync(filePath, content, 'utf8');

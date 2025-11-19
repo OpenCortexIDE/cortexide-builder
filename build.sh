@@ -152,9 +152,19 @@ if (content.includes('vsce.listFiles({ cwd: extensionPath')) {
     }
   }
   
-  // If no pattern matched, try a simpler approach
-  if (!madeAsync && content.includes('.then(fileNames => {')) {
-    content = content.replace(/\.then\(fileNames\s*=>\s*\{/g, '.then(async (fileNames) => {');
+  // If no pattern matched, try a simpler approach - match the exact pattern from the file
+  if (!madeAsync) {
+    // The actual code has: .then(fileNames => {
+    // Try to match it exactly
+    if (content.includes('.then(fileNames => {')) {
+      content = content.replace(/\.then\(fileNames\s*=>\s*\{/g, '.then(async (fileNames) => {');
+      madeAsync = true;
+    }
+    // Also try with PackageManager.None pattern
+    if (!madeAsync && content.includes('PackageManager.None, packagedDependencies').then(fileNames => {')) {
+      content = content.replace(/PackageManager\.None,\s*packagedDependencies\)\.then\(fileNames\s*=>\s*\{/g, 'PackageManager.None, packagedDependencies).then(async (fileNames) => {');
+      madeAsync = true;
+    }
   }
 }
 

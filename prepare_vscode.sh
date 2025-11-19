@@ -655,9 +655,6 @@ EOF
     else
       echo "No webpack config requires detected. Skipping patch." >&2
     fi
-  else
-    echo "extensions.js already patched for ES module webpack configs." >&2
-  fi
 fi
 
 # Handle @vscode/ripgrep download manually after npm install

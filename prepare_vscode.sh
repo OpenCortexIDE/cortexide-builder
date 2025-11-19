@@ -530,10 +530,20 @@ if (content.includes('const webpackRootConfig = require') && content.includes('w
         if (packageJsonConfig.dependencies) {
             try {
                 // Use file:// URL to ensure Node.js treats it as an ES module
+                // Add .mjs extension temporarily or use pathToFileURL with proper handling
                 const { pathToFileURL } = require('url');
-                const webpackConfigPath = path_1.default.resolve(extensionPath, webpackConfigFileName);
-                const webpackConfigUrl = pathToFileURL(webpackConfigPath).href;
-                const webpackRootConfig = (await import(webpackConfigUrl)).default;
+                const path = require('path');
+                let webpackConfigPath = path.resolve(extensionPath, webpackConfigFileName);
+                // Try with .mjs extension first (Node.js will recognize it as ES module)
+                let webpackConfigUrl = pathToFileURL(webpackConfigPath.replace(/\\.js$/, '.mjs')).href;
+                let webpackRootConfig;
+                try {
+                    webpackRootConfig = (await import(webpackConfigUrl)).default;
+                } catch (e1) {
+                    // If .mjs doesn't exist, try original .js with file:// URL
+                    webpackConfigUrl = pathToFileURL(webpackConfigPath).href;
+                    webpackRootConfig = (await import(webpackConfigUrl)).default;
+                }
                 if (webpackRootConfig && webpackRootConfig.externals) {
                     for (const key in webpackRootConfig.externals) {
                         if (key in packageJsonConfig.dependencies) {
@@ -569,20 +579,19 @@ if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
             const path = require("path");
             let exportedConfig;
             try {
-                const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;
-                exportedConfig = (await import(configUrl)).default;
+                // Try with .mjs extension first (Node.js will recognize it as ES module)
+                let configUrl = pathToFileURL(path.resolve(webpackConfigPath.replace(/\\.js$/, '.mjs'))).href;
+                try {
+                    exportedConfig = (await import(configUrl)).default;
+                } catch (e1) {
+                    // If .mjs doesn't exist, try original .js with file:// URL
+                    configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;
+                    exportedConfig = (await import(configUrl)).default;
+                }
             } catch (err) {
-                // If import fails, try reading the file and evaluating it
-                // This handles cases where .js files aren't recognized as ES modules
-                const fs = require("fs");
-                const fileContent = fs.readFileSync(webpackConfigPath, "utf8");
-                // Create a temporary module that exports the config
-                const moduleExports = {};
-                const module = { exports: moduleExports };
-                // Use Function constructor to evaluate in a clean context
-                const fn = new Function("module", "exports", "require", fileContent + "\\nmodule.exports = typeof exports.default !== 'undefined' ? exports : { default: exports };");
-                fn(module, moduleExports, require);
-                exportedConfig = module.exports.default || module.exports;
+                // If both fail, the file might not be loadable as ES module
+                // This shouldn't happen, but if it does, we'll let webpack handle the error
+                throw err;
             }`
     );
     

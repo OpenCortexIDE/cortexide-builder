@@ -143,10 +143,11 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   # build/lib/extensions.js is created during compile-build-without-mangling
   echo "Fixing extension webpack config loader for ES modules..."
   if [[ -f "build/lib/extensions.js" ]]; then
-    # Check if it needs patching (has require for webpack config or flatMap)
-    # Always try to patch if file exists and hasn't been patched yet
-    if ! grep -q "pathToFileURL" "build/lib/extensions.js" 2>/dev/null; then
-      if grep -q "require.*webpackConfig\|flatMap.*webpackConfigPath\|require(webpackConfigPath)" "build/lib/extensions.js" 2>/dev/null; then
+    # ALWAYS try to patch if file has the patterns, even if pathToFileURL exists
+    # This ensures patch is applied even if partially patched or regenerated
+    if grep -q "require.*webpackConfig\|flatMap.*webpackConfigPath\|require(webpackConfigPath)" "build/lib/extensions.js" 2>/dev/null; then
+      # Check if already fully patched
+      if ! grep -q "pathToFileURL" "build/lib/extensions.js" 2>/dev/null || grep -q "require(webpackConfigPath)" "build/lib/extensions.js" 2>/dev/null; then
         echo "Patching extensions.js to use dynamic import for webpack configs..." >&2
         # Create backup
         cp "build/lib/extensions.js" "build/lib/extensions.js.bak" 2>/dev/null || true

@@ -139,9 +139,33 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
     exit 1
   fi
   
-  # Fix extension webpack config loading for ES modules AFTER compilation
-  # build/lib/extensions.js is created during compile-build-without-mangling
+  # Fix extension webpack config loading for ES modules
+  # Try patching TypeScript source FIRST, then compiled JS as fallback
   echo "Fixing extension webpack config loader for ES modules..."
+  
+  # First, try to patch the TypeScript source if it exists
+  if [[ -f "build/lib/extensions.ts" ]]; then
+    echo "Patching TypeScript source file..." >&2
+    if grep -q "require.*webpackConfigPath\|require(webpackConfigPath)" "build/lib/extensions.ts" 2>/dev/null; then
+      cp "build/lib/extensions.ts" "build/lib/extensions.ts.bak" 2>/dev/null || true
+      # Replace require() with dynamic import in TypeScript
+      sed -i.bak2 's/require(webpackConfigPath)\.default/(await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default/g' "build/lib/extensions.ts" 2>/dev/null || true
+      # Add imports if needed
+      if ! grep -q "pathToFileURL" "build/lib/extensions.ts" 2>/dev/null; then
+        # Find the function and add imports
+        sed -i.bak3 '/const webpackStreams/i\
+            const { pathToFileURL } = require("url");\
+            const path = require("path");
+' "build/lib/extensions.ts" 2>/dev/null || true
+      fi
+      rm -f "build/lib/extensions.ts.bak"* 2>/dev/null || true
+      echo "TypeScript source patched. Recompiling..." >&2
+      # Recompile just this file
+      npm run gulp compile-build-without-mangling 2>&1 | tail -20 || true
+    fi
+  fi
+  
+  # Then patch the compiled JavaScript (fallback or if TS patch didn't work)
   if [[ -f "build/lib/extensions.js" ]]; then
     # ALWAYS try to patch if file has the patterns, even if pathToFileURL exists
     # This ensures patch is applied even if partially patched or regenerated

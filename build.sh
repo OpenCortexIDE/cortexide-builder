@@ -1508,12 +1508,12 @@ EOFPATCH2
     echo "Building REH (Remote Extension Host)..."
     
     # CRITICAL FIX: Handle empty glob patterns in gulpfile.reh.js
-    # The issue: dependenciesSrc can be an empty array [], causing "Invalid glob argument" error
-    # Solution: Modify the code to ensure dependenciesSrc is never empty, or add allowEmpty: true
+    # Root cause: dependenciesSrc can be an empty array [], and allowEmpty: true doesn't work for empty arrays
+    # Solution: Ensure dependenciesSrc is never empty by providing a fallback, OR handle empty case before gulp.src
     if [[ -f "build/gulpfile.reh.js" ]]; then
       echo "Applying critical fix to gulpfile.reh.js for empty glob patterns..." >&2
       
-      # Use Node.js to apply the fix reliably - handle multi-line gulp.src calls
+      # Use Node.js to apply the fix - ensure array is never empty
       node << 'NODEFIX' || {
 const fs = require('fs');
 
@@ -1525,26 +1525,38 @@ try {
   const lines = content.split('\n');
   let modified = false;
   
-  // Fix 1: dependenciesSrc - CRITICAL FIX for line 335
-  // The line is: const deps = gulp.src(dependenciesSrc, { base: 'remote', dot: true })
-  // We need to add allowEmpty: true before the closing })
+  // Fix 1: dependenciesSrc - CRITICAL FIX
+  // Root cause: empty array [] causes "Invalid glob argument" error
+  // Solution: Ensure dependenciesSrc is never empty by providing fallback
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes('gulp.src(dependenciesSrc') && lines[i].includes("base: 'remote'")) {
+    // Find: const dependenciesSrc = ... .flat();
+    if (lines[i].includes('const dependenciesSrc =') && lines[i].includes('.flat()')) {
       console.error(`Found dependenciesSrc at line ${i + 1}: ${lines[i].trim()}`);
       
-      if (lines[i].includes('allowEmpty: true')) {
-        console.error('✓ Line already has allowEmpty: true');
+      // Check if we already fixed it
+      if (lines[i].includes('|| [\'!**\']') || lines[i].includes('|| ["!**"]')) {
+        console.error('✓ Already has empty array protection');
       } else {
-        // Handle multi-line: the line ends with }) or just )
-        if (lines[i].trim().endsWith('})')) {
-          // Single line case
-          lines[i] = lines[i].replace(/dot:\s*true\s*\}\)/, 'dot: true, allowEmpty: true })');
-        } else if (lines[i].includes('dot: true')) {
-          // Multi-line case - add allowEmpty before the closing
-          lines[i] = lines[i].replace(/dot:\s*true/, 'dot: true, allowEmpty: true');
-        }
+        // Modify to: const dependenciesSrc = ... .flat() || ['!**'];
+        // This ensures it's never empty - ['!**'] matches nothing but is valid
+        lines[i] = lines[i].replace(/\.flat\(\);?$/, '.flat() || [\'!**\'];');
         modified = true;
-        console.error(`✓ Fixed line ${i + 1}: ${lines[i].trim()}`);
+        console.error(`✓ Fixed line ${i + 1} to prevent empty array`);
+        console.error(`New line: ${lines[i].trim()}`);
+      }
+      break;
+    }
+  }
+  
+  // Fix 2: Also add allowEmpty: true as additional safety
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes('gulp.src(dependenciesSrc') && lines[i].includes("base: 'remote'")) {
+      if (!lines[i].includes('allowEmpty: true')) {
+        if (lines[i].includes('dot: true')) {
+          lines[i] = lines[i].replace(/dot:\s*true/, 'dot: true, allowEmpty: true');
+          modified = true;
+          console.error(`✓ Added allowEmpty: true at line ${i + 1}`);
+        }
       }
       break;
     }

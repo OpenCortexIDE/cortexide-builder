@@ -1513,57 +1513,86 @@ EOFPATCH2
     if [[ -f "build/gulpfile.reh.js" ]]; then
       echo "Applying critical fix to gulpfile.reh.js for empty glob patterns..." >&2
       
-      # Use Node.js to apply the fix reliably (Node is definitely available in this context)
+      # Use Node.js to apply the fix reliably - handle multi-line gulp.src calls
       node << 'NODEFIX' || {
 const fs = require('fs');
-const path = require('path');
 
 const filePath = 'build/gulpfile.reh.js';
 
 try {
   let content = fs.readFileSync(filePath, 'utf8');
   const original = content;
+  const lines = content.split('\n');
+  let modified = false;
   
-  // Fix 1: extensionPaths - add allowEmpty: true
-  content = content.replace(
-    /gulp\.src\(extensionPaths,\s*\{\s*base:\s*['"]\.build['"],\s*dot:\s*true\s*\}\)/g,
-    "gulp.src(extensionPaths, { base: '.build', dot: true, allowEmpty: true })"
-  );
+  // Fix 1: dependenciesSrc - CRITICAL FIX for line 335
+  // The line is: const deps = gulp.src(dependenciesSrc, { base: 'remote', dot: true })
+  // We need to add allowEmpty: true before the closing })
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes('gulp.src(dependenciesSrc') && lines[i].includes("base: 'remote'")) {
+      console.error(`Found dependenciesSrc at line ${i + 1}: ${lines[i].trim()}`);
+      
+      if (lines[i].includes('allowEmpty: true')) {
+        console.error('✓ Line already has allowEmpty: true');
+      } else {
+        // Handle multi-line: the line ends with }) or just )
+        if (lines[i].trim().endsWith('})')) {
+          // Single line case
+          lines[i] = lines[i].replace(/dot:\s*true\s*\}\)/, 'dot: true, allowEmpty: true })');
+        } else if (lines[i].includes('dot: true')) {
+          // Multi-line case - add allowEmpty before the closing
+          lines[i] = lines[i].replace(/dot:\s*true/, 'dot: true, allowEmpty: true');
+        }
+        modified = true;
+        console.error(`✓ Fixed line ${i + 1}: ${lines[i].trim()}`);
+      }
+      break;
+    }
+  }
   
-  // Fix 2: dependenciesSrc - add allowEmpty: true (CRITICAL - this is causing the error)
-  // Match the exact pattern including possible whitespace variations
-  content = content.replace(
-    /gulp\.src\(dependenciesSrc,\s*\{\s*base:\s*['"]remote['"],\s*dot:\s*true\s*\}\)/g,
-    "gulp.src(dependenciesSrc, { base: 'remote', dot: true, allowEmpty: true })"
-  );
+  // Fix 2: extensionPaths
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes('gulp.src(extensionPaths') && lines[i].includes("base: '.build'")) {
+      if (!lines[i].includes('allowEmpty: true')) {
+        if (lines[i].trim().endsWith('})')) {
+          lines[i] = lines[i].replace(/dot:\s*true\s*\}\)/, 'dot: true, allowEmpty: true })');
+        } else if (lines[i].includes('dot: true')) {
+          lines[i] = lines[i].replace(/dot:\s*true/, 'dot: true, allowEmpty: true');
+        }
+        modified = true;
+        console.error(`✓ Fixed extensionPaths at line ${i + 1}`);
+      }
+      break;
+    }
+  }
   
-  if (content !== original) {
+  if (modified) {
+    content = lines.join('\n');
     fs.writeFileSync(filePath, content, 'utf8');
-    console.error('✓ Successfully applied allowEmpty fix to gulpfile.reh.js');
+    console.error('✓ Successfully applied allowEmpty fixes');
     
-    // Verify
+    // Final verification - check the exact line that was causing the error
     const verify = fs.readFileSync(filePath, 'utf8');
-    if (verify.includes('allowEmpty: true')) {
-      const depsLine = verify.split('\n').findIndex(line => line.includes('gulp.src(dependenciesSrc'));
-      if (depsLine >= 0) {
-        console.error(`Fixed line ${depsLine + 1}: ${verify.split('\n')[depsLine].trim()}`);
+    const verifyLines = verify.split('\n');
+    for (let i = 0; i < verifyLines.length; i++) {
+      if (verifyLines[i].includes('gulp.src(dependenciesSrc')) {
+        if (verifyLines[i].includes('allowEmpty: true')) {
+          console.error(`✓ Verified line ${i + 1} has allowEmpty: true`);
+        } else {
+          console.error(`✗ ERROR: Line ${i + 1} still missing allowEmpty!`);
+          console.error(`Line content: ${verifyLines[i].trim()}`);
+          process.exit(1);
+        }
+        break;
       }
     }
-  } else if (content.includes('allowEmpty: true')) {
-    console.error('gulpfile.reh.js already has allowEmpty fix');
   } else {
-    console.error('✗ ERROR: Pattern not found or fix not applied!');
-    console.error('Searching for dependenciesSrc line...');
-    const lines = content.split('\n');
-    lines.forEach((line, i) => {
-      if (line.includes('gulp.src(dependenciesSrc')) {
-        console.error(`Line ${i + 1}: ${line.trim()}`);
-      }
-    });
-    process.exit(1);
+    console.error('No changes needed - fixes already applied');
   }
+  
 } catch (error) {
   console.error(`✗ ERROR applying fix: ${error.message}`);
+  console.error(error.stack);
   process.exit(1);
 }
 NODEFIX

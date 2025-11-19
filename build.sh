@@ -358,10 +358,17 @@ if (content.includes('pathToFileURL')) {
 EOFPATCH
         
         # Run the patch script and capture output
-        echo "Running patch script..." >&2
+        # Only show detailed output if DEBUG is set
+        if [[ -n "${DEBUG}" ]]; then
+          echo "Running patch script (DEBUG mode)..." >&2
+        else
+          echo "Running patch script..." >&2
+        fi
         PATCH_OUTPUT=$(node "$PATCH_SCRIPT_FILE" "build/lib/extensions.js" 2>&1)
         PATCH_EXIT=$?
-        echo "$PATCH_OUTPUT" >&2
+        if [[ -n "${DEBUG}" ]]; then
+          echo "$PATCH_OUTPUT" >&2
+        fi
         
         if [[ $PATCH_EXIT -eq 0 ]]; then
           # Verify the patch was applied

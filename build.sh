@@ -1506,6 +1506,52 @@ EOFPATCH2
 
   if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
     echo "Building REH (Remote Extension Host)..."
+    
+    # Fix gulpfile.reh.js to handle empty glob patterns before REH build
+    # This is a backup fix in case the patch file wasn't applied during prepare_vscode.sh
+    if [[ -f "build/gulpfile.reh.js" ]]; then
+      echo "Fixing gulpfile.reh.js to handle empty glob patterns..." >&2
+      REH_PATCH_SCRIPT=$(mktemp /tmp/fix-reh-glob.XXXXXX.js) || {
+        REH_PATCH_SCRIPT="/tmp/fix-reh-glob.js"
+      }
+      cat > "$REH_PATCH_SCRIPT" << 'REHPATCH'
+const fs = require('fs');
+const filePath = process.argv[2];
+let content = fs.readFileSync(filePath, 'utf8');
+let modified = false;
+
+// Fix 1: extensionPaths at line 299
+// Match: gulp.src(extensionPaths, { base: '.build', dot: true })
+const patternExt = /gulp\.src\(extensionPaths,\s*\{\s*base:\s*['"]\.build['"],\s*dot:\s*true\s*\}\)/g;
+if (patternExt.test(content) && !content.includes('gulp.src(extensionPaths, { base: \'.build\', dot: true, allowEmpty: true })')) {
+  content = content.replace(patternExt, 'gulp.src(extensionPaths, { base: \'.build\', dot: true, allowEmpty: true })');
+  modified = true;
+  console.log('Fixed extensionPaths gulp.src call');
+}
+
+// Fix 2: dependenciesSrc at line 335
+// Match: gulp.src(dependenciesSrc, { base: 'remote', dot: true })
+// Handle line continuation with optional whitespace/newline
+const patternDeps = /gulp\.src\(dependenciesSrc,\s*\{\s*base:\s*['"]remote['"],\s*dot:\s*true\s*\}\)/g;
+if (patternDeps.test(content) && !content.includes('gulp.src(dependenciesSrc, { base: \'remote\', dot: true, allowEmpty: true })')) {
+  content = content.replace(patternDeps, 'gulp.src(dependenciesSrc, { base: \'remote\', dot: true, allowEmpty: true })');
+  modified = true;
+  console.log('Fixed dependenciesSrc gulp.src call');
+}
+
+if (modified) {
+  fs.writeFileSync(filePath, content, 'utf8');
+  console.log('Fixed gulpfile.reh.js to handle empty glob patterns');
+} else {
+  console.log('gulpfile.reh.js already patched or no changes needed');
+}
+REHPATCH
+      node "$REH_PATCH_SCRIPT" "build/gulpfile.reh.js" 2>&1 || {
+        echo "Warning: Failed to patch gulpfile.reh.js, continuing anyway..." >&2
+      }
+      rm -f "$REH_PATCH_SCRIPT"
+    fi
+    
     if ! npm run gulp minify-vscode-reh; then
       echo "Error: minify-vscode-reh failed. Check for:" >&2
       echo "  - Minification errors" >&2

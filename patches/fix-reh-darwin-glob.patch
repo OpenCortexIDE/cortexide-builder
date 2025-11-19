@@ -1,0 +1,22 @@
+diff --git a/build/gulpfile.reh.js b/build/gulpfile.reh.js
+index c1d64c0..a1b2c3d 100644
+--- a/build/gulpfile.reh.js
++++ b/build/gulpfile.reh.js
+@@ -296,7 +296,7 @@ function packageTask(type, platform, arch, sourceFolderName, destinationFolderN
+ 		const extensionPaths = [...localWorkspaceExtensions, ...marketplaceExtensions]
+ 			.map(name => `.build/extensions/${name}/**`);
+ 
+-		const extensions = gulp.src(extensionPaths, { base: '.build', dot: true });
++		const extensions = gulp.src(extensionPaths, { base: '.build', dot: true, allowEmpty: true });
+ 		const extensionsCommonDependencies = gulp.src('.build/extensions/node_modules/**', { base: '.build', dot: true });
+ 		const sources = es.merge(src, extensions, extensionsCommonDependencies)
+ 			.pipe(filter(['**', '!**/*.{js,css}.map'], { dot: true }));
+@@ -333,7 +333,7 @@ function packageTask(type, platform, arch, sourceFolderName, destinationFolderN
+ 
+ 		const productionDependencies = getProductionDependencies(REMOTE_FOLDER);
+ 		const dependenciesSrc = productionDependencies.map(d => path.relative(REPO_ROOT, d)).map(d => [`${d}/**`, `!${d}/**/{test,tests}/**`, `!${d}/.bin/**`]).flat();
+-		const deps = gulp.src(dependenciesSrc, { base: 'remote', dot: true })
++		const deps = gulp.src(dependenciesSrc, { base: 'remote', dot: true, allowEmpty: true })
+ 			// filter out unnecessary files, no source maps in server build
+ 			.pipe(filter(['**', '!**/package-lock.json', '!**/*.{js,css}.map']))
+ 			.pipe(util.cleanNodeModules(path.join(__dirname, '.moduleignore')))

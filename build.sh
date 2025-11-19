@@ -134,37 +134,14 @@ const filePath = process.argv[2];
 let content = fs.readFileSync(filePath, 'utf8');
 
 // Fix 1: Make the then() callback async FIRST
-// Check for the pattern more flexibly
+// The actual code has: vsce.listFiles({ cwd: extensionPath, packageManager: vsce.PackageManager.None, packagedDependencies }).then(fileNames => {
+// We need to match this exact pattern and make it async
 if (content.includes('vsce.listFiles({ cwd: extensionPath')) {
-  // Try multiple patterns to catch all variations
-  const thenPatterns = [
-    /\.then\(\(fileNames\)\s*=>\s*\{/g,
-    /\.then\(fileNames\s*=>\s*\{/g,
-    /\.then\(\(fileNames\)\s*=>\s*\{/g
-  ];
-  
-  let madeAsync = false;
-  for (const pattern of thenPatterns) {
-    if (pattern.test(content) && !content.includes('.then(async')) {
-      content = content.replace(pattern, '.then(async (fileNames) => {');
-      madeAsync = true;
-      break;
-    }
-  }
-  
-  // If no pattern matched, try a simpler approach - match the exact pattern from the file
-  if (!madeAsync) {
-    // The actual code has: .then(fileNames => {
-    // Try to match it exactly
-    if (content.includes('.then(fileNames => {')) {
-      content = content.replace(/\.then\(fileNames\s*=>\s*\{/g, '.then(async (fileNames) => {');
-      madeAsync = true;
-    }
-    // Also try with PackageManager.None pattern
-    if (!madeAsync && content.includes('PackageManager.None, packagedDependencies').then(fileNames => {')) {
-      content = content.replace(/PackageManager\.None,\s*packagedDependencies\)\.then\(fileNames\s*=>\s*\{/g, 'PackageManager.None, packagedDependencies).then(async (fileNames) => {');
-      madeAsync = true;
-    }
+  // Match the exact pattern from the compiled code
+  // Pattern: }).then(fileNames => {
+  const thenPattern = /\)\.then\(fileNames\s*=>\s*\{/g;
+  if (thenPattern.test(content) && !content.includes('.then(async')) {
+    content = content.replace(thenPattern, ').then(async (fileNames) => {');
   }
 }
 

@@ -165,24 +165,49 @@ if (content.includes('function fromLocalWebpack')) {
   }
 }
 
-// Fix 3c: Replace webpackRootConfig require with dynamic import
+// Fix 3c: Replace webpackRootConfig require with dynamic import and copy to .mjs if needed
 if (content.includes('const webpackRootConfig = require(path.join(extensionPath, webpackConfigFileName))')) {
-  // This needs to be inside an async function, which we just made it
   content = content.replace(
     /const\s+webpackRootConfig\s*=\s*require\(path\.join\(extensionPath,\s*webpackConfigFileName\)\)\.default\s*;/g,
-    'const webpackRootConfig = (await import(pathToFileURL(path.resolve(extensionPath, webpackConfigFileName)).href)).default;'
+    `let rootConfigPath = path.join(extensionPath, webpackConfigFileName);
+\tif (rootConfigPath.endsWith('.js')) {
+\t\tconst rootMjsPath = rootConfigPath.replace(/\\.js$/, '.mjs');
+\t\ttry {
+\t\t\tconst srcStat = fs.statSync(rootConfigPath);
+\t\t\tconst destStat = fs.existsSync(rootMjsPath) ? fs.statSync(rootMjsPath) : undefined;
+\t\t\tif (!destStat || srcStat.mtimeMs > destStat.mtimeMs) {
+\t\t\t\tfs.copyFileSync(rootConfigPath, rootMjsPath);
+\t\t\t}
+\t\t} catch (error) {
+\t\t\t// ignore copy errors
+\t\t}
+\t\trootConfigPath = rootMjsPath;
+\t}
+\tconst webpackRootConfig = (await import(pathToFileURL(path.resolve(rootConfigPath)).href)).default;`
   );
 }
 
-// Fix 4: Replace require(webpackConfigPath).default with dynamic import
+// Fix 4: Replace require(webpackConfigPath).default with dynamic import and copy to .mjs if needed
 if (content.includes('require(webpackConfigPath)')) {
-  // Replace the exact pattern: const exportedConfig = require(webpackConfigPath).default;
   content = content.replace(
     /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default\s*;/g,
-    'const exportedConfig = (await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default;'
+    `let configToLoad = webpackConfigPath;
+\tif (configToLoad.endsWith('.js')) {
+\t\tconst mjsPath = configToLoad.replace(/\\.js$/, '.mjs');
+\t\ttry {
+\t\t\tconst srcStat = fs.statSync(configToLoad);
+\t\t\tconst destStat = fs.existsSync(mjsPath) ? fs.statSync(mjsPath) : undefined;
+\t\t\tif (!destStat || srcStat.mtimeMs > destStat.mtimeMs) {
+\t\t\t\tfs.copyFileSync(configToLoad, mjsPath);
+\t\t\t}
+\t\t} catch (error) {
+\t\t\t// ignore copy errors
+\t\t}
+\t\tconfigToLoad = mjsPath;
+\t}
+\tconst exportedConfig = (await import(pathToFileURL(path.resolve(configToLoad)).href)).default;`
   );
   
-  // Also replace just require(webpackConfigPath).default if it appears elsewhere
   content = content.replace(
     /require\(webpackConfigPath\)\.default/g,
     '(await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default'
@@ -653,12 +678,25 @@ if (content.includes('vsce.listFiles({ cwd: extensionPath')) {
   content = content.replace(/\)\.then\(fileNames\s*=>\s*\{/g, ').then(async (fileNames) => {');
 }
 
-// Replace webpackRootConfig require with dynamic import (inside if block, before then)
-// Pattern: const webpackRootConfig = require(path_1.default.join(extensionPath, webpackConfigFileName)).default;
+// Replace webpackRootConfig require with dynamic import (and copy to .mjs if needed)
 if (content.includes('const webpackRootConfig = require(path_1.default.join(extensionPath, webpackConfigFileName))')) {
   content = content.replace(
     /const\s+webpackRootConfig\s*=\s*require\(path_1\.default\.join\(extensionPath,\s*webpackConfigFileName\)\)\.default\s*;/g,
-    'const webpackRootConfig = (await import(pathToFileURL(path.resolve(extensionPath, webpackConfigFileName)).href)).default;'
+    `let rootConfigPath = path_1.default.join(extensionPath, webpackConfigFileName);
+        if (rootConfigPath.endsWith('.js')) {
+            const rootMjsPath = rootConfigPath.replace(/\\.js$/, '.mjs');
+            try {
+                const srcStat = fs_1.default.statSync(rootConfigPath);
+                const destStat = fs_1.default.existsSync(rootMjsPath) ? fs_1.default.statSync(rootMjsPath) : undefined;
+                if (!destStat || srcStat.mtimeMs > destStat.mtimeMs) {
+                    fs_1.default.copyFileSync(rootConfigPath, rootMjsPath);
+                }
+            } catch (error) {
+                // ignore copy errors
+            }
+            rootConfigPath = rootMjsPath;
+        }
+        const webpackRootConfig = (await import(pathToFileURL(path_1.default.resolve(rootConfigPath)).href)).default;`
   );
 }
 
@@ -672,11 +710,24 @@ if (content.includes('webpackConfigLocations.flatMap(webpackConfigPath =>')) {
 }
 
 // Replace require(webpackConfigPath).default with dynamic import - exact pattern from actual code
-// Pattern: const exportedConfig = require(webpackConfigPath).default;
 if (content.includes('require(webpackConfigPath)')) {
   content = content.replace(
     /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default\s*;/g,
-    'const exportedConfig = (await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default;'
+    `let configToLoad = webpackConfigPath;
+            if (configToLoad.endsWith('.js')) {
+                const mjsPath = configToLoad.replace(/\\.js$/, '.mjs');
+                try {
+                    const srcStat = fs_1.default.statSync(configToLoad);
+                    const destStat = fs_1.default.existsSync(mjsPath) ? fs_1.default.statSync(mjsPath) : undefined;
+                    if (!destStat || srcStat.mtimeMs > destStat.mtimeMs) {
+                        fs_1.default.copyFileSync(configToLoad, mjsPath);
+                    }
+                } catch (error) {
+                    // ignore copy errors
+                }
+                configToLoad = mjsPath;
+            }
+            const exportedConfig = (await import(pathToFileURL(path_1.default.resolve(configToLoad)).href)).default;`
   );
 }
 

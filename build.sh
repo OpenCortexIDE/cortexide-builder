@@ -280,60 +280,100 @@ if (content.includes('flatMap')) {
   }
 }
 
-// Then replace the require statement - try multiple patterns
+// Then replace the require statement - AGGRESSIVE: find and replace ANY occurrence
 // The actual code has: const exportedConfig = require(webpackConfigPath).default;
-// We need to match this EXACTLY and replace it with dynamic import
-if (content.includes('require(webpackConfigPath)') || content.includes('require(webpackConfigPath).default')) {
-  // Try exact match first
-  const exactPattern = /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default;/g;
-  if (exactPattern.test(content)) {
-    content = content.replace(exactPattern, `const { pathToFileURL } = require("url");
-            const path = require("path");
-            let exportedConfig;
-            const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;
-            exportedConfig = (await import(configUrl)).default;`);
-    patchedRequire = true;
-  } else {
-    // Try other patterns
-    const requirePatterns = [
-      /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default\s*;/g,
-      /exportedConfig\s*=\s*require\(webpackConfigPath\)\.default;/g,
-      /require\(webpackConfigPath\)\.default/g
-    ];
-    
-    for (const pattern of requirePatterns) {
-      if (pattern.test(content)) {
-        // For the last pattern, we need to be more careful
-        if (pattern === /require\(webpackConfigPath\)\.default/g) {
-          content = content.replace(pattern, (match, offset, string) => {
-            // Check if this is part of a const assignment
-            const before = string.substring(Math.max(0, offset - 50), offset);
-            if (before.includes('const exportedConfig') || before.includes('exportedConfig =')) {
-              return `(await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default`;
-            }
-            return match;
-          });
-          // Add the imports at the top of the function if not already there
-          if (!content.includes('const { pathToFileURL } = require("url")')) {
-            // Find the function start and add imports
-            const functionStart = content.indexOf('const webpackStreams');
-            if (functionStart !== -1) {
-              const beforeFunction = content.substring(0, functionStart);
-              const afterFunction = content.substring(functionStart);
-              content = beforeFunction + 'const { pathToFileURL } = require("url");\n            const path = require("path");\n            ' + afterFunction;
-            }
-          }
-        } else {
-          content = content.replace(pattern, `const { pathToFileURL } = require("url");
-            const path = require("path");
-            let exportedConfig;
-            const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;
-            exportedConfig = (await import(configUrl)).default;`);
+// We need to match this and replace it with dynamic import
+if (content.includes('require(webpackConfigPath)')) {
+  // First, ensure pathToFileURL is imported at the function level
+  // Find where webpackStreams is defined and add imports before it
+  if (!content.includes('const { pathToFileURL } = require("url")') || !content.includes('const path = require("path")')) {
+    const webpackStreamsIndex = content.indexOf('const webpackStreams');
+    if (webpackStreamsIndex !== -1) {
+      // Find the start of the function/block containing webpackStreams
+      let functionStart = webpackStreamsIndex;
+      // Go backwards to find the start of the block
+      for (let i = webpackStreamsIndex - 1; i >= 0; i--) {
+        if (content[i] === '{' || (content.substring(i, i + 3) === '=> ')) {
+          functionStart = i + 1;
+          break;
         }
-        patchedRequire = true;
-        break;
+      }
+      const before = content.substring(0, functionStart);
+      const after = content.substring(functionStart);
+      // Add imports if not already present
+      if (!before.includes('pathToFileURL')) {
+        content = before + '            const { pathToFileURL } = require("url");\n            const path = require("path");\n' + after;
       }
     }
+  }
+  
+  // Now replace ALL occurrences of require(webpackConfigPath).default
+  // Try multiple patterns, most specific first
+  const patterns = [
+    // Exact match: const exportedConfig = require(webpackConfigPath).default;
+    {
+      pattern: /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default\s*;/g,
+      replacement: `const { pathToFileURL } = require("url");
+            const path = require("path");
+            let exportedConfig;
+            const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;
+            exportedConfig = (await import(configUrl)).default;`
+    },
+    // With optional whitespace
+    {
+      pattern: /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default;/g,
+      replacement: `const { pathToFileURL } = require("url");
+            const path = require("path");
+            let exportedConfig;
+            const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;
+            exportedConfig = (await import(configUrl)).default;`
+    },
+    // Just the assignment part
+    {
+      pattern: /exportedConfig\s*=\s*require\(webpackConfigPath\)\.default\s*;/g,
+      replacement: `const { pathToFileURL } = require("url");
+            const path = require("path");
+            exportedConfig = (await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default;`
+    },
+    // Just require(webpackConfigPath).default - replace inline
+    {
+      pattern: /require\(webpackConfigPath\)\.default/g,
+      replacement: `(await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default`
+    }
+  ];
+  
+  for (const { pattern, replacement } of patterns) {
+    if (pattern.test(content)) {
+      content = content.replace(pattern, replacement);
+      patchedRequire = true;
+      // Don't break - continue to catch all occurrences
+    }
+  }
+  
+  // If still not patched, do a line-by-line search and replace
+  if (!patchedRequire && content.includes('require(webpackConfigPath)')) {
+    const lines = content.split('\n');
+    const result = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.includes('require(webpackConfigPath)')) {
+        // Replace the entire line
+        if (line.includes('const exportedConfig')) {
+          result.push('            const { pathToFileURL } = require("url");');
+          result.push('            const path = require("path");');
+          result.push('            let exportedConfig;');
+          result.push('            const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;');
+          result.push('            exportedConfig = (await import(configUrl)).default;');
+        } else {
+          // Just replace the require part
+          result.push(line.replace(/require\(webpackConfigPath\)\.default/g, '(await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default'));
+        }
+        patchedRequire = true;
+      } else {
+        result.push(line);
+      }
+    }
+    content = result.join('\n');
   }
 }
 

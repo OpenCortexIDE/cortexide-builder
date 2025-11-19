@@ -591,9 +591,11 @@ if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
           if (braceCount === 0 && line.includes('}')) {
             // Check if next line is event_stream merge
             if (i + 1 < lines.length && lines[i + 1].includes('event_stream_1.default.merge(...webpackStreams')) {
-              // This is the closing of the map callback - replace }); with })).flat();
+              // This is the closing of the map callback - replace }); with }));
               // Use [].concat(...array) instead of .flat() for Node.js compatibility
               result.push('}));');
+              // Add flattening line - Promise.all returns array of arrays, need to flatten
+              result.push('        const flattenedWebpackStreams = [].concat(...webpackStreams);');
               foundMapStart = false;
               continue;
             }
@@ -603,6 +605,12 @@ if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
         result.push(line);
       }
       content = result.join('\n');
+      
+      // Now replace the merge call to use flattenedWebpackStreams instead of webpackStreams
+      content = content.replace(
+        /event_stream_1\.default\.merge\(\.\.\.webpackStreams/g,
+        'event_stream_1.default.merge(...flattenedWebpackStreams'
+      );
     }
   } else {
     // Just replace require if flatMap wasn't found

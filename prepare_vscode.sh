@@ -562,9 +562,28 @@ if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
     
     // Replace require with dynamic import using file:// URL
     // Need to use pathToFileURL for proper URL construction
+    // Also need to handle the case where .js files can't be loaded as ES modules
     content = content.replace(
       /const exportedConfig = require\(webpackConfigPath\)\.default;/g,
-      'const { pathToFileURL } = require("url"); const exportedConfig = (await import(pathToFileURL(require("path").resolve(webpackConfigPath)).href)).default;'
+      `const { pathToFileURL } = require("url");
+            const path = require("path");
+            let exportedConfig;
+            try {
+                const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;
+                exportedConfig = (await import(configUrl)).default;
+            } catch (err) {
+                // If import fails, try reading the file and evaluating it
+                // This handles cases where .js files aren't recognized as ES modules
+                const fs = require("fs");
+                const fileContent = fs.readFileSync(webpackConfigPath, "utf8");
+                // Create a temporary module that exports the config
+                const moduleExports = {};
+                const module = { exports: moduleExports };
+                // Use Function constructor to evaluate in a clean context
+                const fn = new Function("module", "exports", "require", fileContent + "\\nmodule.exports = typeof exports.default !== 'undefined' ? exports : { default: exports };");
+                fn(module, moduleExports, require);
+                exportedConfig = module.exports.default || module.exports;
+            }`
     );
     
     // Fix the closing bracket - find the pattern: }); followed by event_stream_1.default.merge

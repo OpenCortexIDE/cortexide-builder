@@ -480,9 +480,9 @@ fi
 echo "Fixing extension webpack config loader for ES modules..."
 if [[ -f "build/lib/extensions.js" ]]; then
   # Check if already patched
-  if ! grep -q "import.*webpackConfigPath" "build/lib/extensions.js" 2>/dev/null; then
+  if ! grep -q "pathToFileURL" "build/lib/extensions.js" 2>/dev/null; then
     # Check if it needs patching (has require for webpack config)
-    if grep -q "require.*webpackConfigPath\|require.*webpackConfigFileName" "build/lib/extensions.js" 2>/dev/null; then
+    if grep -q "require.*webpackConfig\|require.*extensionPath.*webpackConfigFileName" "build/lib/extensions.js" 2>/dev/null; then
       echo "Patching extensions.js to use dynamic import for webpack configs..." >&2
       # Create backup
       cp "build/lib/extensions.js" "build/lib/extensions.js.bak" 2>/dev/null || true
@@ -513,12 +513,13 @@ if (content.includes('vsce.listFiles({ cwd: extensionPath')) {
 }
 
 // Fix 2: Remove the synchronous require for webpackRootConfig and move it inside the async callback
-if (content.includes('const webpackRootConfig = require(path_1.default.join(extensionPath, webpackConfigFileName))')) {
-  // Remove the synchronous require block
-  content = content.replace(
-    /if \(packageJsonConfig\.dependencies\) \{[\s\S]*?const webpackRootConfig = require\(path_1\.default\.join\(extensionPath, webpackConfigFileName\)\)\.default;[\s\S]*?for \(const key in webpackRootConfig\.externals\) \{[\s\S]*?packagedDependencies\.push\(key\);[\s\S]*?\}[\s\S]*?\}[\s\S]*?\}/,
-    '// Webpack config will be loaded asynchronously inside the promise chain'
-  );
+// Match the actual pattern: const webpackRootConfig = require(path_1.default.join(extensionPath, webpackConfigFileName)).default;
+if (content.includes('const webpackRootConfig = require') && content.includes('webpackConfigFileName')) {
+  // Remove the synchronous require block - match more flexibly
+  const requirePattern = /if\s*\(packageJsonConfig\.dependencies\)\s*\{[\s\S]*?const\s+webpackRootConfig\s*=\s*require\([^)]+webpackConfigFileName[^)]+\)\.default;[\s\S]*?for\s*\(const\s+key\s+in\s+webpackRootConfig\.externals\)\s*\{[\s\S]*?packagedDependencies\.push\(key\);[\s\S]*?\}[\s\S]*?\}[\s\S]*?\}/;
+  if (requirePattern.test(content)) {
+    content = content.replace(requirePattern, '// Webpack config will be loaded asynchronously inside the promise chain');
+  }
   
   // Add it inside the async then() callback, right after const files
   if (content.includes('const files = fileNames')) {

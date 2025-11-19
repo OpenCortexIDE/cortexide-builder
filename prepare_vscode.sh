@@ -592,7 +592,8 @@ if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
             // Check if next line is event_stream merge
             if (i + 1 < lines.length && lines[i + 1].includes('event_stream_1.default.merge(...webpackStreams')) {
               // This is the closing of the map callback - replace }); with })).flat();
-              result.push('})).flat();');
+              // Use [].concat(...array) instead of .flat() for Node.js compatibility
+              result.push('}));');
               foundMapStart = false;
               continue;
             }

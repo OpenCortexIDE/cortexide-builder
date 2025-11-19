@@ -367,7 +367,13 @@ EOFPATCH
         else
           echo "Running patch script..." >&2
         fi
-        PATCH_OUTPUT=$(node "$PATCH_SCRIPT_FILE" "build/lib/extensions.js" 2>&1)
+        # Pass DEBUG to node script if set
+        if [[ -n "${DEBUG}" ]]; then
+          export DEBUG
+          PATCH_OUTPUT=$(DEBUG="${DEBUG}" node "$PATCH_SCRIPT_FILE" "build/lib/extensions.js" 2>&1)
+        else
+          PATCH_OUTPUT=$(node "$PATCH_SCRIPT_FILE" "build/lib/extensions.js" 2>&1)
+        fi
         PATCH_EXIT=$?
         if [[ -n "${DEBUG}" ]]; then
           echo "$PATCH_OUTPUT" >&2

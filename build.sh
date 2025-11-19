@@ -725,11 +725,9 @@ if (content.includes('vsce.listFiles({ cwd: extensionPath')) {
   content = content.replace(/\)\.then\(fileNames\s*=>\s*\{/g, ').then(async (fileNames) => {');
 }
 
-// Replace webpackRootConfig require with dynamic import (and copy to .mjs if needed)
-if (content.includes('const webpackRootConfig = require(path_1.default.join(extensionPath, webpackConfigFileName))')) {
-  content = content.replace(
-    /const\s+webpackRootConfig\s*=\s*require\(path_1\.default\.join\(extensionPath,\s*webpackConfigFileName\)\)\.default\s*;/g,
-    `let rootConfigPath = path_1.default.join(extensionPath, webpackConfigFileName);
+// Replace webpackRootConfig import with .mjs copy logic
+const rootRegex = /const\s+webpackRootConfig\s*=\s*\(await\s+import\(pathToFileURL\(path_1\.default\.resolve\(extensionPath,\s*webpackConfigFileName\)\)\.href\)\)\.default;/g;
+content = content.replace(rootRegex, `let rootConfigPath = path_1.default.join(extensionPath, webpackConfigFileName);
         if (rootConfigPath.endsWith('.js')) {
             const rootMjsPath = rootConfigPath.replace(/\\.js$/, '.mjs');
             try {
@@ -743,9 +741,7 @@ if (content.includes('const webpackRootConfig = require(path_1.default.join(exte
             }
             rootConfigPath = rootMjsPath;
         }
-        const webpackRootConfig = (await import(pathToFileURL(path_1.default.resolve(rootConfigPath)).href)).default;`
-  );
-}
+        const webpackRootConfig = (await import(pathToFileURL(path_1.default.resolve(rootConfigPath)).href)).default;`);
 
 // Replace flatMap with map and Promise.all - exact pattern from actual code
 // Pattern: const webpackStreams = webpackConfigLocations.flatMap(webpackConfigPath => {
@@ -756,11 +752,9 @@ if (content.includes('webpackConfigLocations.flatMap(webpackConfigPath =>')) {
   );
 }
 
-// Replace require(webpackConfigPath).default with dynamic import - exact pattern from actual code
-if (content.includes('require(webpackConfigPath)')) {
-  content = content.replace(
-    /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default\s*;/g,
-    `let configToLoad = webpackConfigPath;
+// Replace exportedConfig import with .mjs copy logic
+const exportedRegex = /const\s+exportedConfig\s*=\s*\(await\s+import\(pathToFileURL\(path_1\.default\.resolve\(webpackConfigPath\)\)\.href\)\)\.default;/g;
+content = content.replace(exportedRegex, `let configToLoad = webpackConfigPath;
             if (configToLoad.endsWith('.js')) {
                 const mjsPath = configToLoad.replace(/\\.js$/, '.mjs');
                 try {
@@ -774,9 +768,7 @@ if (content.includes('require(webpackConfigPath)')) {
                 }
                 configToLoad = mjsPath;
             }
-            const exportedConfig = (await import(pathToFileURL(path_1.default.resolve(configToLoad)).href)).default;`
-  );
-}
+            const exportedConfig = (await import(pathToFileURL(path_1.default.resolve(configToLoad)).href)).default;`);
 
 // Fix Promise.all closing and flattening
 // The flatMap returns an array, so Promise.all will return an array of arrays

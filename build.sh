@@ -1508,31 +1508,87 @@ EOFPATCH2
     echo "Building REH (Remote Extension Host)..."
     
     # CRITICAL FIX: Handle empty glob patterns in gulpfile.reh.js
-    # Apply fix directly using perl (available on all platforms) for reliability
+    # The issue: dependenciesSrc can be an empty array [], causing "Invalid glob argument" error
+    # Solution: Modify the code to ensure dependenciesSrc is never empty, or add allowEmpty: true
     if [[ -f "build/gulpfile.reh.js" ]]; then
-      echo "Applying direct fix to gulpfile.reh.js for empty glob patterns..." >&2
+      echo "Applying critical fix to gulpfile.reh.js for empty glob patterns..." >&2
       
-      # Check if already fixed
-      if grep -q "allowEmpty: true" "build/gulpfile.reh.js" 2>/dev/null; then
-        echo "gulpfile.reh.js already has allowEmpty fix" >&2
-      else
-        # Use perl for reliable cross-platform in-place editing
-        perl -i -pe "
-          # Fix extensionPaths
-          s/gulp\.src\(extensionPaths,\s*\{\s*base:\s*'\.build',\s*dot:\s*true\s*\}\)/gulp.src(extensionPaths, { base: '.build', dot: true, allowEmpty: true })/g;
-          # Fix dependenciesSrc (critical fix for the error)
-          s/gulp\.src\(dependenciesSrc,\s*\{\s*base:\s*'remote',\s*dot:\s*true\s*\}\)/gulp.src(dependenciesSrc, { base: 'remote', dot: true, allowEmpty: true })/g;
-        " "build/gulpfile.reh.js" 2>/dev/null
-        
-        # Verify fix was applied
-        if grep -q "allowEmpty: true" "build/gulpfile.reh.js" 2>/dev/null; then
-          echo "Successfully applied allowEmpty fix to gulpfile.reh.js" >&2
+      # Use Node.js to apply the fix reliably (Node is definitely available in this context)
+      node << 'NODEFIX' || {
+const fs = require('fs');
+const path = require('path');
+
+const filePath = 'build/gulpfile.reh.js';
+
+try {
+  let content = fs.readFileSync(filePath, 'utf8');
+  const original = content;
+  
+  // Fix 1: extensionPaths - add allowEmpty: true
+  content = content.replace(
+    /gulp\.src\(extensionPaths,\s*\{\s*base:\s*['"]\.build['"],\s*dot:\s*true\s*\}\)/g,
+    "gulp.src(extensionPaths, { base: '.build', dot: true, allowEmpty: true })"
+  );
+  
+  // Fix 2: dependenciesSrc - add allowEmpty: true (CRITICAL - this is causing the error)
+  // Match the exact pattern including possible whitespace variations
+  content = content.replace(
+    /gulp\.src\(dependenciesSrc,\s*\{\s*base:\s*['"]remote['"],\s*dot:\s*true\s*\}\)/g,
+    "gulp.src(dependenciesSrc, { base: 'remote', dot: true, allowEmpty: true })"
+  );
+  
+  if (content !== original) {
+    fs.writeFileSync(filePath, content, 'utf8');
+    console.error('✓ Successfully applied allowEmpty fix to gulpfile.reh.js');
+    
+    // Verify
+    const verify = fs.readFileSync(filePath, 'utf8');
+    if (verify.includes('allowEmpty: true')) {
+      const depsLine = verify.split('\n').findIndex(line => line.includes('gulp.src(dependenciesSrc'));
+      if (depsLine >= 0) {
+        console.error(`Fixed line ${depsLine + 1}: ${verify.split('\n')[depsLine].trim()}`);
+      }
+    }
+  } else if (content.includes('allowEmpty: true')) {
+    console.error('gulpfile.reh.js already has allowEmpty fix');
+  } else {
+    console.error('✗ ERROR: Pattern not found or fix not applied!');
+    console.error('Searching for dependenciesSrc line...');
+    const lines = content.split('\n');
+    lines.forEach((line, i) => {
+      if (line.includes('gulp.src(dependenciesSrc')) {
+        console.error(`Line ${i + 1}: ${line.trim()}`);
+      }
+    });
+    process.exit(1);
+  }
+} catch (error) {
+  console.error(`✗ ERROR applying fix: ${error.message}`);
+  process.exit(1);
+}
+NODEFIX
+        echo "Node.js fix failed, trying alternative method..." >&2
+        # Fallback: Direct sed replacement
+        if [[ "$(uname)" == "Darwin" ]]; then
+          sed -i '' 's/gulp\.src(dependenciesSrc, { base: '\''remote'\'', dot: true })/gulp.src(dependenciesSrc, { base: '\''remote'\'', dot: true, allowEmpty: true })/g' "build/gulpfile.reh.js" 2>/dev/null
+          sed -i '' 's/gulp\.src(extensionPaths, { base: '\''\.build'\'', dot: true })/gulp.src(extensionPaths, { base: '\''.build'\'', dot: true, allowEmpty: true })/g' "build/gulpfile.reh.js" 2>/dev/null
         else
-          echo "Warning: Fix may not have been applied. File may need manual editing." >&2
-          # Show the problematic line for debugging
-          grep -n "gulp.src(dependenciesSrc" "build/gulpfile.reh.js" 2>/dev/null | head -1 >&2 || true
+          sed -i 's/gulp\.src(dependenciesSrc, { base: '\''remote'\'', dot: true })/gulp.src(dependenciesSrc, { base: '\''remote'\'', dot: true, allowEmpty: true })/g' "build/gulpfile.reh.js" 2>/dev/null
+          sed -i 's/gulp\.src(extensionPaths, { base: '\''\.build'\'', dot: true })/gulp.src(extensionPaths, { base: '\''.build'\'', dot: true, allowEmpty: true })/g' "build/gulpfile.reh.js" 2>/dev/null
         fi
+      }
+      
+      # Final verification
+      if grep -q "allowEmpty: true" "build/gulpfile.reh.js" 2>/dev/null; then
+        echo "✓ Verification: allowEmpty fix is present in gulpfile.reh.js" >&2
+      else
+        echo "✗ CRITICAL: Fix verification failed! Showing problematic lines:" >&2
+        grep -n "gulp.src(dependenciesSrc\|gulp.src(extensionPaths" "build/gulpfile.reh.js" 2>/dev/null | head -5 >&2 || true
+        exit 1
       fi
+    else
+      echo "ERROR: build/gulpfile.reh.js not found!" >&2
+      exit 1
     fi
     
     if ! npm run gulp minify-vscode-reh; then

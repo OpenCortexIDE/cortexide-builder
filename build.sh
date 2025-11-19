@@ -1449,6 +1449,69 @@ EOFPATCH2
     if [[ "${CI_BUILD}" == "no" ]]; then
       . ../build/windows/rtf/make.sh
 
+      # CRITICAL FIX: Skip AppX building if win32ContextMenu is missing
+      # AppX packages are for Windows Store and require win32ContextMenu in product.json
+      if [[ -f "build/gulpfile.vscode.js" ]]; then
+        echo "Checking for win32ContextMenu in product.json..." >&2
+        node << 'APPXFIX' || {
+const fs = require('fs');
+const productPath = 'product.json';
+const gulpfilePath = 'build/gulpfile.vscode.js';
+
+try {
+  // Check if win32ContextMenu exists in product.json
+  const product = JSON.parse(fs.readFileSync(productPath, 'utf8'));
+  const hasWin32ContextMenu = product.win32ContextMenu && 
+                               product.win32ContextMenu.x64 && 
+                               product.win32ContextMenu.x64.clsid;
+  
+  if (!hasWin32ContextMenu) {
+    console.error('win32ContextMenu missing in product.json, skipping AppX build...');
+    
+    // Patch gulpfile.vscode.js to skip AppX building
+    let content = fs.readFileSync(gulpfilePath, 'utf8');
+    const lines = content.split('\n');
+    let modified = false;
+    
+    // Find the AppX building block (lines 409-424)
+    for (let i = 0; i < lines.length; i++) {
+      // Find: if (quality === 'stable' || quality === 'insider') {
+      if (lines[i].includes("if (quality === 'stable' || quality === 'insider')") && 
+          i + 1 < lines.length && 
+          lines[i + 1].includes('.build/win32/appx')) {
+        // Check if already patched
+        if (lines[i].includes('product.win32ContextMenu')) {
+          console.error('Already has win32ContextMenu check');
+          break;
+        }
+        
+        // Add check for win32ContextMenu before AppX building
+        const indent = lines[i].match(/^\s*/)[0];
+        const newCondition = `${indent}if ((quality === 'stable' || quality === 'insider') && product.win32ContextMenu && product.win32ContextMenu[arch]) {`;
+        lines[i] = newCondition;
+        modified = true;
+        console.error(`✓ Added win32ContextMenu check at line ${i + 1}`);
+        break;
+      }
+    }
+    
+    if (modified) {
+      content = lines.join('\n');
+      fs.writeFileSync(gulpfilePath, content, 'utf8');
+      console.error('✓ Successfully patched gulpfile.vscode.js to skip AppX when win32ContextMenu is missing');
+    }
+  } else {
+    console.error('✓ win32ContextMenu found in product.json, AppX building enabled');
+  }
+} catch (error) {
+  console.error(`✗ ERROR: ${error.message}`);
+  process.exit(1);
+}
+APPXFIX
+          echo "Warning: Failed to patch gulpfile.vscode.js for AppX, continuing anyway..." >&2
+        }
+      fi
+
       echo "Building Windows package for ${VSCODE_ARCH}..."
       if ! npm run gulp "vscode-win32-${VSCODE_ARCH}-min-ci"; then
         echo "Error: Windows build failed for ${VSCODE_ARCH}. Check for:" >&2

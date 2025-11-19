@@ -24,6 +24,82 @@ node build/azure-pipelines/distro/mixin-npm
 
 . ../build/windows/rtf/make.sh
 
+# CRITICAL FIX: Make rcedit optional when wine is not available
+# rcedit requires wine on Linux, but wine may not be installed in CI
+if [[ -f "build/gulpfile.vscode.js" ]]; then
+  echo "Patching gulpfile.vscode.js to make rcedit optional when wine is unavailable..." >&2
+  node << 'RCEDITFIX' || {
+const fs = require('fs');
+const filePath = 'build/gulpfile.vscode.js';
+let content = fs.readFileSync(filePath, 'utf8');
+
+// Check if already patched
+if (content.includes('// RCEDIT_WINE_FIX')) {
+  console.error('gulpfile.vscode.js already patched for rcedit/wine');
+  process.exit(0);
+}
+
+// Find the rcedit usage and wrap it in try-catch
+const lines = content.split('\n');
+let modified = false;
+
+for (let i = 0; i < lines.length; i++) {
+  // Find: await rcedit(path.join(cwd, dep), {
+  if (lines[i].includes('await rcedit(path.join(cwd, dep), {')) {
+    // Check if already wrapped
+    if (lines[i - 1] && lines[i - 1].includes('try {')) {
+      console.error('rcedit already wrapped in try-catch');
+      break;
+    }
+    
+    // Find the closing of this rcedit call (should be a few lines later)
+    // Wrap the entire Promise.all block in try-catch
+    // Look backwards for the Promise.all line
+    let promiseAllLine = -1;
+    for (let j = i; j >= 0 && j >= i - 5; j--) {
+      if (lines[j].includes('Promise.all(deps.map')) {
+        promiseAllLine = j;
+        break;
+      }
+    }
+    
+    if (promiseAllLine >= 0) {
+      // Add try-catch around Promise.all
+      const indent = lines[promiseAllLine].match(/^\s*/)[0];
+      lines[promiseAllLine] = `${indent}// RCEDIT_WINE_FIX: Make rcedit optional when wine is unavailable\n${indent}try {\n${lines[promiseAllLine]}`;
+      
+      // Find the closing of Promise.all (should be after the rcedit call)
+      let closingLine = -1;
+      for (let j = i; j < lines.length && j <= i + 15; j++) {
+        if (lines[j].includes('}));') && lines[j].match(/^\s*/)[0].length === indent.length) {
+          closingLine = j;
+          break;
+        }
+      }
+      
+      if (closingLine >= 0) {
+        // Add catch block after the closing
+        lines[closingLine] = `${lines[closingLine]}\n${indent}} catch (err) {\n${indent}  // rcedit requires wine on Linux, skip if not available\n${indent}  if (err.message && err.message.includes('wine')) {\n${indent}    console.warn('Skipping rcedit (wine not available):', err.message);\n${indent}  } else {\n${indent}    throw err;\n${indent}  }\n${indent}}`;
+        modified = true;
+        console.error(`✓ Wrapped rcedit in try-catch at line ${promiseAllLine + 1}`);
+        break;
+      }
+    }
+  }
+}
+
+if (modified) {
+  content = lines.join('\n');
+  fs.writeFileSync(filePath, content, 'utf8');
+  console.error('✓ Successfully patched gulpfile.vscode.js to make rcedit optional');
+} else {
+  console.error('Could not find rcedit usage to patch');
+}
+RCEDITFIX
+    echo "Warning: Failed to patch gulpfile.vscode.js for rcedit, continuing anyway..." >&2
+  }
+fi
+
 # CRITICAL FIX: Skip AppX building if win32ContextMenu is missing
 if [[ -f "build/gulpfile.vscode.js" ]]; then
   echo "Checking for win32ContextMenu in product.json..." >&2

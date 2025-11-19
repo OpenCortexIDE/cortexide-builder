@@ -610,90 +610,105 @@ EOFPATCH
       echo "Applying webpack ES module patch before compile-extensions-build..." >&2
       cp "build/lib/extensions.js" "build/lib/extensions.js.bak" 2>/dev/null || true
       
-      # Use a more direct approach - find and replace the exact line
-      node -e "
-        const fs = require('fs');
-        const filePath = 'build/lib/extensions.js';
-        let content = fs.readFileSync(filePath, 'utf8');
-        
-        // Find the exact line with require(webpackConfigPath).default
-        // Pattern: const exportedConfig = require(webpackConfigPath).default;
-        const lines = content.split('\n');
-        const result = [];
-        let needsPathToFileURL = true;
-        let foundWebpackStreams = false;
-        
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          
-          // Add pathToFileURL imports right before const webpackStreams
-          if (line.includes('const webpackStreams') && needsPathToFileURL && !content.includes('pathToFileURL')) {
-            // Find the function start
-            let funcStart = i;
-            while (funcStart > 0 && !lines[funcStart].includes('function') && !lines[funcStart].includes('=>')) {
-              funcStart--;
-            }
-            // Add imports right after the opening brace
-            if (funcStart >= 0) {
-              let indent = lines[funcStart].match(/^(\s*)/)[1];
-              result.push(indent + 'const { pathToFileURL } = require(\"url\");');
-              result.push(indent + 'const path = require(\"path\");');
-              needsPathToFileURL = false;
-            }
-            foundWebpackStreams = true;
-          }
-          
-          // Replace require(webpackConfigPath).default with dynamic import
-          if (line.includes('require(webpackConfigPath)')) {
-            // Check if it's the exportedConfig line
-            if (line.includes('const exportedConfig') || line.includes('exportedConfig =')) {
-              // Replace with dynamic import
-              const indent = line.match(/^(\s*)/)[1];
-              result.push(indent + 'const exportedConfig = (await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default;');
-            } else {
-              // Replace inline
-              result.push(line.replace(/require\(webpackConfigPath\)\.default/g, '(await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default'));
-            }
-          } else if (line.includes('webpackConfigLocations.flatMap')) {
-            // Replace flatMap with map and Promise.all
-            result.push(line.replace(/webpackConfigLocations\.flatMap\(webpackConfigPath\s*=>/g, 'webpackConfigLocations.map(async webpackConfigPath =>'));
-            if (line.includes('const webpackStreams')) {
-              result[result.length - 1] = result[result.length - 1].replace(/const\s+webpackStreams\s*=\s*webpackConfigLocations\.map\(async/g, 'const webpackStreams = await Promise.all(webpackConfigLocations.map(async');
-            }
-          } else if (line.includes('.then(fileNames =>') && !line.includes('.then(async')) {
-            // Make then callback async
-            result.push(line.replace(/\.then\(fileNames\s*=>/g, '.then(async (fileNames) =>'));
-          } else {
-            result.push(line);
-          }
-        }
-        
-        // Fix Promise.all closing and flattening
-        content = result.join('\n');
-        if (content.includes('await Promise.all(webpackConfigLocations.map(async')) {
-          // Find the closing of the map and add flattening
-          content = content.replace(
-            /(\}\));\s*\n\s*const\s+webpackStreams\s*=\s*await\s+Promise\.all/,
-            '$1\n        const flattenedWebpackStreams = [].concat(...webpackStreams);'
-          );
-          // Replace event_stream merge to use flattened
-          content = content.replace(
-            /event_stream_1\.default\.merge\(\.\.\.webpackStreams/g,
-            'event_stream_1.default.merge(...flattenedWebpackStreams'
-          );
-        }
-        
-        fs.writeFileSync(filePath, content, 'utf8');
-        console.log('Patched extensions.js successfully');
-      " 2>&1 || {
-        echo "Warning: Direct patch failed. Trying comprehensive patch..." >&2
-        # Fall back to comprehensive patch
-        node "$PATCH_SCRIPT_FILE" "build/lib/extensions.js" 2>&1 || {
-          if [[ -f "build/lib/extensions.js.bak" ]]; then
-            mv "build/lib/extensions.js.bak" "build/lib/extensions.js" 2>/dev/null || true
-          fi
-        }
+      # Use inline Node.js script for direct patching
+      PRE_BUILD_PATCH_SCRIPT=$(mktemp /tmp/fix-extensions-pre-build.XXXXXX.js) || {
+        PRE_BUILD_PATCH_SCRIPT="/tmp/fix-extensions-pre-build.js"
       }
+      cat > "$PRE_BUILD_PATCH_SCRIPT" << 'PREBUILDPATCH'
+const fs = require('fs');
+const filePath = process.argv[2];
+let content = fs.readFileSync(filePath, 'utf8');
+
+// Check if already patched
+if (content.includes('pathToFileURL') && !content.includes('require(webpackConfigPath).default')) {
+  console.log('Already patched');
+  process.exit(0);
+}
+
+const lines = content.split('\n');
+const result = [];
+let addedImports = false;
+let inWebpackStreams = false;
+let braceCount = 0;
+
+for (let i = 0; i < lines.length; i++) {
+  const line = lines[i];
+  
+  // Make then callback async
+  if (line.includes('.then(fileNames =>') && !line.includes('.then(async')) {
+    result.push(line.replace(/\.then\(fileNames\s*=>/g, '.then(async (fileNames) =>'));
+    continue;
+  }
+  
+  // Replace flatMap with map and Promise.all
+  if (line.includes('webpackConfigLocations.flatMap(webpackConfigPath =>')) {
+    let newLine = line.replace(/webpackConfigLocations\.flatMap\(webpackConfigPath\s*=>/g, 'webpackConfigLocations.map(async webpackConfigPath =>');
+    if (line.includes('const webpackStreams')) {
+      newLine = newLine.replace(/const\s+webpackStreams\s*=\s*webpackConfigLocations\.map\(async/g, 'const webpackStreams = await Promise.all(webpackConfigLocations.map(async');
+      inWebpackStreams = true;
+      braceCount = (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+    }
+    result.push(newLine);
+    continue;
+  }
+  
+  // Add imports when we enter the webpackStreams block
+  if (inWebpackStreams && !addedImports) {
+    braceCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+    if (braceCount > 0) {
+      const indent = line.match(/^(\s*)/)[1] || '            ';
+      result.push(indent + 'const { pathToFileURL } = require("url");');
+      result.push(indent + 'const path = require("path");');
+      addedImports = true;
+    }
+  }
+  
+  // Replace require(webpackConfigPath).default
+  if (line.includes('require(webpackConfigPath)')) {
+    if (line.includes('const exportedConfig') || line.includes('exportedConfig =')) {
+      const indent = line.match(/^(\s*)/)[1] || '            ';
+      result.push(indent + 'const exportedConfig = (await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default;');
+    } else {
+      result.push(line.replace(/require\(webpackConfigPath\)\.default/g, '(await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default'));
+    }
+    continue;
+  }
+  
+  // Track brace count for webpackStreams block
+  if (inWebpackStreams) {
+    braceCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+    if (braceCount <= 0 && line.includes('}')) {
+      inWebpackStreams = false;
+    }
+  }
+  
+  result.push(line);
+}
+
+content = result.join('\n');
+
+// Fix Promise.all closing and flattening
+if (content.includes('await Promise.all(webpackConfigLocations.map(async')) {
+  // Find where the map closes and add flattening
+  const mapClosePattern = /(\}\));\s*\n(\s*)const\s+webpackStreams\s*=\s*await\s+Promise\.all/;
+  if (mapClosePattern.test(content)) {
+    content = content.replace(mapClosePattern, '$1));\n$2const flattenedWebpackStreams = [].concat(...webpackStreams);');
+  }
+  // Replace event_stream merge
+  content = content.replace(/event_stream_1\.default\.merge\(\.\.\.webpackStreams/g, 'event_stream_1.default.merge(...flattenedWebpackStreams');
+}
+
+fs.writeFileSync(filePath, content, 'utf8');
+console.log('Patched extensions.js successfully');
+PREBUILDPATCH
+      
+      node "$PRE_BUILD_PATCH_SCRIPT" "build/lib/extensions.js" 2>&1 || {
+        echo "Warning: Pre-build patch failed. Restoring backup..." >&2
+        if [[ -f "build/lib/extensions.js.bak" ]]; then
+          mv "build/lib/extensions.js.bak" "build/lib/extensions.js" 2>/dev/null || true
+        fi
+      }
+      rm -f "$PRE_BUILD_PATCH_SCRIPT"
       
       # Verify patch
       if grep -q "pathToFileURL" "build/lib/extensions.js" 2>/dev/null && ! grep -q "require(webpackConfigPath).default" "build/lib/extensions.js" 2>/dev/null; then

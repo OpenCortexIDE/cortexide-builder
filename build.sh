@@ -1528,25 +1528,36 @@ try {
   // Fix 1: dependenciesSrc - CRITICAL FIX
   // Root cause: empty array [] causes "Invalid glob argument" error
   // allowEmpty: true doesn't work for empty arrays, and ['!**'] needs a positive glob
-  // Solution: Check if array is empty and provide a valid fallback pattern
+  // Solution: Modify the assignment to include fallback, OR change const to let
   for (let i = 0; i < lines.length; i++) {
     // Find: const dependenciesSrc = ... .flat();
     if (lines[i].includes('const dependenciesSrc =') && lines[i].includes('.flat()')) {
       console.error(`Found dependenciesSrc at line ${i + 1}: ${lines[i].trim()}`);
       
       // Check if we already fixed it
-      if (lines[i].includes('dependenciesSrc.length === 0') || lines[i].includes('[\'**\', \'!**/*\']')) {
+      if (lines[i].includes('|| [\'**\', \'!**/*\']') || lines[i].includes('|| ["**", "!**/*"]')) {
         console.error('✓ Already has empty array protection');
       } else {
-        // Add a check after this line: if empty, use a pattern that matches nothing but is valid
-        // ['**', '!**/*'] matches everything then excludes everything = valid but matches nothing
+        // Change const to let so we can reassign, then add check
         const originalLine = lines[i];
         const indent = originalLine.match(/^\s*/)[0];
-        // Insert check on next line
+        
+        // Change const to let
+        let newLine = originalLine.replace(/const dependenciesSrc =/, 'let dependenciesSrc =');
+        
+        // Add fallback to the assignment: .flat() || ['**', '!**/*']
+        newLine = newLine.replace(/\.flat\(\);?$/, ".flat() || ['**', '!**/*'];");
+        
+        lines[i] = newLine;
+        
+        // Add check on next line to handle empty case
         lines.splice(i + 1, 0, `${indent}if (dependenciesSrc.length === 0) { dependenciesSrc = ['**', '!**/*']; }`);
+        
         modified = true;
-        console.error(`✓ Added empty array check after line ${i + 1}`);
-        console.error(`Inserted: if (dependenciesSrc.length === 0) { dependenciesSrc = ['**', '!**/*']; }`);
+        console.error(`✓ Changed const to let and added fallback at line ${i + 1}`);
+        console.error(`✓ Added empty array check at line ${i + 2}`);
+        console.error(`New line ${i + 1}: ${lines[i].trim()}`);
+        console.error(`New line ${i + 2}: ${lines[i + 1].trim()}`);
       }
       break;
     }

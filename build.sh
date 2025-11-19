@@ -5,6 +5,29 @@ set -ex
 
 . version.sh
 
+# Validate required environment variables
+if [[ -z "${OS_NAME}" ]]; then
+  echo "Warning: OS_NAME is not set. Defaulting based on system..." >&2
+  case "$(uname -s)" in
+    Darwin*) OS_NAME="osx" ;;
+    Linux*) OS_NAME="linux" ;;
+    MINGW*|MSYS*|CYGWIN*) OS_NAME="windows" ;;
+    *) OS_NAME="linux" ;;
+  esac
+  export OS_NAME
+fi
+
+if [[ -z "${VSCODE_ARCH}" ]]; then
+  echo "Warning: VSCODE_ARCH is not set. Defaulting to x64..." >&2
+  VSCODE_ARCH="x64"
+  export VSCODE_ARCH
+fi
+
+if [[ -z "${CI_BUILD}" ]]; then
+  CI_BUILD="no"
+  export CI_BUILD
+fi
+
 if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   echo "MS_COMMIT=\"${MS_COMMIT}\""
 
@@ -128,8 +151,12 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
         # Create backup
         cp "build/lib/extensions.js" "build/lib/extensions.js.bak" 2>/dev/null || true
         
-        # Create comprehensive patch script
-        cat > /tmp/fix-extension-webpack-loader.js << 'EOFPATCH'
+        # Create comprehensive patch script using mktemp for better portability
+        PATCH_SCRIPT_FILE=$(mktemp /tmp/fix-extension-webpack-loader.XXXXXX.js) || {
+          echo "Warning: mktemp failed, using /tmp/fix-extension-webpack-loader.js" >&2
+          PATCH_SCRIPT_FILE="/tmp/fix-extension-webpack-loader.js"
+        }
+        cat > "$PATCH_SCRIPT_FILE" << 'EOFPATCH'
 const fs = require('fs');
 
 const filePath = process.argv[2];
@@ -332,7 +359,7 @@ EOFPATCH
         
         # Run the patch script and capture output
         echo "Running patch script..." >&2
-        PATCH_OUTPUT=$(node /tmp/fix-extension-webpack-loader.js "build/lib/extensions.js" 2>&1)
+        PATCH_OUTPUT=$(node "$PATCH_SCRIPT_FILE" "build/lib/extensions.js" 2>&1)
         PATCH_EXIT=$?
         echo "$PATCH_OUTPUT" >&2
         
@@ -363,7 +390,7 @@ EOFPATCH
             echo "Backup restored. Build may fail with SyntaxError." >&2
           fi
         fi
-        rm -f /tmp/fix-extension-webpack-loader.js
+        rm -f "$PATCH_SCRIPT_FILE"
       else
         echo "extensions.js doesn't contain webpack config patterns. Skipping patch." >&2
       fi
@@ -708,4 +735,13 @@ EOFPATCH2
   fi
 
   cd ..
+  
+  # Cleanup backup files created during patching
+  echo "Cleaning up backup files..." >&2
+  find . -name "*.bak" -type f -delete 2>/dev/null || true
+  if [[ -d "vscode" ]]; then
+    find vscode -name "*.bak" -type f -delete 2>/dev/null || true
+    find vscode/build/lib -name "*.bak" -type f -delete 2>/dev/null || true
+    find vscode/node_modules/@vscode/gulp-electron -name "*.bak" -type f -delete 2>/dev/null || true
+  fi
 fi

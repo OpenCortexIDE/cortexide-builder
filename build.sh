@@ -224,28 +224,34 @@ if (content.includes('const webpackRootConfig = require') && content.includes('w
 }
 
 // Fix 3: Replace require() with dynamic import inside webpackStreams and make it async
-// Check for both flatMap and require patterns
-if (content.includes('flatMap(webpackConfigPath') || content.includes('const exportedConfig = require(webpackConfigPath)')) {
-  // First replace flatMap if it exists
-  if (content.includes('flatMap(webpackConfigPath')) {
-    content = content.replace(
-      /const webpackStreams = webpackConfigLocations\.flatMap\(webpackConfigPath => \{/g,
-      'const webpackStreams = await Promise.all(webpackConfigLocations.map(async webpackConfigPath => {'
-    );
+// Always try to replace flatMap and require if they exist
+let patchedFlatMap = false;
+let patchedRequire = false;
+
+// First replace flatMap if it exists
+if (content.includes('flatMap(webpackConfigPath') || content.includes('webpackConfigLocations.flatMap')) {
+  const flatMapPattern = /const\s+webpackStreams\s*=\s*webpackConfigLocations\.flatMap\(webpackConfigPath\s*=>\s*\{/g;
+  if (flatMapPattern.test(content)) {
+    content = content.replace(flatMapPattern, 'const webpackStreams = await Promise.all(webpackConfigLocations.map(async webpackConfigPath => {');
+    patchedFlatMap = true;
   }
-  
-  // Then replace the require statement - this must happen after flatMap replacement
-  // Match the exact pattern with proper escaping
-  if (content.includes('const exportedConfig = require(webpackConfigPath).default')) {
-    content = content.replace(
-      /const exportedConfig = require\(webpackConfigPath\)\.default;/g,
-      `const { pathToFileURL } = require("url");
+}
+
+// Then replace the require statement
+if (content.includes('require(webpackConfigPath)')) {
+  const requirePattern = /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default;/g;
+  if (requirePattern.test(content)) {
+    content = content.replace(requirePattern, `const { pathToFileURL } = require("url");
             const path = require("path");
             let exportedConfig;
             const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;
-            exportedConfig = (await import(configUrl)).default;`
-    );
+            exportedConfig = (await import(configUrl)).default;`);
+    patchedRequire = true;
   }
+}
+
+// Only do closing bracket fix if we actually patched something
+if (patchedFlatMap || patchedRequire) {
   
   // Fix the closing bracket and flattening
   if (content.includes('event_stream_1.default.merge(...webpackStreams')) {

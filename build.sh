@@ -292,6 +292,8 @@ if (patchedFlatMap && content.includes('event_stream_1.default.merge(...webpackS
 
 fs.writeFileSync(filePath, content, 'utf8');
 console.log('Successfully patched extensions.js for ES module webpack configs');
+console.log('Patched flatMap:', patchedFlatMap);
+console.log('Patched require:', patchedRequire);
 EOFPATCH
       
       # Run the patch script

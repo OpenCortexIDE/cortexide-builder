@@ -340,8 +340,11 @@ EOFPATCH
           fi
         fi
         rm -f /tmp/fix-extension-webpack-loader.js
+      else
+        echo "extensions.js doesn't contain webpack config patterns. Skipping patch." >&2
+      fi
     else
-      echo "extensions.js already patched or doesn't need patching." >&2
+      echo "extensions.js already patched (pathToFileURL found). Skipping." >&2
     fi
   else
     echo "Warning: build/lib/extensions.js not found after compilation." >&2

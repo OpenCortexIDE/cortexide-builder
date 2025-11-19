@@ -1507,49 +1507,32 @@ EOFPATCH2
   if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
     echo "Building REH (Remote Extension Host)..."
     
-    # Fix gulpfile.reh.js to handle empty glob patterns before REH build
-    # This is a backup fix in case the patch file wasn't applied during prepare_vscode.sh
+    # CRITICAL FIX: Handle empty glob patterns in gulpfile.reh.js
+    # Apply fix directly using perl (available on all platforms) for reliability
     if [[ -f "build/gulpfile.reh.js" ]]; then
-      echo "Fixing gulpfile.reh.js to handle empty glob patterns..." >&2
-      REH_PATCH_SCRIPT=$(mktemp /tmp/fix-reh-glob.XXXXXX.js) || {
-        REH_PATCH_SCRIPT="/tmp/fix-reh-glob.js"
-      }
-      cat > "$REH_PATCH_SCRIPT" << 'REHPATCH'
-const fs = require('fs');
-const filePath = process.argv[2];
-let content = fs.readFileSync(filePath, 'utf8');
-let modified = false;
-
-// Fix 1: extensionPaths at line 299
-// Match: gulp.src(extensionPaths, { base: '.build', dot: true })
-const patternExt = /gulp\.src\(extensionPaths,\s*\{\s*base:\s*['"]\.build['"],\s*dot:\s*true\s*\}\)/g;
-if (patternExt.test(content) && !content.includes('gulp.src(extensionPaths, { base: \'.build\', dot: true, allowEmpty: true })')) {
-  content = content.replace(patternExt, 'gulp.src(extensionPaths, { base: \'.build\', dot: true, allowEmpty: true })');
-  modified = true;
-  console.log('Fixed extensionPaths gulp.src call');
-}
-
-// Fix 2: dependenciesSrc at line 335
-// Match: gulp.src(dependenciesSrc, { base: 'remote', dot: true })
-// Handle line continuation with optional whitespace/newline
-const patternDeps = /gulp\.src\(dependenciesSrc,\s*\{\s*base:\s*['"]remote['"],\s*dot:\s*true\s*\}\)/g;
-if (patternDeps.test(content) && !content.includes('gulp.src(dependenciesSrc, { base: \'remote\', dot: true, allowEmpty: true })')) {
-  content = content.replace(patternDeps, 'gulp.src(dependenciesSrc, { base: \'remote\', dot: true, allowEmpty: true })');
-  modified = true;
-  console.log('Fixed dependenciesSrc gulp.src call');
-}
-
-if (modified) {
-  fs.writeFileSync(filePath, content, 'utf8');
-  console.log('Fixed gulpfile.reh.js to handle empty glob patterns');
-} else {
-  console.log('gulpfile.reh.js already patched or no changes needed');
-}
-REHPATCH
-      node "$REH_PATCH_SCRIPT" "build/gulpfile.reh.js" 2>&1 || {
-        echo "Warning: Failed to patch gulpfile.reh.js, continuing anyway..." >&2
-      }
-      rm -f "$REH_PATCH_SCRIPT"
+      echo "Applying direct fix to gulpfile.reh.js for empty glob patterns..." >&2
+      
+      # Check if already fixed
+      if grep -q "allowEmpty: true" "build/gulpfile.reh.js" 2>/dev/null; then
+        echo "gulpfile.reh.js already has allowEmpty fix" >&2
+      else
+        # Use perl for reliable cross-platform in-place editing
+        perl -i -pe "
+          # Fix extensionPaths
+          s/gulp\.src\(extensionPaths,\s*\{\s*base:\s*'\.build',\s*dot:\s*true\s*\}\)/gulp.src(extensionPaths, { base: '.build', dot: true, allowEmpty: true })/g;
+          # Fix dependenciesSrc (critical fix for the error)
+          s/gulp\.src\(dependenciesSrc,\s*\{\s*base:\s*'remote',\s*dot:\s*true\s*\}\)/gulp.src(dependenciesSrc, { base: 'remote', dot: true, allowEmpty: true })/g;
+        " "build/gulpfile.reh.js" 2>/dev/null
+        
+        # Verify fix was applied
+        if grep -q "allowEmpty: true" "build/gulpfile.reh.js" 2>/dev/null; then
+          echo "Successfully applied allowEmpty fix to gulpfile.reh.js" >&2
+        else
+          echo "Warning: Fix may not have been applied. File may need manual editing." >&2
+          # Show the problematic line for debugging
+          grep -n "gulp.src(dependenciesSrc" "build/gulpfile.reh.js" 2>/dev/null | head -1 >&2 || true
+        fi
+      fi
     fi
     
     if ! npm run gulp minify-vscode-reh; then

@@ -318,23 +318,47 @@ fs.writeFileSync(filePath, content, 'utf8');
 console.log('Successfully patched extensions.js for ES module webpack configs');
 console.log('Patched flatMap:', patchedFlatMap);
 console.log('Patched require:', patchedRequire);
+// Debug: Check if patterns still exist
+if (content.includes('flatMap(webpackConfigPath')) {
+  console.log('WARNING: flatMap still found after patch attempt!');
+}
+if (content.includes('require(webpackConfigPath).default')) {
+  console.log('WARNING: require(webpackConfigPath) still found after patch attempt!');
+}
+if (content.includes('pathToFileURL')) {
+  console.log('SUCCESS: pathToFileURL found - patch was applied');
+}
 EOFPATCH
         
-        # Run the patch script
-        if node /tmp/fix-extension-webpack-loader.js "build/lib/extensions.js" 2>&1; then
+        # Run the patch script and capture output
+        echo "Running patch script..." >&2
+        PATCH_OUTPUT=$(node /tmp/fix-extension-webpack-loader.js "build/lib/extensions.js" 2>&1)
+        PATCH_EXIT=$?
+        echo "$PATCH_OUTPUT" >&2
+        
+        if [[ $PATCH_EXIT -eq 0 ]]; then
           # Verify the patch was applied
           if grep -q "pathToFileURL" "build/lib/extensions.js" 2>/dev/null; then
             echo "Successfully patched extensions.js for ES module webpack configs." >&2
           else
-            echo "Warning: Patch script ran but pathToFileURL not found. Patch may have failed." >&2
+            echo "ERROR: Patch script ran but pathToFileURL not found in extensions.js!" >&2
+            echo "Checking if patterns still exist..." >&2
+            if grep -q "flatMap(webpackConfigPath" "build/lib/extensions.js" 2>/dev/null; then
+              echo "ERROR: flatMap still exists - patch failed!" >&2
+            fi
+            if grep -q "require(webpackConfigPath).default" "build/lib/extensions.js" 2>/dev/null; then
+              echo "ERROR: require(webpackConfigPath) still exists - patch failed!" >&2
+            fi
             if [[ -f "build/lib/extensions.js.bak" ]]; then
+              echo "Restoring backup..." >&2
               mv "build/lib/extensions.js.bak" "build/lib/extensions.js" 2>/dev/null || true
-              echo "Backup restored." >&2
             fi
           fi
         else
-          echo "Error: Failed to patch extensions.js. Restoring backup..." >&2
+          echo "ERROR: Patch script failed with exit code $PATCH_EXIT" >&2
+          echo "Patch output: $PATCH_OUTPUT" >&2
           if [[ -f "build/lib/extensions.js.bak" ]]; then
+            echo "Restoring backup..." >&2
             mv "build/lib/extensions.js.bak" "build/lib/extensions.js" 2>/dev/null || true
             echo "Backup restored. Build may fail with SyntaxError." >&2
           fi

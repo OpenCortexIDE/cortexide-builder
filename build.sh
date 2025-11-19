@@ -396,6 +396,117 @@ EOFPATCH
     exit 1
   fi
   
+  # Re-apply webpack patch if file was regenerated during compile-extensions-build
+  # Some gulp tasks might regenerate build/lib/extensions.js
+  if [[ -f "build/lib/extensions.js" ]]; then
+    if ! grep -q "pathToFileURL" "build/lib/extensions.js" 2>/dev/null; then
+      if grep -q "require.*webpackConfig\|flatMap.*webpackConfigPath\|require(webpackConfigPath)" "build/lib/extensions.js" 2>/dev/null; then
+        echo "Warning: extensions.js was regenerated. Re-applying webpack patch..." >&2
+        # Re-run the same patch logic (code duplication, but ensures patch is applied)
+        cp "build/lib/extensions.js" "build/lib/extensions.js.bak" 2>/dev/null || true
+        PATCH_SCRIPT=$(cat << 'EOFPATCH2'
+const fs = require('fs');
+const filePath = process.argv[2];
+let content = fs.readFileSync(filePath, 'utf8');
+let patchedFlatMap = false;
+let patchedRequire = false;
+
+if (content.includes('vsce.listFiles({ cwd: extensionPath')) {
+  const thenPattern = /\)\.then\(fileNames\s*=>\s*\{/g;
+  if (thenPattern.test(content) && !content.includes('.then(async')) {
+    content = content.replace(thenPattern, ').then(async (fileNames) => {');
+  }
+}
+
+if (content.includes('flatMap')) {
+  const flatMapPatterns = [
+    /const\s+webpackStreams\s*=\s*webpackConfigLocations\.flatMap\(webpackConfigPath\s*=>\s*\{/g,
+    /webpackConfigLocations\.flatMap\(webpackConfigPath\s*=>\s*\{/g,
+    /\.flatMap\(webpackConfigPath\s*=>\s*\{/g
+  ];
+  for (const pattern of flatMapPatterns) {
+    if (pattern.test(content)) {
+      content = content.replace(pattern, (match) => {
+        if (match.includes('const webpackStreams')) {
+          return 'const webpackStreams = await Promise.all(webpackConfigLocations.map(async webpackConfigPath => {';
+        } else if (match.includes('webpackConfigLocations')) {
+          return 'webpackConfigLocations.map(async webpackConfigPath => {';
+        } else {
+          return '.map(async webpackConfigPath => {';
+        }
+      });
+      patchedFlatMap = true;
+      break;
+    }
+  }
+}
+
+if (content.includes('require(webpackConfigPath)') || content.includes('require(webpackConfigPath).default')) {
+  const requirePatterns = [
+    /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default;/g,
+    /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default\s*;/g,
+    /exportedConfig\s*=\s*require\(webpackConfigPath\)\.default;/g
+  ];
+  for (const pattern of requirePatterns) {
+    if (pattern.test(content)) {
+      content = content.replace(pattern, `const { pathToFileURL } = require("url");
+            const path = require("path");
+            let exportedConfig;
+            const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;
+            exportedConfig = (await import(configUrl)).default;`);
+      patchedRequire = true;
+      break;
+    }
+  }
+}
+
+if (patchedFlatMap && content.includes('event_stream_1.default.merge(...webpackStreams')) {
+  const lines = content.split('\n');
+  let result = [];
+  let foundMapStart = false;
+  let braceCount = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.includes('const webpackStreams = await Promise.all(webpackConfigLocations.map(async')) {
+      foundMapStart = true;
+      braceCount = (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+      result.push(line);
+      continue;
+    }
+    if (foundMapStart) {
+      braceCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+      if (braceCount === 0 && line.includes('}')) {
+        if (i + 1 < lines.length && lines[i + 1].includes('event_stream_1.default.merge(...webpackStreams')) {
+          result.push('}));');
+          result.push('        const flattenedWebpackStreams = [].concat(...webpackStreams);');
+          foundMapStart = false;
+          continue;
+        }
+      }
+    }
+    result.push(line);
+  }
+  content = result.join('\n');
+  content = content.replace(/event_stream_1\.default\.merge\(\.\.\.webpackStreams/g, 'event_stream_1.default.merge(...flattenedWebpackStreams');
+}
+
+fs.writeFileSync(filePath, content, 'utf8');
+console.log('Re-patched extensions.js');
+EOFPATCH2
+)
+        echo "$PATCH_SCRIPT" | node - "build/lib/extensions.js" 2>&1 || {
+          echo "Warning: Re-patch failed. Restoring backup..." >&2
+          if [[ -f "build/lib/extensions.js.bak" ]]; then
+            mv "build/lib/extensions.js.bak" "build/lib/extensions.js" 2>/dev/null || true
+          fi
+        }
+        if grep -q "pathToFileURL" "build/lib/extensions.js" 2>/dev/null; then
+          echo "Successfully re-patched extensions.js after compile-extensions-build." >&2
+        fi
+      fi
+    fi
+  fi
+  
   # Fix CSS paths in out-build directory before minify
   # This fixes paths that get incorrectly modified during the build process
   echo "Fixing CSS paths in out-build directory..."

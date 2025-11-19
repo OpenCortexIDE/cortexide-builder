@@ -144,24 +144,112 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   echo "Fixing extension webpack config loader for ES modules..."
   
   # First, try to patch the TypeScript source if it exists
+  # This is the ROOT CAUSE - patch the source, not the compiled output
   if [[ -f "build/lib/extensions.ts" ]]; then
-    echo "Patching TypeScript source file..." >&2
+    echo "Patching TypeScript source file (build/lib/extensions.ts)..." >&2
     if grep -q "require.*webpackConfigPath\|require(webpackConfigPath)" "build/lib/extensions.ts" 2>/dev/null; then
       cp "build/lib/extensions.ts" "build/lib/extensions.ts.bak" 2>/dev/null || true
-      # Replace require() with dynamic import in TypeScript
-      sed -i.bak2 's/require(webpackConfigPath)\.default/(await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default/g' "build/lib/extensions.ts" 2>/dev/null || true
-      # Add imports if needed
-      if ! grep -q "pathToFileURL" "build/lib/extensions.ts" 2>/dev/null; then
-        # Find the function and add imports
-        sed -i.bak3 '/const webpackStreams/i\
-            const { pathToFileURL } = require("url");\
-            const path = require("path");
-' "build/lib/extensions.ts" 2>/dev/null || true
+      
+      # Create a proper TypeScript patch script
+      TS_PATCH_SCRIPT=$(mktemp /tmp/fix-extensions-ts.XXXXXX.js) || {
+        TS_PATCH_SCRIPT="/tmp/fix-extensions-ts.js"
+      }
+      cat > "$TS_PATCH_SCRIPT" << 'EOFTS'
+const fs = require('fs');
+const filePath = process.argv[2];
+let content = fs.readFileSync(filePath, 'utf8');
+
+// Fix 1: Make the function async if it uses webpackConfigPath
+if (content.includes('const webpackStreams = webpackConfigLocations.flatMap')) {
+  // Find the function containing this and make it async
+  const functionMatch = content.match(/(function\s+\w+[^{]*\{[\s\S]*?const webpackStreams = webpackConfigLocations\.flatMap)/);
+  if (functionMatch && !functionMatch[1].includes('async')) {
+    content = content.replace(/function\s+(\w+)([^{]*)\{([\s\S]*?const webpackStreams = webpackConfigLocations\.flatMap)/, 'async function $1$2{$3');
+  }
+}
+
+// Fix 2: Replace flatMap with map and make callback async
+if (content.includes('webpackConfigLocations.flatMap(webpackConfigPath =>')) {
+  content = content.replace(
+    /webpackConfigLocations\.flatMap\(webpackConfigPath\s*=>/g,
+    'webpackConfigLocations.map(async webpackConfigPath =>'
+  );
+}
+
+// Fix 3: Add pathToFileURL imports at the top of fromLocalWebpack function
+if (content.includes('function fromLocalWebpack')) {
+  const functionStart = content.indexOf('function fromLocalWebpack');
+  if (functionStart !== -1) {
+    const afterFunction = content.indexOf('{', functionStart) + 1;
+    const before = content.substring(0, afterFunction);
+    const after = content.substring(afterFunction);
+    
+    if (!before.includes('pathToFileURL')) {
+      // Add imports right after the opening brace
+      content = before + '\n\tconst { pathToFileURL } = require("url");\n\tconst path = require("path");' + after;
+    }
+  }
+}
+
+// Fix 4: Replace require(webpackConfigPath).default with dynamic import
+if (content.includes('require(webpackConfigPath)')) {
+  // Replace the exact pattern: const exportedConfig = require(webpackConfigPath).default;
+  content = content.replace(
+    /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default\s*;/g,
+    'const exportedConfig = (await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default;'
+  );
+  
+  // Also replace just require(webpackConfigPath).default if it appears elsewhere
+  content = content.replace(
+    /require\(webpackConfigPath\)\.default/g,
+    '(await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default'
+  );
+}
+
+// Fix 5: Fix the flatMap return to use Promise.all
+if (content.includes('webpackConfigLocations.map(async')) {
+  // Find the closing of the map and add Promise.all wrapper
+  const mapStart = content.indexOf('webpackConfigLocations.map(async');
+  if (mapStart !== -1) {
+    // Find where this map ends (before the closing of webpackStreams assignment)
+    const beforeMap = content.substring(0, mapStart);
+    const afterMap = content.substring(mapStart);
+    
+    // Replace: const webpackStreams = webpackConfigLocations.map(async...
+    // With: const webpackStreams = await Promise.all(webpackConfigLocations.map(async...
+    if (!beforeMap.includes('Promise.all')) {
+      content = content.replace(
+        /const\s+webpackStreams\s*=\s*webpackConfigLocations\.map\(async/g,
+        'const webpackStreams = await Promise.all(webpackConfigLocations.map(async'
+      );
+      
+      // Find the closing of the map and add .flat() equivalent
+      // The structure is: map(async ... => { ... }); 
+      // We need: map(async ... => { ... })).flat();
+      // But we'll handle flattening in the JS patch since TypeScript doesn't have .flat()
+    }
+  }
+}
+
+fs.writeFileSync(filePath, content, 'utf8');
+console.log('Successfully patched extensions.ts');
+EOFTS
+      
+      node "$TS_PATCH_SCRIPT" "build/lib/extensions.ts" 2>&1 || {
+        echo "Warning: TypeScript patch failed. Restoring backup..." >&2
+        if [[ -f "build/lib/extensions.ts.bak" ]]; then
+          mv "build/lib/extensions.ts.bak" "build/lib/extensions.ts" 2>/dev/null || true
+        fi
+      }
+      rm -f "$TS_PATCH_SCRIPT"
+      
+      if grep -q "pathToFileURL\|await import" "build/lib/extensions.ts" 2>/dev/null; then
+        echo "TypeScript source patched successfully. Recompiling..." >&2
+        # Recompile
+        npm run gulp compile-build-without-mangling 2>&1 | tail -30 || {
+          echo "Warning: Recompilation after TS patch failed. Continuing with JS patch..." >&2
+        }
       fi
-      rm -f "build/lib/extensions.ts.bak"* 2>/dev/null || true
-      echo "TypeScript source patched. Recompiling..." >&2
-      # Recompile just this file
-      npm run gulp compile-build-without-mangling 2>&1 | tail -20 || true
     fi
   fi
   

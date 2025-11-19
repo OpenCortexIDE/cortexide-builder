@@ -529,8 +529,10 @@ if (content.includes('const webpackRootConfig = require(path_1.default.join(exte
         if (packageJsonConfig.dependencies) {
             try {
                 // Use file:// URL to ensure Node.js treats it as an ES module
-                const webpackConfigPath = path_1.default.join(extensionPath, webpackConfigFileName);
-                const webpackConfigUrl = 'file://' + webpackConfigPath.replace(/\\\\/g, '/');
+                // Need to use pathToFileURL for proper URL construction
+                const { pathToFileURL } = require('url');
+                const webpackConfigPath = path_1.default.resolve(extensionPath, webpackConfigFileName);
+                const webpackConfigUrl = pathToFileURL(webpackConfigPath).href;
                 const webpackRootConfig = (await import(webpackConfigUrl)).default;
                 for (const key in webpackRootConfig.externals) {
                     if (key in packageJsonConfig.dependencies) {
@@ -556,9 +558,10 @@ if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
     );
     
     // Replace require with dynamic import using file:// URL
+    // Need to use pathToFileURL for proper URL construction
     content = content.replace(
       /const exportedConfig = require\(webpackConfigPath\)\.default;/g,
-      'const exportedConfig = (await import("file://" + webpackConfigPath.replace(/\\\\\\\\/g, "/"))).default;'
+      'const { pathToFileURL } = require("url"); const exportedConfig = (await import(pathToFileURL(require("path").resolve(webpackConfigPath)).href)).default;'
     );
     
     // Fix the closing bracket - find the pattern: }); followed by event_stream_1.default.merge

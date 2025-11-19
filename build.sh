@@ -129,7 +129,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
         cp "build/lib/extensions.js" "build/lib/extensions.js.bak" 2>/dev/null || true
         
         # Create comprehensive patch script
-      cat > /tmp/fix-extension-webpack-loader.js << 'EOFPATCH'
+        cat > /tmp/fix-extension-webpack-loader.js << 'EOFPATCH'
 const fs = require('fs');
 
 const filePath = process.argv[2];

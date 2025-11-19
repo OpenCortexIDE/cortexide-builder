@@ -176,7 +176,14 @@ if (content.includes('webpackConfigLocations.flatMap(webpackConfigPath =>')) {
   );
 }
 
-// Fix 3: Add pathToFileURL imports at the top of fromLocalWebpack function
+// Fix 3: Make fromLocalWebpack function async
+if (content.includes('function fromLocalWebpack')) {
+  if (!content.includes('async function fromLocalWebpack')) {
+    content = content.replace(/function\s+fromLocalWebpack/g, 'async function fromLocalWebpack');
+  }
+}
+
+// Fix 3b: Add pathToFileURL imports at the top of fromLocalWebpack function
 if (content.includes('function fromLocalWebpack')) {
   const functionStart = content.indexOf('function fromLocalWebpack');
   if (functionStart !== -1) {
@@ -189,6 +196,15 @@ if (content.includes('function fromLocalWebpack')) {
       content = before + '\n\tconst { pathToFileURL } = require("url");\n\tconst path = require("path");' + after;
     }
   }
+}
+
+// Fix 3c: Replace webpackRootConfig require with dynamic import
+if (content.includes('const webpackRootConfig = require(path.join(extensionPath, webpackConfigFileName))')) {
+  // This needs to be inside an async function, which we just made it
+  content = content.replace(
+    /const\s+webpackRootConfig\s*=\s*require\(path\.join\(extensionPath,\s*webpackConfigFileName\)\)\.default\s*;/g,
+    'const webpackRootConfig = (await import(pathToFileURL(path.resolve(extensionPath, webpackConfigFileName))).href)).default;'
+  );
 }
 
 // Fix 4: Replace require(webpackConfigPath).default with dynamic import

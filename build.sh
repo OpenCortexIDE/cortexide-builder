@@ -112,7 +112,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   
   # CRITICAL: Patch TypeScript source BEFORE compilation
   # This ensures the compiled JavaScript is correct from the start
-  if [[ -f "build/lib/extensions.ts" ]]; then
+  if [[ "${APPLY_TS_WEBPACK_PATCH:-no}" == "yes" ]] && [[ -f "build/lib/extensions.ts" ]]; then
     echo "Patching TypeScript source file (build/lib/extensions.ts)..." >&2
     if grep -q "require.*webpackConfigPath\|require(webpackConfigPath)" "build/lib/extensions.ts" 2>/dev/null; then
       cp "build/lib/extensions.ts" "build/lib/extensions.ts.bak" 2>/dev/null || true
@@ -261,6 +261,36 @@ EOFTS
     fi
   fi
   
+  echo "Compiling build without mangling..."
+  # Verify ternary-stream is available before running gulp
+  if [[ ! -d "node_modules/ternary-stream" ]] && [[ ! -f "node_modules/ternary-stream/package.json" ]]; then
+    echo "Error: ternary-stream dependency is missing. Installing..." >&2
+    if [[ -f "build/package.json" ]]; then
+      (cd build && npm install ternary-stream 2>&1 | tail -20) || {
+        echo "Trying to install at root level..." >&2
+        npm install ternary-stream 2>&1 | tail -20 || {
+          echo "Error: Failed to install ternary-stream. Cannot continue." >&2
+          echo "Try running: cd vscode && npm install ternary-stream" >&2
+          exit 1
+        }
+      }
+    else
+      npm install ternary-stream 2>&1 | tail -20 || {
+        echo "Error: Failed to install ternary-stream. Cannot continue." >&2
+        exit 1
+      }
+    fi
+  fi
+
+  if ! npm run gulp compile-build-without-mangling; then
+    echo "Error: compile-build-without-mangling failed. Check for:" >&2
+    echo "  - TypeScript compilation errors" >&2
+    echo "  - Missing build dependencies (ternary-stream)" >&2
+    echo "  - Gulp task configuration issues" >&2
+    echo "  - Check logs above for specific errors" >&2
+    exit 1
+  fi
+  
   # Then patch the compiled JavaScript (fallback or if TS patch didn't work)
   if [[ -f "build/lib/extensions.js" ]]; then
     # ALWAYS try to patch if file has the patterns, even if pathToFileURL exists
@@ -282,6 +312,23 @@ const fs = require('fs');
 
 const filePath = process.argv[2];
 let content = fs.readFileSync(filePath, 'utf8');
+
+// Ensure fromLocal handles Promise-returning streams
+const fromLocalTailPattern = /if\s*\(isWebPacked\)\s*\{\s*input\s*=\s*updateExtensionPackageJSON\(([\s\S]*?)\);\s*\}\s*return\s+input;/;
+if (fromLocalTailPattern.test(content)) {
+  content = content.replace(fromLocalTailPattern, `if (input && typeof input.then === 'function') {
+        const proxyStream = event_stream_1.default.through();
+        input.then((actualStream) => {
+            actualStream.pipe(proxyStream);
+        }).catch((err) => proxyStream.emit('error', err));
+        input = proxyStream;
+    }
+
+    if (isWebPacked) {
+        input = updateExtensionPackageJSON($1);
+    }
+    return input;`);
+}
 
 // Fix 1: Make the then() callback async FIRST
 // The actual code has: vsce.listFiles({ cwd: extensionPath, packageManager: vsce.PackageManager.None, packagedDependencies }).then(fileNames => {
@@ -817,6 +864,23 @@ PREBUILDPATCH
 const fs = require('fs');
 const filePath = process.argv[2];
 let content = fs.readFileSync(filePath, 'utf8');
+
+// Ensure fromLocal handles Promise-returning streams
+const fromLocalTailPattern = /if\s*\(isWebPacked\)\s*\{\s*input\s*=\s*updateExtensionPackageJSON\(([\s\S]*?)\);\s*\}\s*return\s+input;/;
+if (fromLocalTailPattern.test(content)) {
+  content = content.replace(fromLocalTailPattern, `if (input && typeof input.then === 'function') {
+        const proxyStream = event_stream_1.default.through();
+        input.then((actualStream) => {
+            actualStream.pipe(proxyStream);
+        }).catch((err) => proxyStream.emit('error', err));
+        input = proxyStream;
+    }
+
+    if (isWebPacked) {
+        input = updateExtensionPackageJSON($1);
+    }
+    return input;`);
+}
 
 // Ensure fromLocalWebpack is async and has imports
 if (content.includes('function fromLocalWebpack(') && !content.includes('async function fromLocalWebpack')) {

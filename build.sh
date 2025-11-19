@@ -343,17 +343,20 @@ if (patchedFlatMap && content.includes('event_stream_1.default.merge(...webpackS
 
 fs.writeFileSync(filePath, content, 'utf8');
 console.log('Successfully patched extensions.js for ES module webpack configs');
-console.log('Patched flatMap:', patchedFlatMap);
-console.log('Patched require:', patchedRequire);
-// Debug: Check if patterns still exist
-if (content.includes('flatMap(webpackConfigPath')) {
-  console.log('WARNING: flatMap still found after patch attempt!');
-}
-if (content.includes('require(webpackConfigPath).default')) {
-  console.log('WARNING: require(webpackConfigPath) still found after patch attempt!');
-}
-if (content.includes('pathToFileURL')) {
-  console.log('SUCCESS: pathToFileURL found - patch was applied');
+// Only show detailed debug output if DEBUG environment variable is set
+if (process.env.DEBUG) {
+  console.log('Patched flatMap:', patchedFlatMap);
+  console.log('Patched require:', patchedRequire);
+  // Debug: Check if patterns still exist
+  if (content.includes('flatMap(webpackConfigPath')) {
+    console.log('WARNING: flatMap still found after patch attempt!');
+  }
+  if (content.includes('require(webpackConfigPath).default')) {
+    console.log('WARNING: require(webpackConfigPath) still found after patch attempt!');
+  }
+  if (content.includes('pathToFileURL')) {
+    console.log('SUCCESS: pathToFileURL found - patch was applied');
+  }
 }
 EOFPATCH
         

@@ -625,77 +625,110 @@ if (content.includes('pathToFileURL') && !content.includes('require(webpackConfi
   process.exit(0);
 }
 
-const lines = content.split('\n');
-const result = [];
-let addedImports = false;
-let inWebpackStreams = false;
-let braceCount = 0;
-
-for (let i = 0; i < lines.length; i++) {
-  const line = lines[i];
-  
-  // Make then callback async
-  if (line.includes('.then(fileNames =>') && !line.includes('.then(async')) {
-    result.push(line.replace(/\.then\(fileNames\s*=>/g, '.then(async (fileNames) =>'));
-    continue;
-  }
-  
-  // Replace flatMap with map and Promise.all
-  if (line.includes('webpackConfigLocations.flatMap(webpackConfigPath =>')) {
-    let newLine = line.replace(/webpackConfigLocations\.flatMap\(webpackConfigPath\s*=>/g, 'webpackConfigLocations.map(async webpackConfigPath =>');
-    if (line.includes('const webpackStreams')) {
-      newLine = newLine.replace(/const\s+webpackStreams\s*=\s*webpackConfigLocations\.map\(async/g, 'const webpackStreams = await Promise.all(webpackConfigLocations.map(async');
-      inWebpackStreams = true;
-      braceCount = (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
-    }
-    result.push(newLine);
-    continue;
-  }
-  
-  // Add imports when we enter the webpackStreams block
-  if (inWebpackStreams && !addedImports) {
-    braceCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
-    if (braceCount > 0) {
-      const indent = line.match(/^(\s*)/)[1] || '            ';
-      result.push(indent + 'const { pathToFileURL } = require("url");');
-      result.push(indent + 'const path = require("path");');
-      addedImports = true;
-    }
-  }
-  
-  // Replace require(webpackConfigPath).default
-  if (line.includes('require(webpackConfigPath)')) {
-    if (line.includes('const exportedConfig') || line.includes('exportedConfig =')) {
-      const indent = line.match(/^(\s*)/)[1] || '            ';
-      result.push(indent + 'const exportedConfig = (await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default;');
-    } else {
-      result.push(line.replace(/require\(webpackConfigPath\)\.default/g, '(await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default'));
-    }
-    continue;
-  }
-  
-  // Track brace count for webpackStreams block
-  if (inWebpackStreams) {
-    braceCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
-    if (braceCount <= 0 && line.includes('}')) {
-      inWebpackStreams = false;
-    }
-  }
-  
-  result.push(line);
+// Make fromLocalWebpack function async
+if (content.includes('function fromLocalWebpack(') && !content.includes('async function fromLocalWebpack')) {
+  content = content.replace(/function\s+fromLocalWebpack\(/g, 'async function fromLocalWebpack(');
 }
 
-content = result.join('\n');
+// Add pathToFileURL imports at the start of fromLocalWebpack function
+if (content.includes('function fromLocalWebpack')) {
+  const funcStart = content.indexOf('async function fromLocalWebpack');
+  if (funcStart !== -1) {
+    const afterBrace = content.indexOf('{', funcStart) + 1;
+    const before = content.substring(0, afterBrace);
+    const after = content.substring(afterBrace);
+    
+    if (!before.includes('pathToFileURL')) {
+      // Find the indentation of the first line after the brace
+      const firstLineMatch = after.match(/^(\s*)/);
+      const indent = firstLineMatch ? firstLineMatch[1] : '    ';
+      content = before + '\n' + indent + 'const { pathToFileURL } = require("url");\n' + indent + 'const path = require("path");' + after;
+    }
+  }
+}
+
+// Make then callback async - exact pattern from actual code
+// Pattern: vsce.listFiles({ cwd: extensionPath, packageManager: vsce.PackageManager.None, packagedDependencies }).then(fileNames => {
+if (content.includes('vsce.listFiles({ cwd: extensionPath')) {
+  content = content.replace(/\)\.then\(fileNames\s*=>\s*\{/g, ').then(async (fileNames) => {');
+}
+
+// Replace webpackRootConfig require with dynamic import (inside if block, before then)
+// Pattern: const webpackRootConfig = require(path_1.default.join(extensionPath, webpackConfigFileName)).default;
+if (content.includes('const webpackRootConfig = require(path_1.default.join(extensionPath, webpackConfigFileName))')) {
+  content = content.replace(
+    /const\s+webpackRootConfig\s*=\s*require\(path_1\.default\.join\(extensionPath,\s*webpackConfigFileName\)\)\.default\s*;/g,
+    'const webpackRootConfig = (await import(pathToFileURL(path.resolve(extensionPath, webpackConfigFileName)).href)).default;'
+  );
+}
+
+// Replace flatMap with map and Promise.all - exact pattern from actual code
+// Pattern: const webpackStreams = webpackConfigLocations.flatMap(webpackConfigPath => {
+if (content.includes('webpackConfigLocations.flatMap(webpackConfigPath =>')) {
+  content = content.replace(
+    /const\s+webpackStreams\s*=\s*webpackConfigLocations\.flatMap\(webpackConfigPath\s*=>/g,
+    'const webpackStreams = await Promise.all(webpackConfigLocations.map(async webpackConfigPath =>'
+  );
+}
+
+// Replace require(webpackConfigPath).default with dynamic import - exact pattern from actual code
+// Pattern: const exportedConfig = require(webpackConfigPath).default;
+if (content.includes('require(webpackConfigPath)')) {
+  content = content.replace(
+    /const\s+exportedConfig\s*=\s*require\(webpackConfigPath\)\.default\s*;/g,
+    'const exportedConfig = (await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default;'
+  );
+}
 
 // Fix Promise.all closing and flattening
+// The flatMap returns an array, so Promise.all will return an array of arrays
+// We need to flatten it before passing to event_stream.merge
 if (content.includes('await Promise.all(webpackConfigLocations.map(async')) {
-  // Find where the map closes and add flattening
-  const mapClosePattern = /(\}\));\s*\n(\s*)const\s+webpackStreams\s*=\s*await\s+Promise\.all/;
-  if (mapClosePattern.test(content)) {
-    content = content.replace(mapClosePattern, '$1));\n$2const flattenedWebpackStreams = [].concat(...webpackStreams);');
+  // Find where the map closes - look for the closing of the flatMap callback
+  // Pattern: }); followed by event_stream_1.default.merge(...webpackStreams
+  const lines = content.split('\n');
+  const result = [];
+  let foundMapStart = false;
+  let braceCount = 0;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    if (line.includes('const webpackStreams = await Promise.all(webpackConfigLocations.map(async')) {
+      foundMapStart = true;
+      braceCount = (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+      result.push(line);
+      continue;
+    }
+    
+    if (foundMapStart) {
+      braceCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+      
+      // When we close the map callback, check if next line is event_stream merge
+      if (braceCount === 0 && line.includes('});')) {
+        result.push(line);
+        // Check next line for event_stream merge
+        if (i + 1 < lines.length && lines[i + 1].includes('event_stream_1.default.merge(...webpackStreams')) {
+          // Add flattening before the merge
+          const indent = line.match(/^(\s*)/)[1] || '        ';
+          result.push(indent + 'const flattenedWebpackStreams = [].concat(...webpackStreams);');
+          foundMapStart = false;
+          continue;
+        }
+        foundMapStart = false;
+      }
+    }
+    
+    result.push(line);
   }
-  // Replace event_stream merge
-  content = content.replace(/event_stream_1\.default\.merge\(\.\.\.webpackStreams/g, 'event_stream_1.default.merge(...flattenedWebpackStreams');
+  
+  content = result.join('\n');
+  
+  // Replace event_stream merge to use flattened array
+  content = content.replace(
+    /event_stream_1\.default\.merge\(\.\.\.webpackStreams/g,
+    'event_stream_1.default.merge(...flattenedWebpackStreams'
+  );
 }
 
 fs.writeFileSync(filePath, content, 'utf8');

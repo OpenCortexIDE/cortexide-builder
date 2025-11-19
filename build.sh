@@ -203,7 +203,7 @@ if (content.includes('const webpackRootConfig = require(path.join(extensionPath,
   // This needs to be inside an async function, which we just made it
   content = content.replace(
     /const\s+webpackRootConfig\s*=\s*require\(path\.join\(extensionPath,\s*webpackConfigFileName\)\)\.default\s*;/g,
-    'const webpackRootConfig = (await import(pathToFileURL(path.resolve(extensionPath, webpackConfigFileName))).href)).default;'
+    'const webpackRootConfig = (await import(pathToFileURL(path.resolve(extensionPath, webpackConfigFileName)).href)).default;'
   );
 }
 

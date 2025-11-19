@@ -164,6 +164,47 @@ export VSCODE_NODE_GLIBC="-glibc-${GLIBC_VERSION}"
 
 if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
   echo "Building REH"
+  
+  # CRITICAL FIX: Handle empty glob patterns in gulpfile.reh.js (same fix as main build.sh)
+  if [[ -f "build/gulpfile.reh.js" ]]; then
+    echo "Applying critical fix to gulpfile.reh.js for empty glob patterns..." >&2
+    node << 'REHFIX' || {
+const fs = require('fs');
+const filePath = 'build/gulpfile.reh.js';
+try {
+  let content = fs.readFileSync(filePath, 'utf8');
+  const lines = content.split('\n');
+  let modified = false;
+  
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes('const dependenciesSrc =') && lines[i].includes('.flat()')) {
+      if (!lines[i].includes('|| [\'**\', \'!**/*\']')) {
+        let newLine = lines[i].replace(/const dependenciesSrc =/, 'let dependenciesSrc =');
+        newLine = newLine.replace(/\.flat\(\);?$/, ".flat() || ['**', '!**/*'];");
+        lines[i] = newLine;
+        const indent = lines[i].match(/^\s*/)[0];
+        lines.splice(i + 1, 0, `${indent}if (dependenciesSrc.length === 0) { dependenciesSrc = ['**', '!**/*']; }`);
+        modified = true;
+        console.error(`✓ Fixed dependenciesSrc at line ${i + 1}`);
+      }
+      break;
+    }
+  }
+  
+  if (modified) {
+    content = lines.join('\n');
+    fs.writeFileSync(filePath, content, 'utf8');
+    console.error('✓ Successfully applied REH glob fix');
+  }
+} catch (error) {
+  console.error(`✗ ERROR: ${error.message}`);
+  process.exit(1);
+}
+REHFIX
+      echo "Warning: Failed to patch gulpfile.reh.js, continuing anyway..." >&2
+    }
+  fi
+  
   npm run gulp minify-vscode-reh
   npm run gulp "vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
 

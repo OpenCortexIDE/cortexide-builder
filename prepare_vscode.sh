@@ -532,12 +532,43 @@ if (content.includes('const webpackRootConfig = require') && content.includes('w
   }
   
   // If no pattern matched, try a simpler approach - just remove the require line
-  if (!replaced && content.includes('const webpackRootConfig = require(path_1.default.join(extensionPath, webpackConfigFileName))')) {
-    // Find and remove just the require line and the for loop that follows
-    content = content.replace(
-      /if\s*\(packageJsonConfig\.dependencies\)\s*\{[\s\S]{0,500}?const\s+webpackRootConfig\s*=\s*require\(path_1\.default\.join\(extensionPath,\s*webpackConfigFileName\)\)\.default;[\s\S]{0,500}?for\s*\(const\s+key\s+in\s+webpackRootConfig\.externals\)\s*\{[\s\S]{0,500}?packagedDependencies\.push\(key\);[\s\S]{0,500}?\}[\s\S]{0,500}?\}[\s\S]{0,500}?\}/,
-      '// Webpack config will be loaded asynchronously inside the promise chain'
-    );
+  if (!replaced) {
+    // Try to match the exact structure with proper whitespace handling
+    // The actual code has: if (packageJsonConfig.dependencies) { ... const webpackRootConfig = require(...).default; ... }
+    const simplePattern = /if\s*\(packageJsonConfig\.dependencies\)\s*\{[^}]*const\s+webpackRootConfig\s*=\s*require\(path_1\.default\.join\(extensionPath,\s*webpackConfigFileName\)\)\.default;[^}]*for\s*\(const\s+key\s+in\s+webpackRootConfig\.externals\)\s*\{[^}]*packagedDependencies\.push\(key\);[^}]*\}[^}]*\}/;
+    if (simplePattern.test(content)) {
+      content = content.replace(simplePattern, '// Webpack config will be loaded asynchronously inside the promise chain');
+      replaced = true;
+    } else {
+      // Last resort: match line by line
+      const lines = content.split('\n');
+      let result = [];
+      let skipUntilClose = false;
+      let braceCount = 0;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        if (line.includes('if (packageJsonConfig.dependencies) {')) {
+          skipUntilClose = true;
+          braceCount = 1;
+          result.push('// Webpack config will be loaded asynchronously inside the promise chain');
+          continue;
+        }
+        
+        if (skipUntilClose) {
+          braceCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+          if (braceCount === 0) {
+            skipUntilClose = false;
+          }
+          continue;
+        }
+        
+        result.push(line);
+      }
+      content = result.join('\n');
+      replaced = true;
+    }
   }
   
   // Add it inside the async then() callback, right after const files

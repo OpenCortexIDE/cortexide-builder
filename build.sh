@@ -78,6 +78,20 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   . prepare_vscode.sh
 
   cd vscode || { echo "'vscode' dir not found"; exit 1; }
+  
+  # CRITICAL: Pre-convert ALL .js webpack config files to .mjs BEFORE any build
+  # This ensures Node.js treats them as ES modules from the start
+  echo "Pre-converting extension webpack config files to .mjs..." >&2
+  find extensions -type f \( -name "extension.webpack.config.js" -o -name "extension-browser.webpack.config.js" \) 2>/dev/null | while read -r jsfile; do
+    if [[ -f "$jsfile" ]]; then
+      mjsfile="${jsfile%.js}.mjs"
+      # Only copy if .mjs doesn't exist or .js is newer
+      if [[ ! -f "$mjsfile" ]] || [[ "$jsfile" -nt "$mjsfile" ]]; then
+        cp "$jsfile" "$mjsfile" 2>/dev/null && echo "Converted: $jsfile -> $mjsfile" >&2 || echo "Warning: Failed to convert $jsfile" >&2
+      fi
+    fi
+  done
+  echo "Webpack config pre-conversion complete." >&2
 
   export NODE_OPTIONS="--max-old-space-size=8192"
 
@@ -348,9 +362,141 @@ content = content.replace(rootImportPattern, `let webpackConfigPath = path_1.def
         }
         let webpackConfigUrl = pathToFileURL(webpackConfigPath).href;`);
 
-// Ensure per-extension webpack config imports copy .js -> .mjs before import()
+// Ensure per-extension webpack config imports ALWAYS use .mjs if available
+// First, try to replace patterns that already use pathToFileURL
+const exportedImportPattern1 = /let\s+configToLoad\s*=\s*webpackConfigPath;[\s\S]*?const\s+exportedConfig\s*=\s*\(await\s+import\(pathToFileURL\(path_1\.default\.resolve\(configToLoad\)\)\.href\)\)\.default;/g;
+if (exportedImportPattern1.test(content)) {
+  // Already has the conversion logic, but ensure it checks for .mjs first
+  content = content.replace(exportedImportPattern1, `let configToLoad = webpackConfigPath;
+        // Always prefer .mjs if it exists
+        if (configToLoad.endsWith('.js')) {
+            const mjsPath = configToLoad.replace(/\\.js$/, '.mjs');
+            if (fs_1.default.existsSync(mjsPath)) {
+                configToLoad = mjsPath;
+            } else {
+                // Create .mjs if .js exists
+                try {
+                    const srcStat = fs_1.default.statSync(configToLoad);
+                    const destStat = fs_1.default.existsSync(mjsPath) ? fs_1.default.statSync(mjsPath) : undefined;
+                    if (!destStat || srcStat.mtimeMs > destStat.mtimeMs) {
+                        fs_1.default.copyFileSync(configToLoad, mjsPath);
+                    }
+                    configToLoad = mjsPath;
+                } catch (error) {
+                    // ignore copy errors, use .js
+                }
+            }
+        }
+        const exportedConfig = (await import(pathToFileURL(path_1.default.resolve(configToLoad)).href)).default;`);
+}
+
+// Also handle the simpler pattern without the conversion logic
 const exportedImportPattern = /const\s+exportedConfig\s*=\s*\(await\s+import\(pathToFileURL\(path_1\.default\.resolve\(webpackConfigPath\)\)\.href\)\)\.default;/g;
-content = content.replace(exportedImportPattern, `let configToLoad = webpackConfigPath;
+content = content.replace(exportedImportPattern, (match) => {
+  // Check if this pattern is already inside a conversion block
+  const beforeMatch = content.substring(0, content.indexOf(match));
+  if (beforeMatch.includes('configToLoad') && beforeMatch.includes('.mjs')) {
+    return match; // Already converted
+  }
+  // Otherwise, add conversion logic
+  return `let configToLoad = webpackConfigPath;
+        // Always prefer .mjs if it exists
+        if (configToLoad.endsWith('.js')) {
+            const mjsPath = configToLoad.replace(/\\.js$/, '.mjs');
+            if (fs_1.default.existsSync(mjsPath)) {
+                configToLoad = mjsPath;
+            } else {
+                // Create .mjs if .js exists
+                try {
+                    const srcStat = fs_1.default.statSync(configToLoad);
+                    const destStat = fs_1.default.existsSync(mjsPath) ? fs_1.default.statSync(mjsPath) : undefined;
+                    if (!destStat || srcStat.mtimeMs > destStat.mtimeMs) {
+                        fs_1.default.copyFileSync(configToLoad, mjsPath);
+                    }
+                    configToLoad = mjsPath;
+                } catch (error) {
+                    // ignore copy errors, use .js
+                }
+            }
+        }
+        const exportedConfig = (await import(pathToFileURL(path_1.default.resolve(configToLoad)).href)).default;`;
+});
+
+// Also handle direct webpackConfigPath usage
+const directImportPattern = /\(await\s+import\(pathToFileURL\(path_1\.default\.resolve\(webpackConfigPath\)\)\.href\)\)/g;
+content = content.replace(directImportPattern, (match) => {
+  // Check if we're already in a conversion block
+  const matchIndex = content.indexOf(match);
+  const beforeMatch = content.substring(Math.max(0, matchIndex - 500), matchIndex);
+  if (beforeMatch.includes('configToLoad') && beforeMatch.includes('.mjs')) {
+    return match.replace('webpackConfigPath', 'configToLoad');
+  }
+  // Add conversion before the import
+  return `(await import(pathToFileURL(path_1.default.resolve((() => {
+            let configToLoad = webpackConfigPath;
+            if (configToLoad.endsWith('.js')) {
+                const mjsPath = configToLoad.replace(/\\.js$/, '.mjs');
+                if (fs_1.default.existsSync(mjsPath)) {
+                    configToLoad = mjsPath;
+                } else {
+                    try {
+                        const srcStat = fs_1.default.statSync(configToLoad);
+                        const destStat = fs_1.default.existsSync(mjsPath) ? fs_1.default.statSync(mjsPath) : undefined;
+                        if (!destStat || srcStat.mtimeMs > destStat.mtimeMs) {
+                            fs_1.default.copyFileSync(configToLoad, mjsPath);
+                        }
+                        configToLoad = mjsPath;
+                    } catch (error) {
+                        // ignore
+                    }
+                }
+            }
+            return configToLoad;
+        })())).href))`;
+});
+
+// Fallback: if we still have webpackConfigPath being used directly, wrap it
+if (content.includes('webpackConfigPath') && content.includes('pathToFileURL') && !content.includes('configToLoad')) {
+  // Find and replace the first occurrence
+  const lines = content.split('\n');
+  const result = [];
+  let inWebpackBlock = false;
+  let braceCount = 0;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    if (line.includes('webpackConfigPath') && line.includes('pathToFileURL') && line.includes('import')) {
+      // This is the line we need to fix
+      result.push('            let configToLoad = webpackConfigPath;');
+      result.push('            if (configToLoad.endsWith(\'.js\')) {');
+      result.push('                const mjsPath = configToLoad.replace(/\\.js$/, \'.mjs\');');
+      result.push('                if (fs_1.default.existsSync(mjsPath)) {');
+      result.push('                    configToLoad = mjsPath;');
+      result.push('                } else {');
+      result.push('                    try {');
+      result.push('                        const srcStat = fs_1.default.statSync(configToLoad);');
+      result.push('                        const destStat = fs_1.default.existsSync(mjsPath) ? fs_1.default.statSync(mjsPath) : undefined;');
+      result.push('                        if (!destStat || srcStat.mtimeMs > destStat.mtimeMs) {');
+      result.push('                            fs_1.default.copyFileSync(configToLoad, mjsPath);');
+      result.push('                        }');
+      result.push('                        configToLoad = mjsPath;');
+      result.push('                    } catch (error) {');
+      result.push('                        // ignore');
+      result.push('                    }');
+      result.push('                }');
+      result.push('            }');
+      result.push(line.replace(/webpackConfigPath/g, 'configToLoad'));
+    } else {
+      result.push(line);
+    }
+  }
+  content = result.join('\n');
+}
+
+// Old pattern for backward compatibility
+if (content.includes('require(webpackConfigPath)')) {
+  content = content.replace(/let\s+configToLoad\s*=\s*webpackConfigPath;
         if (configToLoad.endsWith('.js')) {
             const configMjsPath = configToLoad.replace(/\\.js$/, '.mjs');
             try {
@@ -741,7 +887,22 @@ if (content.includes('function fromLocalWebpack(') && !content.includes('async f
 // Add pathToFileURL imports at the start of fromLocalWebpack function
 if (content.includes('function fromLocalWebpack')) {
   const funcStart = content.indexOf('async function fromLocalWebpack');
-  if (funcStart !== -1) {
+  if (funcStart === -1) {
+    // Try without async
+    const funcStart2 = content.indexOf('function fromLocalWebpack');
+    if (funcStart2 !== -1) {
+      const afterBrace = content.indexOf('{', funcStart2) + 1;
+      const before = content.substring(0, afterBrace);
+      const after = content.substring(afterBrace);
+      
+      if (!before.includes('pathToFileURL')) {
+        // Find the indentation of the first line after the brace
+        const firstLineMatch = after.match(/^(\s*)/);
+        const indent = firstLineMatch ? firstLineMatch[1] : '    ';
+        content = before + '\n' + indent + 'const { pathToFileURL } = require("url");\n' + indent + 'const path = require("path");\n' + indent + 'const fs = require("fs");' + after;
+      }
+    }
+  } else {
     const afterBrace = content.indexOf('{', funcStart) + 1;
     const before = content.substring(0, afterBrace);
     const after = content.substring(afterBrace);
@@ -750,7 +911,7 @@ if (content.includes('function fromLocalWebpack')) {
       // Find the indentation of the first line after the brace
       const firstLineMatch = after.match(/^(\s*)/);
       const indent = firstLineMatch ? firstLineMatch[1] : '    ';
-      content = before + '\n' + indent + 'const { pathToFileURL } = require("url");\n' + indent + 'const path = require("path");' + after;
+      content = before + '\n' + indent + 'const { pathToFileURL } = require("url");\n' + indent + 'const path = require("path");\n' + indent + 'const fs = require("fs");' + after;
     }
   }
 }
@@ -788,23 +949,85 @@ if (content.includes('webpackConfigLocations.flatMap(webpackConfigPath =>')) {
   );
 }
 
-// Replace exportedConfig import with .mjs copy logic
-const exportedRegex = /const\s+exportedConfig\s*=\s*\(await\s+import\(pathToFileURL\(path_1\.default\.resolve\(webpackConfigPath\)\)\.href\)\)\.default;/g;
-content = content.replace(exportedRegex, `let configToLoad = webpackConfigPath;
+// Replace exportedConfig import with .mjs copy logic - ALWAYS prefer .mjs if it exists
+// Match multiple patterns to catch all variations
+const exportedPatterns = [
+  /const\s+exportedConfig\s*=\s*\(await\s+import\(pathToFileURL\(path_1\.default\.resolve\(webpackConfigPath\)\)\.href\)\)\.default;/g,
+  /const\s+exportedConfig\s*=\s*\(await\s+import\(pathToFileURL\(path\.resolve\(webpackConfigPath\)\)\.href\)\)\.default;/g,
+  /exportedConfig\s*=\s*\(await\s+import\(pathToFileURL\([^)]+webpackConfigPath[^)]+\)\.href\)\)\.default;/g
+];
+
+for (const exportedRegex of exportedPatterns) {
+  content = content.replace(exportedRegex, `let configToLoad = webpackConfigPath;
+            // ALWAYS prefer .mjs if it exists (pre-converted in build.sh)
             if (configToLoad.endsWith('.js')) {
                 const mjsPath = configToLoad.replace(/\\.js$/, '.mjs');
-                try {
-                    const srcStat = fs_1.default.statSync(configToLoad);
-                    const destStat = fs_1.default.existsSync(mjsPath) ? fs_1.default.statSync(mjsPath) : undefined;
-                    if (!destStat || srcStat.mtimeMs > destStat.mtimeMs) {
-                        fs_1.default.copyFileSync(configToLoad, mjsPath);
+                if (fs_1.default.existsSync(mjsPath)) {
+                    configToLoad = mjsPath;
+                } else {
+                    // Create .mjs if .js exists
+                    try {
+                        const srcStat = fs_1.default.statSync(configToLoad);
+                        const destStat = fs_1.default.existsSync(mjsPath) ? fs_1.default.statSync(mjsPath) : undefined;
+                        if (!destStat || srcStat.mtimeMs > destStat.mtimeMs) {
+                            fs_1.default.copyFileSync(configToLoad, mjsPath);
+                        }
+                        configToLoad = mjsPath;
+                    } catch (error) {
+                        // ignore copy errors, will try .js
                     }
-                } catch (error) {
-                    // ignore copy errors
                 }
-                configToLoad = mjsPath;
             }
             const exportedConfig = (await import(pathToFileURL(path_1.default.resolve(configToLoad)).href)).default;`);
+}
+
+// Also handle any direct webpackConfigPath usage in import statements
+// This catches cases where the pattern wasn't matched above
+if (content.includes('webpackConfigPath') && content.includes('pathToFileURL') && content.includes('import')) {
+  // Find lines with webpackConfigPath and pathToFileURL and import
+  const lines = content.split('\n');
+  const result = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // If this line has webpackConfigPath and import but no configToLoad conversion
+    if (line.includes('webpackConfigPath') && line.includes('import') && line.includes('pathToFileURL') && !line.includes('configToLoad')) {
+      // Check if previous lines already have conversion
+      let hasConversion = false;
+      for (let j = Math.max(0, i - 10); j < i; j++) {
+        if (lines[j].includes('configToLoad') && lines[j].includes('.mjs')) {
+          hasConversion = true;
+          break;
+        }
+      }
+      if (!hasConversion) {
+        // Add conversion before this line
+        const indent = line.match(/^(\s*)/)[1] || '            ';
+        result.push(indent + 'let configToLoad = webpackConfigPath;');
+        result.push(indent + 'if (configToLoad.endsWith(\'.js\')) {');
+        result.push(indent + '    const mjsPath = configToLoad.replace(/\\.js$/, \'.mjs\');');
+        result.push(indent + '    if (fs_1.default.existsSync(mjsPath)) {');
+        result.push(indent + '        configToLoad = mjsPath;');
+        result.push(indent + '    } else {');
+        result.push(indent + '        try {');
+        result.push(indent + '            const srcStat = fs_1.default.statSync(configToLoad);');
+        result.push(indent + '            const destStat = fs_1.default.existsSync(mjsPath) ? fs_1.default.statSync(mjsPath) : undefined;');
+        result.push(indent + '            if (!destStat || srcStat.mtimeMs > destStat.mtimeMs) {');
+        result.push(indent + '                fs_1.default.copyFileSync(configToLoad, mjsPath);');
+        result.push(indent + '            }');
+        result.push(indent + '            configToLoad = mjsPath;');
+        result.push(indent + '        } catch (error) {');
+        result.push(indent + '            // ignore');
+        result.push(indent + '        }');
+        result.push(indent + '    }');
+        result.push(indent + '}');
+        result.push(line.replace(/webpackConfigPath/g, 'configToLoad'));
+        continue;
+      }
+    }
+    result.push(line);
+  }
+  content = result.join('\n');
+}
 
 // Fix Promise.all closing and flattening
 // The flatMap returns an array, so Promise.all will return an array of arrays

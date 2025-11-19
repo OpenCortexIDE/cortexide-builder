@@ -601,6 +601,117 @@ EOFPATCH
     exit 1
   fi
   
+  # CRITICAL: Patch extensions.js RIGHT BEFORE compile-extensions-build
+  # This ensures the patch is fresh and applied correctly
+  echo "Patching extensions.js before compile-extensions-build..." >&2
+  if [[ -f "build/lib/extensions.js" ]]; then
+    # Always check and patch if needed, regardless of previous patches
+    if grep -q "require(webpackConfigPath)" "build/lib/extensions.js" 2>/dev/null; then
+      echo "Applying webpack ES module patch before compile-extensions-build..." >&2
+      cp "build/lib/extensions.js" "build/lib/extensions.js.bak" 2>/dev/null || true
+      
+      # Use a more direct approach - find and replace the exact line
+      node -e "
+        const fs = require('fs');
+        const filePath = 'build/lib/extensions.js';
+        let content = fs.readFileSync(filePath, 'utf8');
+        
+        // Find the exact line with require(webpackConfigPath).default
+        // Pattern: const exportedConfig = require(webpackConfigPath).default;
+        const lines = content.split('\n');
+        const result = [];
+        let needsPathToFileURL = true;
+        let foundWebpackStreams = false;
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          
+          // Add pathToFileURL imports right before const webpackStreams
+          if (line.includes('const webpackStreams') && needsPathToFileURL && !content.includes('pathToFileURL')) {
+            // Find the function start
+            let funcStart = i;
+            while (funcStart > 0 && !lines[funcStart].includes('function') && !lines[funcStart].includes('=>')) {
+              funcStart--;
+            }
+            // Add imports right after the opening brace
+            if (funcStart >= 0) {
+              let indent = lines[funcStart].match(/^(\s*)/)[1];
+              result.push(indent + 'const { pathToFileURL } = require(\"url\");');
+              result.push(indent + 'const path = require(\"path\");');
+              needsPathToFileURL = false;
+            }
+            foundWebpackStreams = true;
+          }
+          
+          // Replace require(webpackConfigPath).default with dynamic import
+          if (line.includes('require(webpackConfigPath)')) {
+            // Check if it's the exportedConfig line
+            if (line.includes('const exportedConfig') || line.includes('exportedConfig =')) {
+              // Replace with dynamic import
+              const indent = line.match(/^(\s*)/)[1];
+              result.push(indent + 'const exportedConfig = (await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default;');
+            } else {
+              // Replace inline
+              result.push(line.replace(/require\(webpackConfigPath\)\.default/g, '(await import(pathToFileURL(path.resolve(webpackConfigPath)).href)).default'));
+            }
+          } else if (line.includes('webpackConfigLocations.flatMap')) {
+            // Replace flatMap with map and Promise.all
+            result.push(line.replace(/webpackConfigLocations\.flatMap\(webpackConfigPath\s*=>/g, 'webpackConfigLocations.map(async webpackConfigPath =>'));
+            if (line.includes('const webpackStreams')) {
+              result[result.length - 1] = result[result.length - 1].replace(/const\s+webpackStreams\s*=\s*webpackConfigLocations\.map\(async/g, 'const webpackStreams = await Promise.all(webpackConfigLocations.map(async');
+            }
+          } else if (line.includes('.then(fileNames =>') && !line.includes('.then(async')) {
+            // Make then callback async
+            result.push(line.replace(/\.then\(fileNames\s*=>/g, '.then(async (fileNames) =>'));
+          } else {
+            result.push(line);
+          }
+        }
+        
+        // Fix Promise.all closing and flattening
+        content = result.join('\n');
+        if (content.includes('await Promise.all(webpackConfigLocations.map(async')) {
+          // Find the closing of the map and add flattening
+          content = content.replace(
+            /(\}\));\s*\n\s*const\s+webpackStreams\s*=\s*await\s+Promise\.all/,
+            '$1\n        const flattenedWebpackStreams = [].concat(...webpackStreams);'
+          );
+          // Replace event_stream merge to use flattened
+          content = content.replace(
+            /event_stream_1\.default\.merge\(\.\.\.webpackStreams/g,
+            'event_stream_1.default.merge(...flattenedWebpackStreams'
+          );
+        }
+        
+        fs.writeFileSync(filePath, content, 'utf8');
+        console.log('Patched extensions.js successfully');
+      " 2>&1 || {
+        echo "Warning: Direct patch failed. Trying comprehensive patch..." >&2
+        # Fall back to comprehensive patch
+        node "$PATCH_SCRIPT_FILE" "build/lib/extensions.js" 2>&1 || {
+          if [[ -f "build/lib/extensions.js.bak" ]]; then
+            mv "build/lib/extensions.js.bak" "build/lib/extensions.js" 2>/dev/null || true
+          fi
+        }
+      }
+      
+      # Verify patch
+      if grep -q "pathToFileURL" "build/lib/extensions.js" 2>/dev/null && ! grep -q "require(webpackConfigPath).default" "build/lib/extensions.js" 2>/dev/null; then
+        echo "Patch verified successfully." >&2
+      else
+        echo "ERROR: Patch verification failed!" >&2
+        echo "pathToFileURL found: $(grep -c 'pathToFileURL' build/lib/extensions.js 2>/dev/null || echo 0)" >&2
+        echo "require(webpackConfigPath) still found: $(grep -c 'require(webpackConfigPath)' build/lib/extensions.js 2>/dev/null || echo 0)" >&2
+        if [[ -f "build/lib/extensions.js.bak" ]]; then
+          echo "Restoring backup..." >&2
+          mv "build/lib/extensions.js.bak" "build/lib/extensions.js" 2>/dev/null || true
+        fi
+      fi
+    else
+      echo "No require(webpackConfigPath) found - patch may already be applied." >&2
+    fi
+  fi
+  
   echo "Compiling extensions build..."
   if ! npm run gulp compile-extensions-build; then
     echo "Error: compile-extensions-build failed. Check for:" >&2

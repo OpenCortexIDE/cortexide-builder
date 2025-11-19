@@ -1527,36 +1527,26 @@ try {
   
   // Fix 1: dependenciesSrc - CRITICAL FIX
   // Root cause: empty array [] causes "Invalid glob argument" error
-  // Solution: Ensure dependenciesSrc is never empty by providing fallback
+  // allowEmpty: true doesn't work for empty arrays, and ['!**'] needs a positive glob
+  // Solution: Check if array is empty and provide a valid fallback pattern
   for (let i = 0; i < lines.length; i++) {
     // Find: const dependenciesSrc = ... .flat();
     if (lines[i].includes('const dependenciesSrc =') && lines[i].includes('.flat()')) {
       console.error(`Found dependenciesSrc at line ${i + 1}: ${lines[i].trim()}`);
       
       // Check if we already fixed it
-      if (lines[i].includes('|| [\'!**\']') || lines[i].includes('|| ["!**"]')) {
+      if (lines[i].includes('dependenciesSrc.length === 0') || lines[i].includes('[\'**\', \'!**/*\']')) {
         console.error('✓ Already has empty array protection');
       } else {
-        // Modify to: const dependenciesSrc = ... .flat() || ['!**'];
-        // This ensures it's never empty - ['!**'] matches nothing but is valid
-        lines[i] = lines[i].replace(/\.flat\(\);?$/, '.flat() || [\'!**\'];');
+        // Add a check after this line: if empty, use a pattern that matches nothing but is valid
+        // ['**', '!**/*'] matches everything then excludes everything = valid but matches nothing
+        const originalLine = lines[i];
+        const indent = originalLine.match(/^\s*/)[0];
+        // Insert check on next line
+        lines.splice(i + 1, 0, `${indent}if (dependenciesSrc.length === 0) { dependenciesSrc = ['**', '!**/*']; }`);
         modified = true;
-        console.error(`✓ Fixed line ${i + 1} to prevent empty array`);
-        console.error(`New line: ${lines[i].trim()}`);
-      }
-      break;
-    }
-  }
-  
-  // Fix 2: Also add allowEmpty: true as additional safety
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes('gulp.src(dependenciesSrc') && lines[i].includes("base: 'remote'")) {
-      if (!lines[i].includes('allowEmpty: true')) {
-        if (lines[i].includes('dot: true')) {
-          lines[i] = lines[i].replace(/dot:\s*true/, 'dot: true, allowEmpty: true');
-          modified = true;
-          console.error(`✓ Added allowEmpty: true at line ${i + 1}`);
-        }
+        console.error(`✓ Added empty array check after line ${i + 1}`);
+        console.error(`Inserted: if (dependenciesSrc.length === 0) { dependenciesSrc = ['**', '!**/*']; }`);
       }
       break;
     }

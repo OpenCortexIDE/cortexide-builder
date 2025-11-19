@@ -224,13 +224,19 @@ if (content.includes('const webpackRootConfig = require') && content.includes('w
 }
 
 // Fix 3: Replace require() with dynamic import inside webpackStreams and make it async
+// Check for the require pattern first
 if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
-  if (content.includes('const webpackStreams = webpackConfigLocations.flatMap(webpackConfigPath => {')) {
+  // First replace flatMap if it exists
+  if (content.includes('flatMap(webpackConfigPath')) {
     content = content.replace(
-      /const webpackStreams = webpackConfigLocations\.flatMap\(webpackConfigPath => \{/,
+      /const webpackStreams = webpackConfigLocations\.flatMap\(webpackConfigPath => \{/g,
       'const webpackStreams = await Promise.all(webpackConfigLocations.map(async webpackConfigPath => {'
     );
-    
+  }
+  
+  // Then replace the require statement - this must happen after flatMap replacement
+  // Match the exact pattern with proper escaping
+  if (content.includes('const exportedConfig = require(webpackConfigPath).default')) {
     content = content.replace(
       /const exportedConfig = require\(webpackConfigPath\)\.default;/g,
       `const { pathToFileURL } = require("url");
@@ -239,6 +245,7 @@ if (content.includes('const exportedConfig = require(webpackConfigPath)')) {
             const configUrl = pathToFileURL(path.resolve(webpackConfigPath)).href;
             exportedConfig = (await import(configUrl)).default;`
     );
+  }
     
     if (content.includes('event_stream_1.default.merge(...webpackStreams')) {
       const lines = content.split('\n');

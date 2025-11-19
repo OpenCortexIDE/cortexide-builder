@@ -479,10 +479,8 @@ fi
 # VS Code 1.106 changed webpack configs to ES modules, but the loader uses require()
 echo "Fixing extension webpack config loader for ES modules..."
 if [[ -f "build/lib/extensions.js" ]]; then
-  # Check if already patched
-  if ! grep -q "pathToFileURL" "build/lib/extensions.js" 2>/dev/null; then
-    # Check if it needs patching (has require for webpack config)
-    if grep -q "require.*webpackConfig\|require.*extensionPath.*webpackConfigFileName" "build/lib/extensions.js" 2>/dev/null; then
+  # Always try to patch - check if it needs patching (has require for webpack config)
+  if grep -q "require.*webpackConfigFileName\|require.*webpackConfigPath" "build/lib/extensions.js" 2>/dev/null || grep -q "const webpackRootConfig = require" "build/lib/extensions.js" 2>/dev/null; then
       echo "Patching extensions.js to use dynamic import for webpack configs..." >&2
       # Create backup
       cp "build/lib/extensions.js" "build/lib/extensions.js.bak" 2>/dev/null || true

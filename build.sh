@@ -124,7 +124,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
     # Always try to patch if file exists and hasn't been patched yet
     if ! grep -q "pathToFileURL" "build/lib/extensions.js" 2>/dev/null; then
       if grep -q "require.*webpackConfig\|flatMap.*webpackConfigPath\|require(webpackConfigPath)" "build/lib/extensions.js" 2>/dev/null; then
-      echo "Patching extensions.js to use dynamic import for webpack configs..." >&2
+        echo "Patching extensions.js to use dynamic import for webpack configs..." >&2
       # Create backup
       cp "build/lib/extensions.js" "build/lib/extensions.js.bak" 2>/dev/null || true
       

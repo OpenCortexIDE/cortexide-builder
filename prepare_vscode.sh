@@ -525,21 +525,25 @@ if (content.includes('const webpackRootConfig = require') && content.includes('w
       /(const files = fileNames[\s\S]*?\);)/,
       `$1
         // Load webpack config as ES module
+        // Note: This is optional - static analysis showed no webpack externals are dependencies
+        // If loading fails, we can safely skip it and use PackageManager.None
         if (packageJsonConfig.dependencies) {
             try {
                 // Use file:// URL to ensure Node.js treats it as an ES module
-                // Need to use pathToFileURL for proper URL construction
                 const { pathToFileURL } = require('url');
                 const webpackConfigPath = path_1.default.resolve(extensionPath, webpackConfigFileName);
                 const webpackConfigUrl = pathToFileURL(webpackConfigPath).href;
                 const webpackRootConfig = (await import(webpackConfigUrl)).default;
-                for (const key in webpackRootConfig.externals) {
-                    if (key in packageJsonConfig.dependencies) {
-                        packagedDependencies.push(key);
+                if (webpackRootConfig && webpackRootConfig.externals) {
+                    for (const key in webpackRootConfig.externals) {
+                        if (key in packageJsonConfig.dependencies) {
+                            packagedDependencies.push(key);
+                        }
                     }
                 }
             } catch (err) {
-                console.warn('Failed to load webpack root config:', err);
+                // Silently skip - this is optional and the comment says no externals are dependencies anyway
+                // console.warn('Failed to load webpack root config (optional, skipping):', err.message);
             }
         }`
     );

@@ -609,8 +609,8 @@ if (modified) {
   console.error('✓ build/lib/extensions.js already has allowEmpty fixes');
 } else {
   console.error('⚠ Could not find patterns to patch - trying fallback method...');
-  // Fallback: Just add allowEmpty to any gulp.src we can find
-  const fallbackContent = content.replace(/gulp\.src\(([^)]+)\)/g, (match, args) => {
+  // Fallback 1: Just add allowEmpty to any gulp.src we can find
+  let fallbackContent = content.replace(/gulp\.src\(([^)]+)\)/g, (match, args) => {
     if (!match.includes('allowEmpty')) {
       // Try to add allowEmpty to the options object
       if (args.includes('{') && args.includes('}')) {
@@ -619,9 +619,50 @@ if (modified) {
     }
     return match;
   });
+  
+  // Fallback 2: Wrap gulp.src at the top of the file to handle empty arrays
+  if (fallbackContent === content && !content.includes('// GULP_SRC_WRAPPER')) {
+    // Find where gulp is required/imported
+    const requireMatch = content.match(/(const|let|var)\s+gulp\s*=\s*require\(['"]gulp['"]\)/);
+    if (requireMatch) {
+      const requireLine = requireMatch[0];
+      const indent = requireMatch.input.match(/^\s*/)?.[0] || '';
+      // Wrap gulp.src to handle empty arrays
+      const wrapper = `
+${indent}// GULP_SRC_WRAPPER: Handle empty glob patterns
+${indent}const originalGulpSrc = gulp.src;
+${indent}gulp.src = function(...args) {
+${indent}  // Ensure first argument is never empty
+${indent}  if (args[0] && Array.isArray(args[0]) && args[0].length === 0) {
+${indent}    args[0] = ['**', '!**/*'];
+${indent}  }
+${indent}  if (args[0] === '' || args[0] === null || args[0] === undefined) {
+${indent}    args[0] = ['**', '!**/*'];
+${indent}  }
+${indent}  // Ensure allowEmpty is set
+${indent}  if (args[1] && typeof args[1] === 'object' && !args[1].allowEmpty) {
+${indent}    args[1].allowEmpty = true;
+${indent}  } else if (!args[1]) {
+${indent}    args[1] = { allowEmpty: true };
+${indent}  }
+${indent}  return originalGulpSrc.apply(this, args);
+${indent}};`;
+      
+      const requireIndex = content.indexOf(requireLine);
+      if (requireIndex !== -1) {
+        const afterRequire = content.indexOf('\n', requireIndex) + 1;
+        fallbackContent = content.slice(0, afterRequire) + wrapper + '\n' + content.slice(afterRequire);
+        modified = true;
+        console.error('✓ Applied gulp.src wrapper fallback');
+      }
+    }
+  }
+  
   if (fallbackContent !== content) {
     fs.writeFileSync(filePath, fallbackContent, 'utf8');
-    console.error('✓ Applied fallback patch');
+    if (!modified) {
+      console.error('✓ Applied fallback patch');
+    }
   }
 }
 EXTENSIONSGLOBFIX

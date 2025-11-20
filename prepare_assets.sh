@@ -296,49 +296,57 @@ try {
   
   if (!appxExists) {
     console.error(`AppX file not found: ${appxFile}, making AppX reference conditional...`);
+    console.error(`Searching for AppX references in code.iss (total lines: ${lines.length})...`);
     
     // Find lines that reference the AppX file (around line 99 based on error)
-    // Be very aggressive - comment out ANY line that mentions appx and .appx
+    // Be VERY aggressive - comment out ANY line in [Files] section that mentions appx
+    let inFilesSection = false;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmed = line.trim();
+      
+      // Track if we're in the [Files] section
+      if (trimmed.startsWith('[Files]')) {
+        inFilesSection = true;
+        console.error(`Found [Files] section at line ${i + 1}`);
+        continue;
+      }
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        inFilesSection = false;
+        continue;
+      }
       
       // Skip already commented lines
       if (trimmed.startsWith(';')) {
         continue;
       }
       
-      // Very broad check: any line that contains both "appx" and ".appx" (case insensitive)
+      // In [Files] section, comment out ANY line that mentions appx (case insensitive)
+      if (inFilesSection) {
+        const lowerLine = line.toLowerCase();
+        if (lowerLine.includes('appx')) {
+          const indent = line.match(/^\s*/)[0];
+          lines[i] = `${indent}; PATCHED: AppX file not found, commented out\n${indent};${line.substring(indent.length)}`;
+          modified = true;
+          console.error(`✓ Commented out AppX reference at line ${i + 1}: ${trimmed.substring(0, 80)}`);
+        }
+      }
+      
+      // Also check outside [Files] section for any .appx references
       const lowerLine = line.toLowerCase();
-      if (lowerLine.includes('appx') && lowerLine.includes('.appx')) {
+      if (lowerLine.includes('.appx') && !trimmed.startsWith(';')) {
         const indent = line.match(/^\s*/)[0];
         lines[i] = `${indent}; PATCHED: AppX file not found, commented out\n${indent};${line.substring(indent.length)}`;
         modified = true;
-        console.error(`✓ Commented out AppX reference at line ${i + 1}: ${trimmed.substring(0, 80)}`);
+        console.error(`✓ Commented out .appx reference at line ${i + 1}: ${trimmed.substring(0, 80)}`);
       }
     }
     
-    // Also check for lines that might reference the appx directory without .appx extension
-    // This catches cases where the path is split across lines or uses variables
     if (!modified) {
-      console.error('No .appx references found, checking for appx directory references...');
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const trimmed = line.trim();
-        
-        if (trimmed.startsWith(';')) {
-          continue;
-        }
-        
-        // Check for appx directory references in Source or DestDir
-        const lowerLine = line.toLowerCase();
-        if ((lowerLine.includes('source:') || lowerLine.includes('destdir:')) && 
-            (lowerLine.includes('\\appx\\') || lowerLine.includes('/appx/') || lowerLine.includes('\\appx') || lowerLine.includes('/appx'))) {
-          const indent = line.match(/^\s*/)[0];
-          lines[i] = `${indent}; PATCHED: AppX directory reference, commented out\n${indent};${line.substring(indent.length)}`;
-          modified = true;
-          console.error(`✓ Commented out AppX directory reference at line ${i + 1}: ${trimmed.substring(0, 80)}`);
-        }
+      console.error('⚠ WARNING: No AppX references found to patch!');
+      console.error('Showing lines around line 99 for debugging:');
+      for (let i = Math.max(0, 94); i < Math.min(lines.length, 104); i++) {
+        console.error(`Line ${i + 1}: ${lines[i]}`);
       }
     }
   } else {

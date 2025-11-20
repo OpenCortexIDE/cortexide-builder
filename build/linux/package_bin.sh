@@ -485,102 +485,144 @@ fi
 
 # CRITICAL FIX: Patch build/lib/extensions.js to handle empty glob patterns
 # The error "Invalid glob argument:" occurs when empty arrays/strings are passed to gulp.src()
-# allowEmpty: true doesn't work for empty arrays - we must ensure arrays are never empty
 # This happens in doPackageLocalExtensionsStream function around line 488
+# Solution: Wrap gulp.src calls to handle empty arrays, or ensure arrays are never empty
 if [[ -f "build/lib/extensions.js" ]]; then
   echo "Patching build/lib/extensions.js to handle empty glob patterns..." >&2
   node << 'EXTENSIONSGLOBFIX' || {
 const fs = require('fs');
 const filePath = 'build/lib/extensions.js';
 let content = fs.readFileSync(filePath, 'utf8');
-const original = content;
-const lines = content.split('\n');
 let modified = false;
 
-// Fix 1: Find all gulp.src() calls and ensure they have allowEmpty: true
-// Also add empty array checks before gulp.src calls
-for (let i = 0; i < lines.length; i++) {
-  const line = lines[i];
+// Strategy: Find the doPackageLocalExtensionsStream function and patch gulp.src calls
+// We'll use a more aggressive approach - find ALL gulp.src patterns and patch them
+
+// Fix 1: Add allowEmpty: true to ALL gulp.src() calls (handles multi-line patterns)
+// This is the most reliable fix - works even if the pattern spans multiple lines
+if (!content.includes('allowEmpty: true')) {
+  // Pattern 1: Single line with dot: true
+  content = content.replace(
+    /gulp\.src\(([^,]+),\s*\{\s*([^}]*base:[^,}]+),?\s*dot:\s*true\s*\}\)/g,
+    (match, src, basePart) => {
+      return `gulp.src(${src}, { ${basePart}, dot: true, allowEmpty: true })`;
+    }
+  );
   
-  // Look for gulp.src() calls
-  if (line.includes('gulp.src(') && !line.includes('allowEmpty')) {
-    // Extract the variable name being passed to gulp.src
-    const gulpSrcMatch = line.match(/gulp\.src\(\s*([a-zA-Z_$][a-zA-Z0-9_$.]*)\s*,/);
-    
-    if (gulpSrcMatch) {
-      const varName = gulpSrcMatch[1];
-      const indent = line.match(/^\s*/)[0];
-      
-      // Check if we need to add an empty check before this line
-      let needsCheck = false;
-      let hasCheck = false;
-      
-      // Check previous lines for existing checks
-      for (let j = Math.max(0, i - 10); j < i; j++) {
-        if (lines[j].includes(`${varName}.length`) || lines[j].includes(`${varName} = ['**'`) || lines[j].includes(`!${varName}`)) {
-          hasCheck = true;
-          break;
-        }
+  // Pattern 2: Single line without dot: true but with base
+  content = content.replace(
+    /gulp\.src\(([^,]+),\s*\{\s*([^}]*base:[^}]+)\s*\}\)/g,
+    (match, src, options) => {
+      if (!options.includes('allowEmpty')) {
+        return `gulp.src(${src}, { ${options}, allowEmpty: true })`;
       }
-      
-      // Determine if this variable might be an array that could be empty
-      // Look for patterns like: const varName = ... or let varName = ...
-      for (let j = Math.max(0, i - 20); j < i; j++) {
-        if (lines[j].match(new RegExp(`(const|let|var)\\s+${varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=`))) {
-          // Check if it's an array operation that could result in empty array
-          if (lines[j].includes('.map(') || lines[j].includes('.filter(') || lines[j].includes('.flat(') || 
-              lines[j].includes('[]') || lines[j].includes('Array(')) {
-            needsCheck = true;
+      return match;
+    }
+  );
+  
+  // Pattern 3: Multi-line pattern - find gulp.src( and add allowEmpty before closing }
+  // This handles cases where the options object spans multiple lines
+  const multilinePattern = /gulp\.src\(([^,]+),\s*\{([^}]*)\}\)/gs;
+  content = content.replace(multilinePattern, (match, src, options) => {
+    if (!options.includes('allowEmpty') && options.includes('base')) {
+      // Add allowEmpty before the closing brace
+      const trimmedOptions = options.trim();
+      return `gulp.src(${src}, {${trimmedOptions}, allowEmpty: true })`;
+    }
+    return match;
+  });
+  
+  modified = true;
+  console.error('✓ Added allowEmpty: true to gulp.src() calls');
+}
+
+// Fix 2: Find doPackageLocalExtensionsStream and add empty array checks
+// Look for the function and find variables that might be empty arrays
+if (content.includes('doPackageLocalExtensionsStream')) {
+  const lines = content.split('\n');
+  let inFunction = false;
+  let functionIndent = '';
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Detect function start
+    if (line.includes('doPackageLocalExtensionsStream') && line.includes('function')) {
+      inFunction = true;
+      functionIndent = line.match(/^\s*/)[0];
+      continue;
+    }
+    
+    // Detect function end (next function or closing brace at same/less indent)
+    if (inFunction) {
+      const currentIndent = line.match(/^\s*/)[0];
+      if (line.trim().startsWith('function ') && currentIndent.length <= functionIndent.length && line !== lines[i-1]) {
+        inFunction = false;
+      }
+      if (line.trim() === '}' && currentIndent.length <= functionIndent.length && i > 0) {
+        inFunction = false;
+      }
+    }
+    
+    // Within the function, look for gulp.src calls
+    if (inFunction && line.includes('gulp.src(')) {
+      // Extract variable name from gulp.src(varName, ...)
+      const match = line.match(/gulp\.src\(\s*([a-zA-Z_$][a-zA-Z0-9_$.]*)\s*,/);
+      if (match) {
+        const varName = match[1];
+        const indent = line.match(/^\s*/)[0];
+        
+        // Check if we already have a check for this variable
+        let hasCheck = false;
+        for (let j = Math.max(0, i - 15); j < i; j++) {
+          if (lines[j].includes(`${varName}.length`) || lines[j].includes(`${varName} = ['**'`)) {
+            hasCheck = true;
             break;
           }
         }
-      }
-      
-      // Add empty check if needed
-      if (needsCheck && !hasCheck) {
-        lines.splice(i, 0, `${indent}if (!${varName} || (Array.isArray(${varName}) && ${varName}.length === 0)) { ${varName} = ['**', '!**/*']; }`);
-        modified = true;
-        i++; // Skip the line we just added
-        console.error(`✓ Added empty check for ${varName} before gulp.src at line ${i + 1}`);
-      }
-      
-      // Add allowEmpty: true to the gulp.src call
-      // Pattern: gulp.src(var, { base: ..., dot: true })
-      if (line.includes('dot: true') && !line.includes('allowEmpty')) {
-        // Replace dot: true with dot: true, allowEmpty: true
-        lines[i] = lines[i].replace(/(dot:\s*true)\s*\}\)/, '$1, allowEmpty: true })');
-        lines[i] = lines[i].replace(/(dot:\s*true)\s*\)/, '$1, allowEmpty: true )');
-        modified = true;
-        console.error(`✓ Added allowEmpty to gulp.src at line ${i + 1}`);
-      } else if (!line.includes('allowEmpty') && line.includes('base:') && line.includes('}')) {
-        // Pattern: gulp.src(var, { base: ... })
-        // Find the closing brace and add allowEmpty before it
-        lines[i] = lines[i].replace(/(\{\s*base:\s*[^}]+)\s*\}\)/, '$1, allowEmpty: true })');
-        modified = true;
-        console.error(`✓ Added allowEmpty to gulp.src at line ${i + 1}`);
+        
+        // Add check if needed
+        if (!hasCheck) {
+          lines.splice(i, 0, `${indent}if (!${varName} || (Array.isArray(${varName}) && ${varName}.length === 0)) { ${varName} = ['**', '!**/*']; }`);
+          modified = true;
+          i++; // Skip the line we just added
+          console.error(`✓ Added empty check for ${varName} before gulp.src at line ${i + 1}`);
+        }
       }
     }
   }
+  
+  content = lines.join('\n');
 }
 
-// Fix 2: Also handle the specific case where an empty string might be passed
-// Replace patterns like: gulp.src('') or gulp.src("")
-for (let i = 0; i < lines.length; i++) {
-  if (lines[i].includes("gulp.src('')") || lines[i].includes('gulp.src("")')) {
-    lines[i] = lines[i].replace(/gulp\.src\((['"])\1\)/, "gulp.src(['**', '!**/*'])");
-    modified = true;
-    console.error(`✓ Fixed empty string glob at line ${i + 1}`);
-  }
+// Fix 3: Handle empty string globs
+content = content.replace(/gulp\.src\((['"])\1\)/g, "gulp.src(['**', '!**/*'])");
+if (content !== fs.readFileSync(filePath, 'utf8')) {
+  modified = true;
+  console.error('✓ Fixed empty string globs');
 }
 
 if (modified) {
-  content = lines.join('\n');
   fs.writeFileSync(filePath, content, 'utf8');
   console.error('✓ Successfully patched build/lib/extensions.js for empty glob patterns');
 } else if (content.includes('allowEmpty: true')) {
   console.error('✓ build/lib/extensions.js already has allowEmpty fixes');
 } else {
-  console.error('⚠ No gulp.src patterns found to patch - file may have different structure');
+  console.error('⚠ Could not find patterns to patch - trying fallback method...');
+  // Fallback: Just add allowEmpty to any gulp.src we can find
+  const fallbackContent = content.replace(/gulp\.src\(([^)]+)\)/g, (match, args) => {
+    if (!match.includes('allowEmpty')) {
+      // Try to add allowEmpty to the options object
+      if (args.includes('{') && args.includes('}')) {
+        return match.replace(/\}\s*\)/, ', allowEmpty: true })');
+      }
+    }
+    return match;
+  });
+  if (fallbackContent !== content) {
+    fs.writeFileSync(filePath, fallbackContent, 'utf8');
+    console.error('✓ Applied fallback patch');
+  }
 }
 EXTENSIONSGLOBFIX
     echo "Warning: Failed to patch build/lib/extensions.js, continuing anyway..." >&2

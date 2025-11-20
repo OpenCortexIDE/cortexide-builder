@@ -483,6 +483,91 @@ if [[ ! -f "node_modules/gulp/bin/gulp.js" ]] && [[ ! -f "node_modules/.bin/gulp
   exit 1
 fi
 
+# CRITICAL FIX: Patch build/lib/extensions.js to handle empty glob patterns
+# The error "Invalid glob argument:" occurs when empty arrays are passed to gulp.src()
+# This happens in doPackageLocalExtensionsStream function around line 488
+if [[ -f "build/lib/extensions.js" ]]; then
+  echo "Patching build/lib/extensions.js to handle empty glob patterns..." >&2
+  node << 'EXTENSIONSGLOBFIX' || {
+const fs = require('fs');
+const filePath = 'build/lib/extensions.js';
+let content = fs.readFileSync(filePath, 'utf8');
+let modified = false;
+
+// Fix 1: Add allowEmpty: true to all gulp.src() calls
+// This is the most reliable fix - allowEmpty handles empty arrays gracefully
+if (!content.includes('allowEmpty: true')) {
+  // Pattern: gulp.src(variable, { base: ..., dot: true })
+  content = content.replace(
+    /gulp\.src\(([^,]+),\s*\{\s*base:\s*([^,}]+),\s*dot:\s*true\s*\}\)/g,
+    'gulp.src($1, { base: $2, dot: true, allowEmpty: true })'
+  );
+  
+  // Pattern: gulp.src(variable, { base: ... })
+  content = content.replace(
+    /gulp\.src\(([^,]+),\s*\{\s*base:\s*([^}]+)\s*\}\)/g,
+    (match, src, options) => {
+      if (!options.includes('allowEmpty')) {
+        // Check if options ends with } or has other properties
+        const cleanOptions = options.trim();
+        if (cleanOptions.endsWith('}')) {
+          return `gulp.src(${src}, { ${cleanOptions.slice(0, -1)}, allowEmpty: true })`;
+        } else {
+          return `gulp.src(${src}, { ${cleanOptions}, allowEmpty: true })`;
+        }
+      }
+      return match;
+    }
+  );
+  
+  modified = true;
+  console.error('✓ Added allowEmpty: true to gulp.src() calls');
+}
+
+// Fix 2: Add empty array checks before gulp.src calls in doPackageLocalExtensionsStream
+// Find the function and add checks for variables that might be empty
+if (content.includes('doPackageLocalExtensionsStream') || content.includes('packageNativeLocalExtensionsStream')) {
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    // Look for gulp.src calls with variables that might be arrays
+    const gulpSrcMatch = lines[i].match(/gulp\.src\((\w+)(?:\.\w+)?\s*,/);
+    if (gulpSrcMatch && !lines[i].includes('allowEmpty')) {
+      const varName = gulpSrcMatch[1];
+      // Check if previous lines don't already have a length check for this variable
+      let hasCheck = false;
+      for (let j = Math.max(0, i - 5); j < i; j++) {
+        if (lines[j].includes(`${varName}.length === 0`) || lines[j].includes(`${varName} = ['**'`)) {
+          hasCheck = true;
+          break;
+        }
+      }
+      
+      if (!hasCheck && (varName.includes('Path') || varName.includes('Src') || varName.includes('extension') || varName.includes('local'))) {
+        const indent = lines[i].match(/^\s*/)[0];
+        // Add check before the gulp.src line
+        lines.splice(i, 0, `${indent}if (!${varName} || ${varName}.length === 0) { ${varName} = ['**', '!**/*']; }`);
+        modified = true;
+        i++; // Skip the line we just added
+        console.error(`✓ Added empty check for ${varName} before gulp.src at line ${i + 1}`);
+      }
+    }
+  }
+  content = lines.join('\n');
+}
+
+if (modified) {
+  fs.writeFileSync(filePath, content, 'utf8');
+  console.error('✓ Successfully patched build/lib/extensions.js for empty glob patterns');
+} else if (content.includes('allowEmpty: true')) {
+  console.error('✓ build/lib/extensions.js already has allowEmpty fixes');
+} else {
+  console.error('⚠ No gulp.src patterns found to patch');
+}
+EXTENSIONSGLOBFIX
+    echo "Warning: Failed to patch build/lib/extensions.js, continuing anyway..." >&2
+  }
+fi
+
 npm run gulp "vscode-linux-${VSCODE_ARCH}-min-ci"
 
 if [[ -f "../build/linux/${VSCODE_ARCH}/ripgrep.sh" ]]; then

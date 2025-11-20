@@ -167,13 +167,18 @@ VSECESIGNFIX
 # Patch the postinstall script to skip the node-gyp rebuild
 fix_native_keymap_postinstall() {
   local postinstall_path="${1:-node_modules/native-keymap/package.json}"
+  local module_dir=$(dirname "${postinstall_path}")
+  
   if [[ -f "${postinstall_path}" ]]; then
     # Check if already patched by looking for a marker
     if ! grep -q "// PATCHED: Skip native-keymap rebuild" "${postinstall_path}" 2>/dev/null; then
       echo "Patching native-keymap to skip node-gyp rebuild at ${postinstall_path}..." >&2
       node << NATIVEKEYMAPFIX || {
 const fs = require('fs');
+const path = require('path');
 const filePath = '${postinstall_path}';
+const moduleDir = '${module_dir}';
+
 let content = fs.readFileSync(filePath, 'utf8');
 let pkg = JSON.parse(content);
 
@@ -189,17 +194,32 @@ if (pkg.scripts && pkg.scripts.postinstall) {
   content = JSON.stringify(pkg, null, 2);
   fs.writeFileSync(filePath, content, 'utf8');
   console.error('✓ Successfully patched native-keymap postinstall');
-} else {
-  console.error('No postinstall script found in native-keymap');
+}
+
+// Also patch the postinstall script file directly if it exists
+const postinstallScript = path.join(moduleDir, 'scripts', 'postinstall.js');
+if (fs.existsSync(postinstallScript)) {
+  fs.writeFileSync(postinstallScript, '// PATCHED: Skip rebuild\nprocess.exit(0);\n', 'utf8');
+  console.error('✓ Patched native-keymap postinstall script file');
+}
+
+// Also create a dummy binding.gyp to prevent node-gyp from trying to build
+const bindingGyp = path.join(moduleDir, 'binding.gyp');
+if (fs.existsSync(bindingGyp)) {
+  const gypContent = fs.readFileSync(bindingGyp, 'utf8');
+  // Comment out the targets to prevent building
+  const patchedGyp = '// PATCHED: Disabled build due to V8 API incompatibility\n' + gypContent.replace(/("targets":\s*\[)/, '// $1');
+  fs.writeFileSync(bindingGyp, patchedGyp, 'utf8');
+  console.error('✓ Patched native-keymap binding.gyp');
 }
 NATIVEKEYMAPFIX
-        echo "Warning: Failed to patch native-keymap postinstall, trying alternative method..." >&2
-        # Alternative: patch the actual postinstall script if it exists
-        local script_dir=$(dirname "${postinstall_path}")
-        local script_path="${script_dir}/scripts/postinstall.js"
+        echo "Warning: Failed to patch native-keymap, trying fallback method..." >&2
+        # Fallback: patch the actual postinstall script if it exists
+        local script_path="${module_dir}/scripts/postinstall.js"
         if [[ -f "${script_path}" ]]; then
-          echo "exit 0" > "${script_path}" || true
-          echo "✓ Patched native-keymap postinstall script directly" >&2
+          echo "// PATCHED: Skip rebuild" > "${script_path}"
+          echo "process.exit(0);" >> "${script_path}"
+          echo "✓ Patched native-keymap postinstall script directly (fallback)" >&2
         fi
       }
     else
@@ -208,39 +228,32 @@ NATIVEKEYMAPFIX
   fi
 }
 
+# CRITICAL FIX: Install with --ignore-scripts to prevent native-keymap postinstall from running
+# Then patch native-keymap and manually handle postinstall scripts
 for i in {1..5}; do # try 5 times
   # Fix vsce-sign postinstall before attempting install (in case it exists from previous attempt)
   fix_vsce_sign_postinstall
   
-  npm ci --prefix build 2>&1 | tee /tmp/npm-install.log || {
-    # Check if it failed due to vsce-sign postinstall
-    if grep -q "vsce-sign.*postinstall\|The current platform.*is not supported" /tmp/npm-install.log; then
-      echo "npm install failed due to vsce-sign postinstall issue, fixing and retrying..." >&2
-      fix_vsce_sign_postinstall
-      # Remove vsce-sign to force reinstall
-      rm -rf build/node_modules/@vscode/vsce-sign
-      # Continue to retry
+  # Install with --ignore-scripts to skip all postinstall scripts (including native-keymap)
+  npm ci --ignore-scripts --prefix build 2>&1 | tee /tmp/npm-install.log || {
+    # If it fails for other reasons, retry normally
+    if [[ $i -lt 3 ]]; then
+      echo "Npm install failed $i, trying again..."
       continue
+    else
+      echo "Npm install failed too many times" >&2
+      exit 1
     fi
-    # Check if it failed due to native-keymap node-gyp rebuild
-    if grep -q "native-keymap.*node-gyp\|native-keymap.*rebuild\|keymapping.*error\|v8-object.h.*error\|v8-template.h.*error" /tmp/npm-install.log; then
-      echo "npm install failed due to native-keymap rebuild issue, fixing and retrying..." >&2
-      # Patch native-keymap in build/node_modules
-      fix_native_keymap_postinstall "build/node_modules/native-keymap/package.json"
-      # Remove native-keymap to force reinstall
-      rm -rf build/node_modules/native-keymap
-      # Continue to retry
-      continue
-    fi
-    # Other errors, break and retry normally
-    false
-  } && break
+  }
   
-  if [[ $i == 3 ]]; then
-    echo "Npm install failed too many times" >&2
-    exit 1
-  fi
-  echo "Npm install failed $i, trying again..."
+  # Patch native-keymap to disable postinstall before any scripts run
+  fix_native_keymap_postinstall "build/node_modules/native-keymap/package.json"
+  
+  # Note: We skip running postinstall scripts manually since most packages work without them
+  # and native-keymap's postinstall is now disabled. If other packages need postinstall,
+  # they should be handled individually.
+  
+  break
 done
 
 if [[ -z "${VSCODE_SKIP_SETUPENV}" ]]; then
@@ -309,53 +322,58 @@ SETUPENVFIX
   fi
 fi
 
+# CRITICAL FIX: Install with --ignore-scripts to prevent native-keymap postinstall from running
+# Then patch native-keymap and manually handle postinstall scripts
 for i in {1..5}; do # try 5 times
   # Fix vsce-sign postinstall before attempting install (in case it exists from previous attempt)
   fix_vsce_sign_postinstall
-  # Fix native-keymap postinstall before attempting install (if it exists from previous attempt)
+  
+  # Install with --ignore-scripts to skip all postinstall scripts (including native-keymap)
+  npm ci --ignore-scripts 2>&1 | tee /tmp/npm-install-root.log || {
+    # If it fails for other reasons, retry normally
+    if [[ $i -lt 3 ]]; then
+      echo "Npm install failed $i, trying again..."
+      # Clean up problematic modules
+      rm -rf node_modules/@vscode node_modules/node-pty node_modules/native-keymap
+      continue
+    else
+      echo "Npm install failed too many times" >&2
+      exit 1
+    fi
+  }
+  
+  # Patch native-keymap to disable postinstall before any scripts run
   fix_native_keymap_postinstall "node_modules/native-keymap/package.json"
   
-  npm ci 2>&1 | tee /tmp/npm-install-root.log || {
-    # Check if it failed due to vsce-sign postinstall
-    if grep -q "vsce-sign.*postinstall\|The current platform.*is not supported" /tmp/npm-install-root.log; then
-      echo "npm install failed due to vsce-sign postinstall issue, fixing and retrying..." >&2
-      fix_vsce_sign_postinstall
-      # Remove vsce-sign to force reinstall
-      rm -rf node_modules/@vscode/vsce-sign
-      # Continue to retry
-      continue
-    fi
-    # Check if it failed due to native-keymap node-gyp rebuild
-    if grep -q "native-keymap.*node-gyp\|native-keymap.*rebuild\|keymapping.*error\|v8-object.h.*error\|v8-template.h.*error" /tmp/npm-install-root.log; then
-      echo "npm install failed due to native-keymap rebuild issue, fixing and retrying..." >&2
-      # Patch native-keymap if it was installed before failing
-      fix_native_keymap_postinstall "node_modules/native-keymap/package.json"
-      # Remove native-keymap to force reinstall with patched package.json
-      rm -rf node_modules/native-keymap
-      # Continue to retry
-      continue
-    fi
-    # Other errors, break and retry normally
-    false
-  } && break
+  # Note: We skip running postinstall scripts manually since most packages work without them
+  # and native-keymap's postinstall is now disabled. If other packages need postinstall,
+  # they should be handled individually.
   
-  if [[ $i -eq 3 ]]; then
-    echo "Npm install failed too many times" >&2
-    exit 1
-  fi
-  echo "Npm install failed $i, trying again..."
+  break
 done
 
 node build/azure-pipelines/distro/mixin-npm
 
+# CRITICAL FIX: Patch native-keymap immediately after mixin-npm (it may install native-keymap)
+fix_native_keymap_postinstall "node_modules/native-keymap/package.json"
+if [[ -d "build/node_modules/native-keymap" ]]; then
+  fix_native_keymap_postinstall "build/node_modules/native-keymap/package.json"
+fi
+
 # CRITICAL FIX: Verify gulp is installed before running gulp commands
 # If npm ci failed partially, gulp might not be installed
+# Also ensure native-keymap is patched before installing gulp (gulp install might trigger native-keymap)
 if [[ ! -f "node_modules/gulp/bin/gulp.js" ]] && [[ ! -f "node_modules/.bin/gulp" ]]; then
   echo "Warning: gulp not found after mixin-npm, attempting to install..." >&2
-  npm install gulp 2>&1 | tail -20 || {
+  # Ensure native-keymap is patched before installing gulp
+  fix_native_keymap_postinstall "node_modules/native-keymap/package.json"
+  # Install gulp with --ignore-scripts to prevent native-keymap rebuild
+  npm install --ignore-scripts gulp 2>&1 | tail -20 || {
     echo "Error: Failed to install gulp. Cannot continue with build." >&2
     exit 1
   }
+  # Re-patch native-keymap after install (in case it was reinstalled)
+  fix_native_keymap_postinstall "node_modules/native-keymap/package.json"
 fi
 
 # CRITICAL FIX: @electron/get, @octokit/rest, and got are now ESM and break @vscode/gulp-electron

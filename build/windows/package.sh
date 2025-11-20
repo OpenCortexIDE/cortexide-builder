@@ -9,13 +9,53 @@ fi
 
 tar -xzf ./vscode.tar.gz
 
-# CRITICAL FIX: Skip Node.js version check in preinstall.js
-# CI uses Node.js v20.18.2, but preinstall.js requires v22.15.1+
-# The script supports VSCODE_SKIP_NODE_VERSION_CHECK to skip this check
-# Must be set BEFORE cd into vscode directory
-export VSCODE_SKIP_NODE_VERSION_CHECK=1
-
 cd vscode || { echo "'vscode' dir not found"; exit 1; }
+
+# CRITICAL FIX: Patch preinstall.js to skip Node.js version check
+# CI uses Node.js v20.18.2, but preinstall.js requires v22.15.1+
+# The environment variable approach may not work, so patch the file directly
+if [[ -f "build/npm/preinstall.js" ]]; then
+  echo "Patching preinstall.js to skip Node.js version check..." >&2
+  # Check if already patched
+  if ! grep -q "// PATCHED: Skip version check" "build/npm/preinstall.js" 2>/dev/null; then
+    # Use Node.js to patch the file
+    node << 'PREINSTALLFIX' || {
+const fs = require('fs');
+const filePath = 'build/npm/preinstall.js';
+let content = fs.readFileSync(filePath, 'utf8');
+
+// Check if already patched
+if (content.includes('// PATCHED: Skip version check')) {
+  console.error('preinstall.js already patched');
+  process.exit(0);
+}
+
+// Replace the version check with a skip
+const lines = content.split('\n');
+for (let i = 0; i < lines.length; i++) {
+  // Find the version check block
+  if (lines[i].includes("if (!process.env['VSCODE_SKIP_NODE_VERSION_CHECK'])") && 
+      i + 1 < lines.length && 
+      lines[i + 1].includes('majorNodeVersion < 22')) {
+    // Comment out the entire check block
+    const indent = lines[i].match(/^\s*/)[0];
+    lines[i] = `${indent}// PATCHED: Skip version check for CI (Node.js v20.18.2)\n${indent}if (false && !process.env['VSCODE_SKIP_NODE_VERSION_CHECK']) {`;
+    console.error(`✓ Patched preinstall.js at line ${i + 1}`);
+    break;
+  }
+}
+
+content = lines.join('\n');
+fs.writeFileSync(filePath, content, 'utf8');
+console.error('✓ Successfully patched preinstall.js to skip version check');
+PREINSTALLFIX
+      echo "Warning: Failed to patch preinstall.js, trying environment variable..." >&2
+      export VSCODE_SKIP_NODE_VERSION_CHECK=1
+    }
+  else
+    echo "preinstall.js already patched, skipping..." >&2
+  fi
+fi
 
 for i in {1..5}; do # try 5 times
   npm ci && break

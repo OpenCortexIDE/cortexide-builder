@@ -321,23 +321,33 @@ try {
       }
       
       // Track #ifdef blocks related to AppX
+      // We need to handle these specially - don't comment out the #ifdef/#endif themselves
+      // Instead, we'll set a flag to comment out the content inside
       if (trimmed.startsWith('#ifdef') && trimmed.toLowerCase().includes('appx')) {
         inAppxIfdef = true;
         ifdefStartLine = i;
         console.error(`Found AppX #ifdef block starting at line ${i + 1}`);
+        // Don't comment out the #ifdef line itself - keep it but make it always false
+        // Change #ifdef AppxPackageName to #if 0 (always false)
+        if (trimmed.includes('AppxPackageName') || trimmed.includes('AppxPackage')) {
+          const indent = line.match(/^\s*/)[0];
+          lines[i] = `${indent}#if 0 ; PATCHED: AppX not available, disabled\n${indent}; Original: ${trimmed}`;
+          modified = true;
+        }
+        continue;
       }
       
       // Track #endif for AppX blocks
       if (inAppxIfdef && trimmed.startsWith('#endif')) {
-        // Comment out the entire #ifdef block
-        for (let j = ifdefStartLine; j <= i; j++) {
-          if (!lines[j].trim().startsWith(';')) {
+        // Comment out the content inside the block (but keep #endif)
+        for (let j = ifdefStartLine + 1; j < i; j++) {
+          if (!lines[j].trim().startsWith(';') && !lines[j].trim().startsWith('#')) {
             const indent = lines[j].match(/^\s*/)[0];
-            lines[j] = `${indent}; PATCHED: AppX #ifdef block commented out\n${indent};${lines[j].substring(indent.length)}`;
+            lines[j] = `${indent}; PATCHED: AppX block content commented out\n${indent};${lines[j].substring(indent.length)}`;
           }
         }
         modified = true;
-        console.error(`✓ Commented out AppX #ifdef block from line ${ifdefStartLine + 1} to ${i + 1}`);
+        console.error(`✓ Commented out AppX #ifdef block content from line ${ifdefStartLine + 2} to ${i}`);
         inAppxIfdef = false;
         ifdefStartLine = -1;
         continue;

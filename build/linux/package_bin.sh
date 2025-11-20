@@ -360,6 +360,28 @@ if [[ -d "build/node_modules/native-keymap" ]]; then
   fix_native_keymap_postinstall "build/node_modules/native-keymap/package.json"
 fi
 
+# CRITICAL FIX: Install extension dependencies before building
+# Extensions like microsoft-authentication need their dependencies installed
+echo "Installing extension dependencies..." >&2
+if [[ -d "extensions" ]]; then
+  # Find all extensions with package.json files
+  find extensions -name "package.json" -type f | while read -r ext_package_json; do
+    ext_dir=$(dirname "$ext_package_json")
+    ext_name=$(basename "$ext_dir")
+    
+    # Skip if node_modules already exists (already installed)
+    if [[ ! -d "${ext_dir}/node_modules" ]]; then
+      echo "Installing dependencies for extension: ${ext_name}..." >&2
+      # Use --ignore-scripts to prevent native-keymap rebuild issues
+      (cd "$ext_dir" && npm install --ignore-scripts --no-save 2>&1 | tail -30) || {
+        echo "Warning: Failed to install dependencies for ${ext_name}, continuing..." >&2
+      }
+    else
+      echo "Dependencies already installed for ${ext_name}, skipping..." >&2
+    fi
+  done
+fi
+
 # CRITICAL FIX: Verify gulp is installed before running gulp commands
 # If npm ci failed partially, gulp might not be installed
 # Also ensure native-keymap is patched before installing gulp (gulp install might trigger native-keymap)

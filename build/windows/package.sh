@@ -66,6 +66,59 @@ for i in {1..5}; do # try 5 times
   echo "Npm install failed $i, trying again..."
 done
 
+# CRITICAL FIX: @electron/get is now ESM and breaks @vscode/gulp-electron
+# Patch node_modules to dynamically import the module
+if [[ -f "node_modules/@vscode/gulp-electron/src/download.js" ]]; then
+  echo "Patching @vscode/gulp-electron to support ESM @electron/get..." >&2
+  node << 'ELECTRONPATCH' || {
+const fs = require('fs');
+const filePath = 'node_modules/@vscode/gulp-electron/src/download.js';
+let content = fs.readFileSync(filePath, 'utf8');
+
+if (content.includes('// ESM_PATCH:')) {
+  console.error('gulp-electron download.js already patched for ESM');
+  process.exit(0);
+}
+
+const requireLine = 'const { downloadArtifact } = require("@electron/get");';
+if (!content.includes(requireLine)) {
+  console.error('Could not find @electron/get require() line to patch');
+  process.exit(0);
+}
+
+content = content.replace(requireLine, `// ESM_PATCH: dynamically import @electron/get since it is ESM-only now
+let __downloadArtifactPromise;
+async function getDownloadArtifact() {
+  if (!__downloadArtifactPromise) {
+    __downloadArtifactPromise = import("@electron/get").then((mod) => {
+      if (mod.downloadArtifact) {
+        return mod.downloadArtifact;
+      }
+      if (mod.default && mod.default.downloadArtifact) {
+        return mod.default.downloadArtifact;
+      }
+      return mod.default || mod;
+    });
+  }
+  return __downloadArtifactPromise;
+}`);
+
+const callLine = '  return await downloadArtifact(downloadOpts);';
+if (content.includes(callLine)) {
+  content = content.replace(callLine, `  const downloadArtifact = await getDownloadArtifact();
+  return await downloadArtifact(downloadOpts);`);
+} else {
+  console.error('Could not find downloadArtifact call to patch');
+  process.exit(0);
+}
+
+fs.writeFileSync(filePath, content, 'utf8');
+console.error('✓ Patched gulp-electron download.js for ESM @electron/get');
+ELECTRONPATCH
+    echo "Warning: Failed to patch gulp-electron for ESM, build may fail" >&2
+  }
+fi
+
 node build/azure-pipelines/distro/mixin-npm
 
 . ../build/windows/rtf/make.sh

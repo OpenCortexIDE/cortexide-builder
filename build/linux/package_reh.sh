@@ -184,6 +184,7 @@ SETUPENVFIX
         }
       fi
     fi
+    mkdir -p "$PWD/.build/sysroots/glibc-2.28-gcc-10.5.0" "$PWD/.build/sysroots/glibc-2.28-gcc-8.5.0"
     source ./build/azure-pipelines/linux/setup-env.sh --skip-sysroot
   else
     source ./build/azure-pipelines/linux/setup-env.sh

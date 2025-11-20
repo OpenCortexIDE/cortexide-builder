@@ -270,6 +270,78 @@ SIGNFIX
 elif [[ "${OS_NAME}" == "windows" ]]; then
   cd vscode || { echo "'vscode' dir not found"; exit 1; }
 
+  # CRITICAL FIX: Patch InnoSetup code.iss to conditionally include AppX file
+  # If AppX building was skipped (win32ContextMenu missing), the AppX file won't exist
+  # and InnoSetup will fail. Make the AppX file reference conditional.
+  if [[ -f "build/win32/code.iss" ]]; then
+    echo "Patching InnoSetup code.iss to conditionally include AppX file..." >&2
+    node << 'INNOSETUPFIX' || {
+const fs = require('fs');
+const path = require('path');
+const filePath = 'build/win32/code.iss';
+
+try {
+  let content = fs.readFileSync(filePath, 'utf8');
+  const lines = content.split('\n');
+  let modified = false;
+  
+  // Check if AppX file exists
+  const arch = process.env.VSCODE_ARCH || 'x64';
+  const appxDir = path.join('..', 'VSCode-win32-' + arch, 'appx');
+  const appxFile = path.join(appxDir, `code_${arch}.appx`);
+  const appxExists = fs.existsSync(appxFile);
+  
+  console.error(`Checking for AppX file: ${appxFile}`);
+  console.error(`AppX file exists: ${appxExists}`);
+  
+  if (!appxExists) {
+    console.error(`AppX file not found: ${appxFile}, making AppX reference conditional...`);
+    
+    // Find lines that reference the AppX file (around line 99 based on error)
+    for (let i = 0; i < lines.length; i++) {
+      // Look for Source file references to .appx files
+      if (lines[i].includes('Source:') && lines[i].includes('.appx')) {
+        // Comment out the line or make it conditional
+        const indent = lines[i].match(/^\s*/)[0];
+        // InnoSetup supports conditional compilation with #if FileExists()
+        // But simpler: just comment it out if file doesn't exist
+        if (!lines[i].trim().startsWith(';')) {
+          lines[i] = `${indent}; PATCHED: AppX file not found, commented out\n${indent};${lines[i].substring(indent.length)}`;
+          modified = true;
+          console.error(`✓ Commented out AppX reference at line ${i + 1}: ${lines[i].trim()}`);
+        }
+      }
+      // Also check for AppxPackage definitions
+      if (lines[i].includes('AppxPackage') && lines[i].includes('.appx')) {
+        const indent = lines[i].match(/^\s*/)[0];
+        if (!lines[i].trim().startsWith(';')) {
+          lines[i] = `${indent}; PATCHED: AppX package not found, commented out\n${indent};${lines[i].substring(indent.length)}`;
+          modified = true;
+          console.error(`✓ Commented out AppX package definition at line ${i + 1}: ${lines[i].trim()}`);
+        }
+      }
+    }
+  } else {
+    console.error(`✓ AppX file found: ${appxFile}, no patching needed`);
+  }
+  
+  if (modified) {
+    content = lines.join('\n');
+    fs.writeFileSync(filePath, content, 'utf8');
+    console.error('✓ Successfully patched code.iss to handle missing AppX file');
+  } else if (!appxExists) {
+    console.error('⚠ Warning: AppX file not found but no references were patched. The build may fail.');
+  }
+} catch (error) {
+  console.error(`✗ ERROR: ${error.message}`);
+  console.error(error.stack);
+  process.exit(1);
+}
+INNOSETUPFIX
+      echo "Warning: Failed to patch code.iss, InnoSetup may fail if AppX file is missing" >&2
+    }
+  fi
+
   npm run gulp "vscode-win32-${VSCODE_ARCH}-inno-updater"
 
   if [[ "${SHOULD_BUILD_ZIP}" != "no" ]]; then

@@ -300,7 +300,11 @@ try {
     
     // Find lines that reference the AppX file (around line 99 based on error)
     // Be VERY aggressive - comment out ANY line in [Files] section that mentions appx
+    // But be careful with #ifdef blocks - comment out the entire block
     let inFilesSection = false;
+    let inAppxIfdef = false;
+    let ifdefStartLine = -1;
+    
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmed = line.trim();
@@ -316,13 +320,37 @@ try {
         continue;
       }
       
+      // Track #ifdef blocks related to AppX
+      if (trimmed.startsWith('#ifdef') && trimmed.toLowerCase().includes('appx')) {
+        inAppxIfdef = true;
+        ifdefStartLine = i;
+        console.error(`Found AppX #ifdef block starting at line ${i + 1}`);
+      }
+      
+      // Track #endif for AppX blocks
+      if (inAppxIfdef && trimmed.startsWith('#endif')) {
+        // Comment out the entire #ifdef block
+        for (let j = ifdefStartLine; j <= i; j++) {
+          if (!lines[j].trim().startsWith(';')) {
+            const indent = lines[j].match(/^\s*/)[0];
+            lines[j] = `${indent}; PATCHED: AppX #ifdef block commented out\n${indent};${lines[j].substring(indent.length)}`;
+          }
+        }
+        modified = true;
+        console.error(`✓ Commented out AppX #ifdef block from line ${ifdefStartLine + 1} to ${i + 1}`);
+        inAppxIfdef = false;
+        ifdefStartLine = -1;
+        continue;
+      }
+      
       // Skip already commented lines
       if (trimmed.startsWith(';')) {
         continue;
       }
       
       // In [Files] section, comment out ANY line that mentions appx (case insensitive)
-      if (inFilesSection) {
+      // But skip if we're inside an #ifdef block (we'll handle the whole block)
+      if (inFilesSection && !inAppxIfdef) {
         const lowerLine = line.toLowerCase();
         if (lowerLine.includes('appx')) {
           const indent = line.match(/^\s*/)[0];
@@ -332,13 +360,15 @@ try {
         }
       }
       
-      // Also check outside [Files] section for any .appx references
-      const lowerLine = line.toLowerCase();
-      if (lowerLine.includes('.appx') && !trimmed.startsWith(';')) {
-        const indent = line.match(/^\s*/)[0];
-        lines[i] = `${indent}; PATCHED: AppX file not found, commented out\n${indent};${line.substring(indent.length)}`;
-        modified = true;
-        console.error(`✓ Commented out .appx reference at line ${i + 1}: ${trimmed.substring(0, 80)}`);
+      // Also check outside [Files] section for any .appx references (but not in #ifdef blocks)
+      if (!inAppxIfdef) {
+        const lowerLine = line.toLowerCase();
+        if (lowerLine.includes('.appx') && !trimmed.startsWith(';')) {
+          const indent = line.match(/^\s*/)[0];
+          lines[i] = `${indent}; PATCHED: AppX file not found, commented out\n${indent};${line.substring(indent.length)}`;
+          modified = true;
+          console.error(`✓ Commented out .appx reference at line ${i + 1}: ${trimmed.substring(0, 80)}`);
+        }
       }
     }
     

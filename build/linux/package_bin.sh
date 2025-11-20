@@ -80,11 +80,6 @@ if [[ -f "../build/linux/${VSCODE_ARCH}/electron.sh" ]]; then
       replace "s|target=\"${TARGET}\"|target=\"${ELECTRON_VERSION}\"|" .npmrc
     fi
   fi
-
-  if [[ "${ELECTRON_VERSION}" != "${TARGET}" ]]; then
-    # Force version
-    replace "s|target=\"${TARGET}\"|target=\"${ELECTRON_VERSION}\"|" .npmrc
-  fi
 fi
 
 if [[ -d "../patches/linux/client/" ]]; then
@@ -260,7 +255,23 @@ SETUPENVFIX
 fi
 
 for i in {1..5}; do # try 5 times
-  npm ci && break
+  # Fix vsce-sign postinstall before attempting install (in case it exists from previous attempt)
+  fix_vsce_sign_postinstall
+  
+  npm ci 2>&1 | tee /tmp/npm-install-root.log || {
+    # Check if it failed due to vsce-sign postinstall
+    if grep -q "vsce-sign.*postinstall\|The current platform.*is not supported" /tmp/npm-install-root.log; then
+      echo "npm install failed due to vsce-sign postinstall issue, fixing and retrying..." >&2
+      fix_vsce_sign_postinstall
+      # Remove vsce-sign to force reinstall
+      rm -rf node_modules/@vscode/vsce-sign
+      # Continue to retry
+      continue
+    fi
+    # Other errors, break and retry normally
+    false
+  } && break
+  
   if [[ $i -eq 3 ]]; then
     echo "Npm install failed too many times" >&2
     exit 1
@@ -269,6 +280,106 @@ for i in {1..5}; do # try 5 times
 done
 
 node build/azure-pipelines/distro/mixin-npm
+
+# CRITICAL FIX: @electron/get, @octokit/rest, and got are now ESM and break @vscode/gulp-electron
+# Patch node_modules to dynamically import these modules (same as Windows build)
+if [[ -f "node_modules/@vscode/gulp-electron/src/download.js" ]]; then
+  echo "Patching @vscode/gulp-electron to support ESM @electron/get, @octokit/rest, and got..." >&2
+  node << 'ELECTRONPATCH' || {
+const fs = require('fs');
+const filePath = 'node_modules/@vscode/gulp-electron/src/download.js';
+let content = fs.readFileSync(filePath, 'utf8');
+
+const alreadyPatched = content.includes('// ESM_PATCH: downloadArtifact') && 
+                       content.includes('// ESM_PATCH: octokit') &&
+                       content.includes('// ESM_PATCH: got');
+if (!alreadyPatched) {
+  // Patch @electron/get
+  const requireElectronLine = 'const { downloadArtifact } = require("@electron/get");';
+  if (content.includes(requireElectronLine)) {
+    content = content.replace(requireElectronLine, `// ESM_PATCH: downloadArtifact
+let __downloadArtifactPromise;
+async function getDownloadArtifact() {
+  if (!__downloadArtifactPromise) {
+    __downloadArtifactPromise = import("@electron/get").then((mod) => {
+      if (mod.downloadArtifact) {
+        return mod.downloadArtifact;
+      }
+      if (mod.default && mod.default.downloadArtifact) {
+        return mod.default.downloadArtifact;
+      }
+      return mod.default || mod;
+    });
+  }
+  return __downloadArtifactPromise;
+}`);
+  }
+
+  const callDownloadArtifactLine = '  return await downloadArtifact(downloadOpts);';
+  if (content.includes(callDownloadArtifactLine)) {
+    content = content.replace(callDownloadArtifactLine, `  const downloadArtifact = await getDownloadArtifact();
+  return await downloadArtifact(downloadOpts);`);
+  }
+
+  // Patch @octokit/rest
+  const requireOctokitLine = 'const { Octokit } = require("@octokit/rest");';
+  if (content.includes(requireOctokitLine)) {
+    content = content.replace(requireOctokitLine, `// ESM_PATCH: octokit
+let __octokitPromise;
+async function getOctokit() {
+  if (!__octokitPromise) {
+    __octokitPromise = import("@octokit/rest").then((mod) => {
+      if (mod.Octokit) {
+        return mod.Octokit;
+      }
+      if (mod.default && mod.default.Octokit) {
+        return mod.default.Octokit;
+      }
+      return mod.default || mod;
+    });
+  }
+  return __octokitPromise;
+}`);
+
+    const usageOctokitLine = '  const octokit = new Octokit({ auth: token });';
+    if (content.includes(usageOctokitLine)) {
+      content = content.replace(usageOctokitLine, '  const Octokit = await getOctokit();\n  const octokit = new Octokit({ auth: token });');
+    }
+  }
+
+  // Patch got
+  const requireGotLine = 'const { got } = require("got");';
+  if (content.includes(requireGotLine)) {
+    content = content.replace(requireGotLine, `// ESM_PATCH: got
+let __gotPromise;
+async function getGot() {
+  if (!__gotPromise) {
+    __gotPromise = import("got").then((mod) => {
+      if (mod.got) {
+        return mod.got;
+      }
+      if (mod.default && mod.default.got) {
+        return mod.default.got;
+      }
+      return mod.default || mod;
+    });
+  }
+  return __gotPromise;
+}`);
+
+    const usageGotLine = '  const response = await got(url, {';
+    if (content.includes(usageGotLine)) {
+      content = content.replace(usageGotLine, '  const got = await getGot();\n  const response = await got(url, {');
+    }
+  }
+}
+
+fs.writeFileSync(filePath, content, 'utf8');
+console.error('✓ Patched gulp-electron download.js for ESM imports');
+ELECTRONPATCH
+    echo "Warning: Failed to patch gulp-electron for ESM, build may fail" >&2
+  }
+fi
 
 npm run gulp "vscode-linux-${VSCODE_ARCH}-min-ci"
 

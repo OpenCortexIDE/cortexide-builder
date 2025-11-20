@@ -291,6 +291,7 @@ try {
   const lines = content.split('\n');
   let modified = false;
   
+  // Fix 1: dependenciesSrc
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].includes('const dependenciesSrc =') && lines[i].includes('.flat()')) {
       if (!lines[i].includes('|| [\'**\', \'!**/*\']')) {
@@ -306,10 +307,27 @@ try {
     }
   }
   
+  // Fix 2: extensionPaths
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes('const extensionPaths =') && lines[i].includes('.map(name =>')) {
+      if (!lines[i].includes('|| [\'**\', \'!**/*\']')) {
+        let newLine = lines[i].replace(/const extensionPaths =/, 'let extensionPaths =');
+        // Match the pattern: .map(name => `.build/extensions/${name}/**`)
+        newLine = newLine.replace(/\.map\(name => `\.build\/extensions\/\$\{name\}\/\*\*`\);?$/, ".map(name => `.build/extensions/${name}/**`) || ['**', '!**/*'];");
+        lines[i] = newLine;
+        const indent = lines[i].match(/^\s*/)[0];
+        lines.splice(i + 1, 0, `${indent}if (extensionPaths.length === 0) { extensionPaths = ['**', '!**/*']; }`);
+        modified = true;
+        console.error(`✓ Fixed extensionPaths at line ${i + 1}`);
+      }
+      break;
+    }
+  }
+  
   if (modified) {
     content = lines.join('\n');
     fs.writeFileSync(filePath, content, 'utf8');
-    console.error('✓ Successfully applied REH glob fix');
+    console.error('✓ Successfully applied REH glob fix (dependenciesSrc and extensionPaths)');
   }
 } catch (error) {
   console.error(`✗ ERROR: ${error.message}`);

@@ -9,12 +9,13 @@ fi
 
 tar -xzf ./vscode.tar.gz
 
-cd vscode || { echo "'vscode' dir not found"; exit 1; }
-
 # CRITICAL FIX: Skip Node.js version check in preinstall.js
 # CI uses Node.js v20.18.2, but preinstall.js requires v22.15.1+
 # The script supports VSCODE_SKIP_NODE_VERSION_CHECK to skip this check
+# Must be set BEFORE cd into vscode directory
 export VSCODE_SKIP_NODE_VERSION_CHECK=1
+
+cd vscode || { echo "'vscode' dir not found"; exit 1; }
 
 for i in {1..5}; do # try 5 times
   npm ci && break

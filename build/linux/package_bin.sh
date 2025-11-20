@@ -117,8 +117,75 @@ EOF
   echo "${INCLUDES}" > "$HOME/.gyp/include.gypi"
 fi
 
+# CRITICAL FIX: @vscode/vsce-sign postinstall script doesn't support ppc64
+# Patch the postinstall script to skip the platform check for unsupported architectures
+fix_vsce_sign_postinstall() {
+  local postinstall_path="build/node_modules/@vscode/vsce-sign/src/postinstall.js"
+  if [[ -f "${postinstall_path}" ]]; then
+    # Check if already patched
+    if ! grep -q "// PATCHED: Skip platform check for unsupported architectures" "${postinstall_path}" 2>/dev/null; then
+      echo "Patching @vscode/vsce-sign postinstall script to support ppc64..." >&2
+      node << VSECESIGNFIX || {
+const fs = require('fs');
+const filePath = '${postinstall_path}';
+let content = fs.readFileSync(filePath, 'utf8');
+
+// Check if already patched
+if (content.includes('// PATCHED: Skip platform check')) {
+  console.error('vsce-sign postinstall already patched');
+  process.exit(0);
+}
+
+// Find the platform check and make it skip for unsupported architectures
+// The error message is "The current platform (linux) and architecture (ppc64) is not supported."
+// We need to find where it throws this error and make it a warning instead
+const lines = content.split('\n');
+let modified = false;
+
+for (let i = 0; i < lines.length; i++) {
+  // Find the error throw
+  if (lines[i].includes('is not supported') && lines[i].includes('throw new Error')) {
+    // Replace throw with console.warn and return early
+    const indent = lines[i].match(/^\s*/)[0];
+    lines[i] = `${indent}// PATCHED: Skip platform check for unsupported architectures (ppc64, etc.)\n${indent}console.warn('Platform/architecture not officially supported, skipping vsce-sign setup');\n${indent}return;`;
+    modified = true;
+    console.error(`✓ Patched vsce-sign postinstall at line ${i + 1}`);
+    break;
+  }
+}
+
+if (modified) {
+  content = lines.join('\n');
+  fs.writeFileSync(filePath, content, 'utf8');
+  console.error('✓ Successfully patched vsce-sign postinstall');
+} else {
+  console.error('Could not find platform check in vsce-sign postinstall');
+}
+VSECESIGNFIX
+        echo "Warning: Failed to patch vsce-sign postinstall, continuing anyway..." >&2
+      }
+    fi
+  fi
+}
+
 for i in {1..5}; do # try 5 times
-  npm ci --prefix build && break
+  # Fix vsce-sign postinstall before attempting install (in case it exists from previous attempt)
+  fix_vsce_sign_postinstall
+  
+  npm ci --prefix build 2>&1 | tee /tmp/npm-install.log || {
+    # Check if it failed due to vsce-sign postinstall
+    if grep -q "vsce-sign.*postinstall\|The current platform.*is not supported" /tmp/npm-install.log; then
+      echo "npm install failed due to vsce-sign postinstall issue, fixing and retrying..." >&2
+      fix_vsce_sign_postinstall
+      # Remove vsce-sign to force reinstall
+      rm -rf build/node_modules/@vscode/vsce-sign
+      # Continue to retry
+      continue
+    fi
+    # Other errors, break and retry normally
+    false
+  } && break
+  
   if [[ $i == 3 ]]; then
     echo "Npm install failed too many times" >&2
     exit 1

@@ -398,12 +398,33 @@ if [[ -d "extensions" ]]; then
   done
   
   # Verify critical extensions have their dependencies
+  # Some extensions need dependencies installed at root level for webpack to resolve them
   if [[ -d "extensions/microsoft-authentication" ]]; then
-    if [[ ! -d "extensions/microsoft-authentication/node_modules/@azure/msal-node" ]]; then
-      echo "Warning: microsoft-authentication missing @azure/msal-node, attempting direct install..." >&2
-      (cd "extensions/microsoft-authentication" && npm install --ignore-scripts --no-save --legacy-peer-deps @azure/msal-node @azure/ms-rest-azure-env @vscode/extension-telemetry @azure/msal-node-extensions vscode-tas-client 2>&1 | tail -30) || {
-        echo "Warning: Direct install failed for microsoft-authentication dependencies" >&2
+    MISSING_DEPS=()
+    [[ ! -d "extensions/microsoft-authentication/node_modules/@azure/msal-node" ]] && MISSING_DEPS+=("@azure/msal-node")
+    [[ ! -d "extensions/microsoft-authentication/node_modules/@azure/ms-rest-azure-env" ]] && MISSING_DEPS+=("@azure/ms-rest-azure-env")
+    [[ ! -d "extensions/microsoft-authentication/node_modules/@vscode/extension-telemetry" ]] && MISSING_DEPS+=("@vscode/extension-telemetry")
+    [[ ! -d "extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions" ]] && MISSING_DEPS+=("@azure/msal-node-extensions")
+    [[ ! -d "extensions/microsoft-authentication/node_modules/vscode-tas-client" ]] && MISSING_DEPS+=("vscode-tas-client")
+    
+    if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
+      echo "Installing missing dependencies for microsoft-authentication: ${MISSING_DEPS[*]}..." >&2
+      # Try installing in extension directory first
+      (cd "extensions/microsoft-authentication" && npm install --ignore-scripts --no-save --legacy-peer-deps "${MISSING_DEPS[@]}" 2>&1 | tail -30) || {
+        echo "Warning: Extension-level install failed, trying root-level install..." >&2
+        # Fallback: install at root level (webpack might resolve from there)
+        npm install --ignore-scripts --no-save --legacy-peer-deps "${MISSING_DEPS[@]}" 2>&1 | tail -30 || {
+          echo "Warning: Root-level install also failed for microsoft-authentication dependencies" >&2
+        }
       }
+    fi
+    
+    # Also ensure keytar mock exists (it's a file: dependency)
+    if [[ ! -d "extensions/microsoft-authentication/packageMocks/keytar" ]]; then
+      echo "Creating keytar mock for microsoft-authentication..." >&2
+      mkdir -p "extensions/microsoft-authentication/packageMocks/keytar"
+      echo '{"name": "keytar", "version": "1.0.0", "main": "index.js"}' > "extensions/microsoft-authentication/packageMocks/keytar/package.json"
+      echo 'module.exports = {};' > "extensions/microsoft-authentication/packageMocks/keytar/index.js"
     fi
   fi
 fi

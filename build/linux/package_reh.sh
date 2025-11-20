@@ -186,6 +186,7 @@ SETUPENVFIX
     fi
     mkdir -p "$PWD/.build/sysroots/glibc-2.28-gcc-10.5.0" "$PWD/.build/sysroots/glibc-2.28-gcc-8.5.0"
     source ./build/azure-pipelines/linux/setup-env.sh --skip-sysroot
+    unset CC CXX CXXFLAGS LDFLAGS VSCODE_REMOTE_CC VSCODE_REMOTE_CXX VSCODE_REMOTE_CXXFLAGS VSCODE_REMOTE_LDFLAGS
   else
     source ./build/azure-pipelines/linux/setup-env.sh
   fi

@@ -166,6 +166,10 @@ SETUPENVFIX
     # Ensure sysroot directories exist so setup-env.sh thinks they are cached
     mkdir -p "$PWD/.build/sysroots/glibc-2.28-gcc-10.5.0" "$PWD/.build/sysroots/glibc-2.28-gcc-8.5.0"
     source ./build/azure-pipelines/linux/setup-env.sh --skip-sysroot
+    # When skipping sysroot downloads, setup-env still sets CC/CXX to the
+    # non-existent toolchains inside the skipped sysroot tree. Override them
+    # to sane defaults so node-gyp can fall back to the system toolchain.
+    unset CC CXX CXXFLAGS LDFLAGS VSCODE_REMOTE_CC VSCODE_REMOTE_CXX VSCODE_REMOTE_CXXFLAGS VSCODE_REMOTE_LDFLAGS
   else
     source ./build/azure-pipelines/linux/setup-env.sh
   fi

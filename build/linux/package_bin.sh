@@ -18,7 +18,9 @@ cd vscode || { echo "'vscode' dir not found"; exit 1; }
 
 export VSCODE_PLATFORM='linux'
 export VSCODE_SKIP_NODE_VERSION_CHECK=1
-export VSCODE_SYSROOT_PREFIX='-glibc-2.28'
+# VSCODE_SYSROOT_PREFIX should include gcc version for checksum matching
+# Default is -glibc-2.28-gcc-10.5.0, but we only set it if not already set
+export VSCODE_SYSROOT_PREFIX="${VSCODE_SYSROOT_PREFIX:--glibc-2.28-gcc-10.5.0}"
 
 if [[ "${VSCODE_ARCH}" == "arm64" || "${VSCODE_ARCH}" == "armhf" ]]; then
   export VSCODE_SKIP_SYSROOT=1
@@ -56,12 +58,27 @@ if [[ -f "../build/linux/${VSCODE_ARCH}/electron.sh" ]]; then
 
   TARGET=$( npm config get target )
 
-  # Only fails at different major versions
-  if [[ "${ELECTRON_VERSION%%.*}" != "${TARGET%%.*}" ]]; then
-    # Fail the pipeline if electron target doesn't match what is used.
-    echo "Electron ${VSCODE_ARCH} binary version doesn't match target electron version!"
-    echo "Releases available at: https://github.com/${VSCODE_ELECTRON_REPOSITORY}/releases"
-    exit 1
+  # For alternative architectures (loong64, riscv64, ppc64le), allow version mismatch
+  # These use custom electron builds that may lag behind the main version
+  if [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]]; then
+    echo "Note: ${VSCODE_ARCH} uses custom electron build (${ELECTRON_VERSION}), target is ${TARGET}"
+    # Still update .npmrc to use the custom version
+    if [[ "${ELECTRON_VERSION}" != "${TARGET}" ]]; then
+      replace "s|target=\"${TARGET}\"|target=\"${ELECTRON_VERSION}\"|" .npmrc
+    fi
+  else
+    # Only fails at different major versions for standard architectures
+    if [[ "${ELECTRON_VERSION%%.*}" != "${TARGET%%.*}" ]]; then
+      # Fail the pipeline if electron target doesn't match what is used.
+      echo "Electron ${VSCODE_ARCH} binary version doesn't match target electron version!"
+      echo "Releases available at: https://github.com/${VSCODE_ELECTRON_REPOSITORY}/releases"
+      exit 1
+    fi
+
+    if [[ "${ELECTRON_VERSION}" != "${TARGET}" ]]; then
+      # Force version
+      replace "s|target=\"${TARGET}\"|target=\"${ELECTRON_VERSION}\"|" .npmrc
+    fi
   fi
 
   if [[ "${ELECTRON_VERSION}" != "${TARGET}" ]]; then

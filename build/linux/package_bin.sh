@@ -364,22 +364,48 @@ fi
 # Extensions like microsoft-authentication need their dependencies installed
 echo "Installing extension dependencies..." >&2
 if [[ -d "extensions" ]]; then
-  # Find all extensions with package.json files
-  find extensions -name "package.json" -type f | while read -r ext_package_json; do
+  # Collect all extension directories first
+  EXT_DIRS=()
+  while IFS= read -r ext_package_json; do
     ext_dir=$(dirname "$ext_package_json")
+    EXT_DIRS+=("$ext_dir")
+  done < <(find extensions -name "package.json" -type f)
+  
+  # Install dependencies for each extension
+  for ext_dir in "${EXT_DIRS[@]}"; do
     ext_name=$(basename "$ext_dir")
     
-    # Skip if node_modules already exists (already installed)
-    if [[ ! -d "${ext_dir}/node_modules" ]]; then
-      echo "Installing dependencies for extension: ${ext_name}..." >&2
-      # Use --ignore-scripts to prevent native-keymap rebuild issues
-      (cd "$ext_dir" && npm install --ignore-scripts --no-save 2>&1 | tail -30) || {
-        echo "Warning: Failed to install dependencies for ${ext_name}, continuing..." >&2
-      }
-    else
+    # Skip if node_modules already exists and has content
+    if [[ -d "${ext_dir}/node_modules" ]] && [[ -n "$(ls -A "${ext_dir}/node_modules" 2>/dev/null)" ]]; then
       echo "Dependencies already installed for ${ext_name}, skipping..." >&2
+      continue
+    fi
+    
+    echo "Installing dependencies for extension: ${ext_name}..." >&2
+    # Use --ignore-scripts to prevent native-keymap rebuild issues
+    # Use --legacy-peer-deps to handle peer dependency conflicts
+    if (cd "$ext_dir" && npm install --ignore-scripts --no-save --legacy-peer-deps 2>&1 | tee "/tmp/ext-${ext_name}-install.log" | tail -50); then
+      echo "✓ Successfully installed dependencies for ${ext_name}" >&2
+    else
+      echo "Warning: Failed to install dependencies for ${ext_name}" >&2
+      echo "Checking if critical dependencies are missing..." >&2
+      # Check if it's a critical failure or just warnings
+      if grep -q "ENOENT\|MODULE_NOT_FOUND\|Cannot find module" "/tmp/ext-${ext_name}-install.log" 2>/dev/null; then
+        echo "Error: Critical dependency installation failed for ${ext_name}" >&2
+        echo "This may cause the extension build to fail." >&2
+      fi
     fi
   done
+  
+  # Verify critical extensions have their dependencies
+  if [[ -d "extensions/microsoft-authentication" ]]; then
+    if [[ ! -d "extensions/microsoft-authentication/node_modules/@azure/msal-node" ]]; then
+      echo "Warning: microsoft-authentication missing @azure/msal-node, attempting direct install..." >&2
+      (cd "extensions/microsoft-authentication" && npm install --ignore-scripts --no-save --legacy-peer-deps @azure/msal-node @azure/ms-rest-azure-env @vscode/extension-telemetry @azure/msal-node-extensions vscode-tas-client 2>&1 | tail -30) || {
+        echo "Warning: Direct install failed for microsoft-authentication dependencies" >&2
+      }
+    fi
+  fi
 fi
 
 # CRITICAL FIX: Verify gulp is installed before running gulp commands

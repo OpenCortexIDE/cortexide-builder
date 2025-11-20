@@ -75,18 +75,11 @@ const fs = require('fs');
 const filePath = 'node_modules/@vscode/gulp-electron/src/download.js';
 let content = fs.readFileSync(filePath, 'utf8');
 
-if (content.includes('// ESM_PATCH:')) {
-  console.error('gulp-electron download.js already patched for ESM');
-  process.exit(0);
-}
-
-const requireLine = 'const { downloadArtifact } = require("@electron/get");';
-if (!content.includes(requireLine)) {
-  console.error('Could not find @electron/get require() line to patch');
-  process.exit(0);
-}
-
-content = content.replace(requireLine, `// ESM_PATCH: dynamically import @electron/get since it is ESM-only now
+const alreadyPatched = content.includes('// ESM_PATCH: downloadArtifact') && content.includes('// ESM_PATCH: octokit');
+if (!alreadyPatched) {
+  const requireElectronLine = 'const { downloadArtifact } = require("@electron/get");';
+  if (content.includes(requireElectronLine)) {
+    content = content.replace(requireElectronLine, `// ESM_PATCH: downloadArtifact
 let __downloadArtifactPromise;
 async function getDownloadArtifact() {
   if (!__downloadArtifactPromise) {
@@ -102,14 +95,38 @@ async function getDownloadArtifact() {
   }
   return __downloadArtifactPromise;
 }`);
+  }
 
-const callLine = '  return await downloadArtifact(downloadOpts);';
-if (content.includes(callLine)) {
-  content = content.replace(callLine, `  const downloadArtifact = await getDownloadArtifact();
+  const callLine = '  return await downloadArtifact(downloadOpts);';
+  if (content.includes(callLine)) {
+    content = content.replace(callLine, `  const downloadArtifact = await getDownloadArtifact();
   return await downloadArtifact(downloadOpts);`);
-} else {
-  console.error('Could not find downloadArtifact call to patch');
-  process.exit(0);
+  }
+
+  const requireOctokitLine = 'const { Octokit } = require("@octokit/rest");';
+  if (content.includes(requireOctokitLine)) {
+    content = content.replace(requireOctokitLine, `// ESM_PATCH: octokit
+let __octokitPromise;
+async function getOctokit() {
+  if (!__octokitPromise) {
+    __octokitPromise = import("@octokit/rest").then((mod) => {
+      if (mod.Octokit) {
+        return mod.Octokit;
+      }
+      if (mod.default && mod.default.Octokit) {
+        return mod.default.Octokit;
+      }
+      return mod.default || mod;
+    });
+  }
+  return __octokitPromise;
+}`);
+
+    const usageLine = '  const octokit = new Octokit({ auth: token });';
+    if (content.includes(usageLine)) {
+      content = content.replace(usageLine, '  const Octokit = await getOctokit();\n  const octokit = new Octokit({ auth: token });');
+    }
+  }
 }
 
 fs.writeFileSync(filePath, content, 'utf8');

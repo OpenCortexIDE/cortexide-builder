@@ -75,7 +75,7 @@ const fs = require('fs');
 const filePath = 'node_modules/@vscode/gulp-electron/src/download.js';
 let content = fs.readFileSync(filePath, 'utf8');
 
-const alreadyPatched = content.includes('// ESM_PATCH: downloadArtifact') && content.includes('// ESM_PATCH: octokit');
+const alreadyPatched = content.includes('// ESM_PATCH: downloadArtifact') && content.includes('// ESM_PATCH: octokit') && content.includes('// ESM_PATCH: got');
 if (!alreadyPatched) {
   const requireElectronLine = 'const { downloadArtifact } = require("@electron/get");';
   if (content.includes(requireElectronLine)) {
@@ -125,6 +125,30 @@ async function getOctokit() {
     const usageLine = '  const octokit = new Octokit({ auth: token });';
     if (content.includes(usageLine)) {
       content = content.replace(usageLine, '  const Octokit = await getOctokit();\n  const octokit = new Octokit({ auth: token });');
+    }
+  }
+  const requireGotLine = 'const { got } = require("got");';
+  if (content.includes(requireGotLine)) {
+    content = content.replace(requireGotLine, `// ESM_PATCH: got
+let __gotPromise;
+async function getGot() {
+  if (!__gotPromise) {
+    __gotPromise = import("got").then((mod) => {
+      if (mod.got) {
+        return mod.got;
+      }
+      if (mod.default && mod.default.got) {
+        return mod.default.got;
+      }
+      return mod.default || mod;
+    });
+  }
+  return __gotPromise;
+}`);
+
+    const gotUsage = '  const response = await got(url, {';
+    if (content.includes(gotUsage)) {
+      content = content.replace(gotUsage, '  const got = await getGot();\n  const response = await got(url, {');
     }
   }
 }

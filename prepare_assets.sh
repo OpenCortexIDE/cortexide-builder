@@ -299,26 +299,41 @@ try {
     
     // Find lines that reference the AppX file (around line 99 based on error)
     for (let i = 0; i < lines.length; i++) {
-      // Look for Source file references to .appx files
-      if (lines[i].includes('Source:') && lines[i].includes('.appx')) {
-        // Comment out the line or make it conditional
-        const indent = lines[i].match(/^\s*/)[0];
-        // InnoSetup supports conditional compilation with #if FileExists()
-        // But simpler: just comment it out if file doesn't exist
-        if (!lines[i].trim().startsWith(';')) {
-          lines[i] = `${indent}; PATCHED: AppX file not found, commented out\n${indent};${lines[i].substring(indent.length)}`;
-          modified = true;
-          console.error(`✓ Commented out AppX reference at line ${i + 1}: ${lines[i].trim()}`);
-        }
+      const line = lines[i];
+      const trimmed = line.trim();
+      
+      // Skip already commented lines
+      if (trimmed.startsWith(';')) {
+        continue;
       }
-      // Also check for AppxPackage definitions
-      if (lines[i].includes('AppxPackage') && lines[i].includes('.appx')) {
-        const indent = lines[i].match(/^\s*/)[0];
-        if (!lines[i].trim().startsWith(';')) {
-          lines[i] = `${indent}; PATCHED: AppX package not found, commented out\n${indent};${lines[i].substring(indent.length)}`;
-          modified = true;
-          console.error(`✓ Commented out AppX package definition at line ${i + 1}: ${lines[i].trim()}`);
-        }
+      
+      // Look for Source file references to .appx files
+      // Pattern: Source: "path/to/appx/file.appx"
+      if (trimmed.includes('Source:') && trimmed.includes('.appx')) {
+        const indent = line.match(/^\s*/)[0];
+        lines[i] = `${indent}; PATCHED: AppX file not found, commented out\n${indent};${line.substring(indent.length)}`;
+        modified = true;
+        console.error(`✓ Commented out AppX Source reference at line ${i + 1}: ${trimmed}`);
+        continue;
+      }
+      
+      // Also check for AppxPackage definitions or any line with appx path
+      // Pattern: AppxPackage= or any line containing the appx directory path
+      if ((trimmed.includes('AppxPackage') || trimmed.includes('appx\\') || trimmed.includes('appx/')) && trimmed.includes('.appx')) {
+        const indent = line.match(/^\s*/)[0];
+        lines[i] = `${indent}; PATCHED: AppX package not found, commented out\n${indent};${line.substring(indent.length)}`;
+        modified = true;
+        console.error(`✓ Commented out AppX package reference at line ${i + 1}: ${trimmed}`);
+        continue;
+      }
+      
+      // Also check for lines that reference the appx directory in the path
+      // This catches cases like: Source: "{app}\\appx\\code_x64.appx"
+      if (trimmed.includes('appx') && (trimmed.includes('Source:') || trimmed.includes('DestDir:'))) {
+        const indent = line.match(/^\s*/)[0];
+        lines[i] = `${indent}; PATCHED: AppX directory reference, commented out\n${indent};${line.substring(indent.length)}`;
+        modified = true;
+        console.error(`✓ Commented out AppX directory reference at line ${i + 1}: ${trimmed}`);
       }
     }
   } else {

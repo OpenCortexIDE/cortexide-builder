@@ -175,6 +175,51 @@ VSECESIGNFIX
   fi
 }
 
+# CRITICAL FIX: native-keymap postinstall script fails to rebuild with Node.js v20.19.2
+# Patch the postinstall script to skip the node-gyp rebuild
+fix_native_keymap_postinstall() {
+  local postinstall_path="${1:-node_modules/native-keymap/package.json}"
+  if [[ -f "${postinstall_path}" ]]; then
+    # Check if already patched by looking for a marker
+    if ! grep -q "// PATCHED: Skip native-keymap rebuild" "${postinstall_path}" 2>/dev/null; then
+      echo "Patching native-keymap to skip node-gyp rebuild at ${postinstall_path}..." >&2
+      node << NATIVEKEYMAPFIX || {
+const fs = require('fs');
+const filePath = '${postinstall_path}';
+let content = fs.readFileSync(filePath, 'utf8');
+let pkg = JSON.parse(content);
+
+// Check if already patched
+if (pkg.scripts && pkg.scripts.postinstall && pkg.scripts.postinstall.includes('// PATCHED')) {
+  console.error('native-keymap already patched');
+  process.exit(0);
+}
+
+// Remove or skip the postinstall script that runs node-gyp rebuild
+if (pkg.scripts && pkg.scripts.postinstall) {
+  pkg.scripts.postinstall = '// PATCHED: Skip native-keymap rebuild (V8 API incompatibility with Node.js v20.19.2)';
+  content = JSON.stringify(pkg, null, 2);
+  fs.writeFileSync(filePath, content, 'utf8');
+  console.error('✓ Successfully patched native-keymap postinstall');
+} else {
+  console.error('No postinstall script found in native-keymap');
+}
+NATIVEKEYMAPFIX
+        echo "Warning: Failed to patch native-keymap postinstall, trying alternative method..." >&2
+        # Alternative: patch the actual postinstall script if it exists
+        local script_dir=$(dirname "${postinstall_path}")
+        local script_path="${script_dir}/scripts/postinstall.js"
+        if [[ -f "${script_path}" ]]; then
+          echo "exit 0" > "${script_path}" || true
+          echo "✓ Patched native-keymap postinstall script directly" >&2
+        fi
+      }
+    else
+      echo "native-keymap already patched at ${postinstall_path}" >&2
+    fi
+  fi
+}
+
 mv .npmrc .npmrc.bak
 cp ../npmrc .npmrc
 
@@ -189,6 +234,16 @@ for i in {1..5}; do # try 5 times
       fix_vsce_sign_postinstall
       # Remove vsce-sign to force reinstall
       rm -rf build/node_modules/@vscode/vsce-sign
+      # Continue to retry
+      continue
+    fi
+    # Check if it failed due to native-keymap node-gyp rebuild
+    if grep -q "native-keymap.*node-gyp\|native-keymap.*rebuild\|keymapping.*error\|v8-object.h.*error\|v8-template.h.*error" /tmp/npm-install.log; then
+      echo "npm install failed due to native-keymap rebuild issue, fixing and retrying..." >&2
+      # Patch native-keymap in build/node_modules
+      fix_native_keymap_postinstall "build/node_modules/native-keymap/package.json"
+      # Remove native-keymap to force reinstall
+      rm -rf build/node_modules/native-keymap
       # Continue to retry
       continue
     fi
@@ -260,7 +315,24 @@ SETUPENVFIX
 fi
 
 for i in {1..5}; do # try 5 times
-  npm ci && break
+  # Fix native-keymap postinstall before attempting install (if it exists from previous attempt)
+  fix_native_keymap_postinstall "node_modules/native-keymap/package.json"
+  
+  npm ci 2>&1 | tee /tmp/npm-install-root.log || {
+    # Check if it failed due to native-keymap node-gyp rebuild
+    if grep -q "native-keymap.*node-gyp\|native-keymap.*rebuild\|keymapping.*error\|v8-object.h.*error\|v8-template.h.*error" /tmp/npm-install-root.log; then
+      echo "npm install failed due to native-keymap rebuild issue, fixing and retrying..." >&2
+      # Patch native-keymap if it was installed before failing
+      fix_native_keymap_postinstall "node_modules/native-keymap/package.json"
+      # Remove native-keymap to force reinstall with patched package.json
+      rm -rf node_modules/native-keymap
+      # Continue to retry
+      continue
+    fi
+    # Other errors, break and retry normally
+    false
+  } && break
+  
   if [[ $i == 3 ]]; then
     echo "Npm install failed too many times" >&2
     exit 1
@@ -268,12 +340,22 @@ for i in {1..5}; do # try 5 times
   echo "Npm install failed $i, trying again..."
 
   # remove dependencies that fail during cleanup
-  rm -rf node_modules/@vscode node_modules/node-pty
+  rm -rf node_modules/@vscode node_modules/node-pty node_modules/native-keymap
 done
 
 mv .npmrc.bak .npmrc
 
 node build/azure-pipelines/distro/mixin-npm
+
+# CRITICAL FIX: Verify gulp is installed before running gulp commands
+# If npm ci failed partially, gulp might not be installed
+if [[ ! -f "node_modules/gulp/bin/gulp.js" ]] && [[ ! -f "node_modules/.bin/gulp" ]]; then
+  echo "Warning: gulp not found after mixin-npm, attempting to install..." >&2
+  npm install gulp 2>&1 | tail -20 || {
+    echo "Error: Failed to install gulp. Cannot continue with build." >&2
+    exit 1
+  }
+fi
 
 export VSCODE_NODE_GLIBC="-glibc-${GLIBC_VERSION}"
 
@@ -338,6 +420,13 @@ REHFIX
     }
   fi
   
+  # Verify gulp is available before running
+  if [[ ! -f "node_modules/gulp/bin/gulp.js" ]] && [[ ! -f "node_modules/.bin/gulp" ]]; then
+    echo "Error: gulp is not installed. Cannot run REH build." >&2
+    echo "This may indicate npm ci failed partially. Check logs above." >&2
+    exit 1
+  fi
+  
   npm run gulp minify-vscode-reh
   npm run gulp "vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
 
@@ -357,6 +446,13 @@ fi
 
 if [[ "${SHOULD_BUILD_REH_WEB}" != "no" ]]; then
   echo "Building REH-web"
+  # Verify gulp is available before running
+  if [[ ! -f "node_modules/gulp/bin/gulp.js" ]] && [[ ! -f "node_modules/.bin/gulp" ]]; then
+    echo "Error: gulp is not installed. Cannot run REH-web build." >&2
+    echo "This may indicate npm ci failed partially. Check logs above." >&2
+    exit 1
+  fi
+  
   npm run gulp minify-vscode-reh-web
   npm run gulp "vscode-reh-web-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
 

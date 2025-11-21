@@ -8,11 +8,21 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 
-RG_PATH="$1/@vscode/ripgrep/bin/rg"
+RG_DIR="$1/@vscode/ripgrep/bin"
+RG_PATH="${RG_DIR}/rg"
 RG_VERSION="14.1.1"
 
 echo "Replacing ripgrep binary with loong64 one"
 
-rm "${RG_PATH}"
-curl --silent --fail -L https://github.com/darkyzhou/ripgrep-loongarch64-musl/releases/download/${RG_VERSION}/rg -o "${RG_PATH}"
-chmod +x "${RG_PATH}"
+mkdir -p "${RG_DIR}" # Ensure directory exists
+rm -f "${RG_PATH}" # Remove if exists, ignore if not
+
+if ! curl --silent --fail -L "https://github.com/darkyzhou/ripgrep-loongarch64-musl/releases/download/${RG_VERSION}/rg" -o "${RG_PATH}"; then
+    echo "Error: Failed to download loong64 ripgrep binary." >&2
+    exit 1
+fi
+
+if ! chmod +x "${RG_PATH}"; then
+    echo "Error: Failed to make loong64 ripgrep binary executable." >&2
+    exit 1
+fi

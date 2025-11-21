@@ -579,6 +579,46 @@ export VSCODE_NODE_GLIBC="-glibc-${GLIBC_VERSION}"
 if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
   echo "Building REH"
   
+  # CRITICAL FIX: Patch gulpfile.reh.js to increase maxBuffer for Docker extraction (fixes ENOBUFS)
+  if [[ -f "build/gulpfile.reh.js" ]]; then
+    echo "Patching gulpfile.reh.js to increase maxBuffer for Docker extraction..." >&2
+    node << 'DOCKERBUFFERFIX' || {
+const fs = require('fs');
+const filePath = 'build/gulpfile.reh.js';
+let content = fs.readFileSync(filePath, 'utf8');
+
+// Check if already patched
+if (content.includes('maxBuffer: 500 * 1024 * 1024') || content.includes('maxBuffer: 1000 * 1024 * 1024')) {
+  console.error('gulpfile.reh.js already patched for increased buffer');
+  process.exit(0);
+}
+
+// Increase maxBuffer from 100MB to 500MB (or 1000MB if needed)
+// Replace maxBuffer: 100 * 1024 * 1024 with a larger value
+content = content.replace(
+  /maxBuffer:\s*100\s*\*\s*1024\s*\*\s*1024/g,
+  'maxBuffer: 500 * 1024 * 1024'
+);
+
+// Also check for any other maxBuffer values that might be too small
+content = content.replace(
+  /maxBuffer:\s*(\d+)\s*\*\s*1024\s*\*\s*1024/g,
+  (match, size) => {
+    const sizeNum = parseInt(size, 10);
+    if (sizeNum < 500) {
+      return `maxBuffer: 500 * 1024 * 1024`;
+    }
+    return match;
+  }
+);
+
+fs.writeFileSync(filePath, content, 'utf8');
+console.error('✓ Successfully increased maxBuffer in gulpfile.reh.js');
+DOCKERBUFFERFIX
+      echo "Warning: Failed to patch gulpfile.reh.js for increased buffer, continuing anyway..." >&2
+    }
+  fi
+  
   # CRITICAL FIX: Patch build/lib/extensions.js to handle empty glob patterns (same as main build)
   # This is needed for REH builds that use doPackageLocalExtensionsStream
   if [[ -f "build/lib/extensions.js" ]]; then

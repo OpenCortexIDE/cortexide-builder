@@ -322,6 +322,14 @@ apply_patch() {
             mv -f $1{.bak,}
             return 0
           fi
+          # CRITICAL: Final check for non-critical before exit
+          if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
+            echo "Warning: Non-critical patch $(basename "$1") has conflicts. Skipping..." >&2
+            echo -e "Conflicts in: $CONFLICT_FILES" >&2
+            find . -name "*.rej" -type f -delete 2>/dev/null || true
+            mv -f $1{.bak,}
+            return 0
+          fi
           echo "Error: Patch has conflicts in existing files:" >&2
           echo -e "$CONFLICT_FILES" >&2
           echo "Patch file: $1" >&2
@@ -360,11 +368,17 @@ apply_patch() {
         mv -f $1{.bak,}
         return 0
       fi
-      echo "Error: Patch failed to apply and 3-way merge not available (shallow clone)" >&2
-      echo "Patch file: $1" >&2
-      echo "Error: $PATCH_ERROR" >&2
-      echo "This patch may need to be updated for VS Code 1.106" >&2
-      exit 1
+        # CRITICAL: Final check for non-critical before exit
+        if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
+          echo "Warning: Non-critical patch $(basename "$1") failed. Skipping..." >&2
+          mv -f $1{.bak,}
+          return 0
+        fi
+        echo "Error: Patch failed to apply and 3-way merge not available (shallow clone)" >&2
+        echo "Patch file: $1" >&2
+        echo "Error: $PATCH_ERROR" >&2
+        echo "This patch may need to be updated for VS Code 1.106" >&2
+        exit 1
       fi
       if [[ -n "$PATCH_FAILED_3WAY" ]]; then
         # Check if 3-way merge left any conflicts
@@ -391,6 +405,14 @@ apply_patch() {
           # CRITICAL: Check one more time if this is non-critical before exiting
           if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
             echo "Warning: Non-critical patch $(basename "$1") failed with 3-way merge. Skipping..." >&2
+            find . -name "*.rej" -type f -delete 2>/dev/null || true
+            mv -f $1{.bak,}
+            return 0
+          fi
+          # CRITICAL: Final check for non-critical before exit
+          if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
+            echo "Warning: Non-critical patch $(basename "$1") failed even with 3-way merge. Skipping..." >&2
+            echo "Rejected hunks: ${REJ_COUNT}" >&2
             find . -name "*.rej" -type f -delete 2>/dev/null || true
             mv -f $1{.bak,}
             return 0

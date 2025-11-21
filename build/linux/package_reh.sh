@@ -27,7 +27,12 @@ apply_arch_patch_if_available() {
 
   if [[ -n "${arch_patch}" ]] && [[ -f "${arch_patch}" ]]; then
     echo "Applying architecture-specific patch for ${1}: ${arch_patch}"
-    apply_patch "${arch_patch}"
+    # Architecture patches are non-critical - always return 0 even if patch fails
+    # Runtime fixes in the build script will handle missing architectures
+    apply_patch "${arch_patch}" || {
+      echo "Warning: Architecture patch ${arch_patch} failed, but continuing (runtime fixes will handle it)..." >&2
+      return 0
+    }
   fi
 }
 

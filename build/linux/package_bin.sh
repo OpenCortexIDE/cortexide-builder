@@ -653,7 +653,107 @@ EXTENSIONSGLOBFIX
   }
 fi
 
-npm run gulp "vscode-linux-${VSCODE_ARCH}-min-ci"
+# Verify gulp task exists, especially for alternative architectures like ppc64le
+GULP_TASK="vscode-linux-${VSCODE_ARCH}-min-ci"
+echo "Checking if gulp task '${GULP_TASK}' exists..."
+
+# Try to list tasks and check if our task exists
+if ! npm run gulp -- --tasks-simple 2>/dev/null | grep -q "^${GULP_TASK}$"; then
+  echo "Warning: Gulp task '${GULP_TASK}' not found. Checking if patch needs to be applied..." >&2
+  
+  # For ppc64le, ensure the patch is applied to gulpfile.vscode.js
+  if [[ "${VSCODE_ARCH}" == "ppc64le" ]]; then
+    echo "Ensuring ppc64le is in BUILD_TARGETS in gulpfile.vscode.js..." >&2
+    if [[ -f "build/gulpfile.vscode.js" ]]; then
+      # Check if ppc64le is already in BUILD_TARGETS
+      if ! grep -q "{ platform: 'linux', arch: 'ppc64le' }" "build/gulpfile.vscode.js"; then
+        echo "Adding ppc64le to BUILD_TARGETS in gulpfile.vscode.js..." >&2
+        # Find the BUILD_TARGETS array and add ppc64le if not present
+        node << 'PPC64LEFIX' || {
+const fs = require('fs');
+const filePath = 'build/gulpfile.vscode.js';
+try {
+  let content = fs.readFileSync(filePath, 'utf8');
+  
+  // Check if ppc64le is already in BUILD_TARGETS
+  if (content.includes("{ platform: 'linux', arch: 'ppc64le' }")) {
+    console.error('✓ ppc64le already in BUILD_TARGETS');
+    process.exit(0);
+  }
+  
+  // Find the BUILD_TARGETS array and add ppc64le after arm64
+  // Pattern: { platform: 'linux', arch: 'arm64' },
+  const pattern = /(\{\s*platform:\s*['"]linux['"],\s*arch:\s*['"]arm64['"]\s*\},)/;
+  if (pattern.test(content)) {
+    content = content.replace(
+      pattern,
+      "$1\n\t{ platform: 'linux', arch: 'ppc64le' },"
+    );
+    fs.writeFileSync(filePath, content, 'utf8');
+    console.error('✓ Added ppc64le to BUILD_TARGETS in gulpfile.vscode.js');
+  } else {
+    console.error('⚠ Could not find arm64 entry to add ppc64le after');
+    process.exit(1);
+  }
+} catch (error) {
+  console.error('Error:', error.message);
+  process.exit(1);
+}
+PPC64LEFIX
+        echo "Warning: Failed to add ppc64le to BUILD_TARGETS, but continuing..." >&2
+      } else {
+        echo "✓ ppc64le already in BUILD_TARGETS" >&2
+      }
+    fi
+    
+    # Also check gulpfile.vscode.linux.js for ppc64le in BUILD_TARGETS
+    if [[ -f "build/gulpfile.vscode.linux.js" ]]; then
+      if ! grep -q "{ arch: 'ppc64le' }" "build/gulpfile.vscode.linux.js"; then
+        echo "Adding ppc64le to BUILD_TARGETS in gulpfile.vscode.linux.js..." >&2
+        node << 'PPC64LELINUXFIX' || {
+const fs = require('fs');
+const filePath = 'build/gulpfile.vscode.linux.js';
+try {
+  let content = fs.readFileSync(filePath, 'utf8');
+  
+  if (content.includes("{ arch: 'ppc64le' }")) {
+    console.error('✓ ppc64le already in BUILD_TARGETS');
+    process.exit(0);
+  }
+  
+  const pattern = /(\{\s*arch:\s*['"]arm64['"]\s*\},)/;
+  if (pattern.test(content)) {
+    content = content.replace(
+      pattern,
+      "$1\n\t{ arch: 'ppc64le' },"
+    );
+    fs.writeFileSync(filePath, content, 'utf8');
+    console.error('✓ Added ppc64le to BUILD_TARGETS in gulpfile.vscode.linux.js');
+  } else {
+    console.error('⚠ Could not find arm64 entry to add ppc64le after');
+    process.exit(1);
+  }
+} catch (error) {
+  console.error('Error:', error.message);
+  process.exit(1);
+}
+PPC64LELINUXFIX
+        echo "Warning: Failed to add ppc64le to BUILD_TARGETS in gulpfile.vscode.linux.js, but continuing..." >&2
+      fi
+    fi
+  fi
+  
+  # Try listing tasks again to see if task is now available
+  echo "Re-checking if gulp task '${GULP_TASK}' exists..." >&2
+  if ! npm run gulp -- --tasks-simple 2>/dev/null | grep -q "^${GULP_TASK}$"; then
+    echo "Error: Gulp task '${GULP_TASK}' still not found after patch attempt." >&2
+    echo "Available tasks:" >&2
+    npm run gulp -- --tasks-simple 2>&1 | head -20 >&2 || true
+    echo "Attempting to run task anyway..." >&2
+  fi
+fi
+
+npm run gulp "${GULP_TASK}"
 
 if [[ -f "../build/linux/${VSCODE_ARCH}/ripgrep.sh" ]]; then
   bash "../build/linux/${VSCODE_ARCH}/ripgrep.sh" "../VSCode-linux-${VSCODE_ARCH}/resources/app/node_modules"

@@ -701,9 +701,9 @@ try {
 }
 ARCHFIX
           echo "Warning: Failed to add ${VSCODE_ARCH} to BUILD_TARGETS, but continuing..." >&2
-        } else {
-          echo "✓ ${VSCODE_ARCH} already in BUILD_TARGETS" >&2
         }
+      else
+        echo "✓ ${VSCODE_ARCH} already in BUILD_TARGETS" >&2
       fi
       
       # Also check gulpfile.vscode.linux.js for architecture in BUILD_TARGETS
@@ -740,10 +740,11 @@ try {
 }
 ARCHLINUXFIX
             echo "Warning: Failed to add ${VSCODE_ARCH} to BUILD_TARGETS in gulpfile.vscode.linux.js, but continuing..." >&2
-          fi
+          }
         fi
       fi
     fi
+  fi
   
   # Try listing tasks again to see if task is now available
   echo "Re-checking if gulp task '${GULP_TASK}' exists..." >&2

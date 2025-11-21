@@ -386,6 +386,75 @@ if [[ -d "build/node_modules/native-keymap" ]]; then
   fix_native_keymap_postinstall "build/node_modules/native-keymap/package.json"
 fi
 
+# CRITICAL FIX: Install extension dependencies before building
+# Extensions like microsoft-authentication need their dependencies installed
+echo "Installing extension dependencies..." >&2
+if [[ -d "extensions" ]]; then
+  # Collect all extension directories first
+  EXT_DIRS=()
+  while IFS= read -r ext_package_json; do
+    ext_dir=$(dirname "$ext_package_json")
+    EXT_DIRS+=("$ext_dir")
+  done < <(find extensions -name "package.json" -type f)
+  
+  # Install dependencies for each extension
+  for ext_dir in "${EXT_DIRS[@]}"; do
+    ext_name=$(basename "$ext_dir")
+    
+    # Skip if node_modules already exists and has content
+    if [[ -d "${ext_dir}/node_modules" ]] && [[ -n "$(ls -A "${ext_dir}/node_modules" 2>/dev/null)" ]]; then
+      echo "Dependencies already installed for ${ext_name}, skipping..." >&2
+      continue
+    fi
+    
+    echo "Installing dependencies for extension: ${ext_name}..." >&2
+    # Use --ignore-scripts to prevent native-keymap rebuild issues
+    # Use --legacy-peer-deps to handle peer dependency conflicts
+    if (cd "$ext_dir" && npm install --ignore-scripts --no-save --legacy-peer-deps 2>&1 | tee "/tmp/ext-${ext_name}-install.log" | tail -50); then
+      echo "✓ Successfully installed dependencies for ${ext_name}" >&2
+    else
+      echo "Warning: Failed to install dependencies for ${ext_name}" >&2
+      echo "Checking if critical dependencies are missing..." >&2
+      # Check if it's a critical failure or just warnings
+      if grep -q "ENOENT\|MODULE_NOT_FOUND\|Cannot find module" "/tmp/ext-${ext_name}-install.log" 2>/dev/null; then
+        echo "Error: Critical dependency installation failed for ${ext_name}" >&2
+        echo "This may cause the extension build to fail." >&2
+      fi
+    fi
+  done
+  
+  # Verify critical extensions have their dependencies
+  # Some extensions need dependencies installed at root level for webpack to resolve them
+  if [[ -d "extensions/microsoft-authentication" ]]; then
+    MISSING_DEPS=()
+    [[ ! -d "extensions/microsoft-authentication/node_modules/@azure/msal-node" ]] && MISSING_DEPS+=("@azure/msal-node")
+    [[ ! -d "extensions/microsoft-authentication/node_modules/@azure/ms-rest-azure-env" ]] && MISSING_DEPS+=("@azure/ms-rest-azure-env")
+    [[ ! -d "extensions/microsoft-authentication/node_modules/@vscode/extension-telemetry" ]] && MISSING_DEPS+=("@vscode/extension-telemetry")
+    [[ ! -d "extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions" ]] && MISSING_DEPS+=("@azure/msal-node-extensions")
+    [[ ! -d "extensions/microsoft-authentication/node_modules/vscode-tas-client" ]] && MISSING_DEPS+=("vscode-tas-client")
+    
+    if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
+      echo "Installing missing dependencies for microsoft-authentication: ${MISSING_DEPS[*]}..." >&2
+      # Try installing in extension directory first
+      (cd "extensions/microsoft-authentication" && npm install --ignore-scripts --no-save --legacy-peer-deps "${MISSING_DEPS[@]}" 2>&1 | tail -30) || {
+        echo "Warning: Extension-level install failed, trying root-level install..." >&2
+        # Fallback: install at root level (webpack might resolve from there)
+        npm install --ignore-scripts --no-save --legacy-peer-deps "${MISSING_DEPS[@]}" 2>&1 | tail -30 || {
+          echo "Warning: Root-level install also failed for microsoft-authentication dependencies" >&2
+        }
+      }
+    fi
+    
+    # Also ensure keytar mock exists (it's a file: dependency)
+    if [[ ! -d "extensions/microsoft-authentication/packageMocks/keytar" ]]; then
+      echo "Creating keytar mock for microsoft-authentication..." >&2
+      mkdir -p "extensions/microsoft-authentication/packageMocks/keytar"
+      echo '{"name": "keytar", "version": "1.0.0", "main": "index.js"}' > "extensions/microsoft-authentication/packageMocks/keytar/package.json"
+      echo 'module.exports = {};' > "extensions/microsoft-authentication/packageMocks/keytar/index.js"
+    fi
+  fi
+fi
+
 # CRITICAL FIX: Verify gulp is installed before running gulp commands
 # If npm ci failed partially, gulp might not be installed
 # Also ensure native-keymap is patched before installing gulp (gulp install might trigger native-keymap)

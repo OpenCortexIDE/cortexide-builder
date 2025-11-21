@@ -380,6 +380,109 @@ if [[ ! -f "node_modules/gulp/bin/gulp.js" ]] && [[ ! -f "node_modules/.bin/gulp
   fix_native_keymap_postinstall "node_modules/native-keymap/package.json"
 fi
 
+# CRITICAL FIX: @electron/get, @octokit/rest, and got are now ESM and break @vscode/gulp-electron
+# Patch node_modules to dynamically import these modules (same fix as main build)
+if [[ -f "node_modules/@vscode/gulp-electron/src/download.js" ]]; then
+  echo "Patching @vscode/gulp-electron to support ESM @electron/get, @octokit/rest, and got..." >&2
+  node << 'ELECTRONPATCH' || {
+const fs = require('fs');
+const filePath = 'node_modules/@vscode/gulp-electron/src/download.js';
+let content = fs.readFileSync(filePath, 'utf8');
+
+const alreadyPatched = content.includes('// ESM_PATCH: downloadArtifact') &&
+                       content.includes('// ESM_PATCH: octokit') &&
+                       content.includes('// ESM_PATCH: got');
+if (!alreadyPatched) {
+  // Patch @electron/get
+  const requireElectronLine = 'const { downloadArtifact } = require("@electron/get");';
+  if (content.includes(requireElectronLine)) {
+    content = content.replace(requireElectronLine, `// ESM_PATCH: downloadArtifact
+let __downloadArtifactPromise;
+async function getDownloadArtifact() {
+  if (!__downloadArtifactPromise) {
+    __downloadArtifactPromise = import("@electron/get").then((mod) => {
+      if (mod.downloadArtifact) {
+        return mod.downloadArtifact;
+      }
+      if (mod.default && mod.default.downloadArtifact) {
+        return mod.default.downloadArtifact;
+      }
+      return mod.default || mod;
+    });
+  }
+  return __downloadArtifactPromise;
+}`);
+  }
+
+  const callDownloadArtifactLine = '  return await downloadArtifact(downloadOpts);';
+  if (content.includes(callDownloadArtifactLine)) {
+    content = content.replace(callDownloadArtifactLine, `  const downloadArtifact = await getDownloadArtifact();
+  return await downloadArtifact(downloadOpts);`);
+  }
+
+  // Patch @octokit/rest
+  const requireOctokitLine = 'const { Octokit } = require("@octokit/rest");';
+  if (content.includes(requireOctokitLine)) {
+    content = content.replace(requireOctokitLine, `// ESM_PATCH: octokit
+let __octokitPromise;
+async function getOctokit() {
+  if (!__octokitPromise) {
+    __octokitPromise = import("@octokit/rest").then((mod) => {
+      if (mod.Octokit) {
+        return mod.Octokit;
+      }
+      if (mod.default && mod.default.Octokit) {
+        return mod.default.Octokit;
+      }
+      return mod.default || mod;
+    });
+  }
+  return __octokitPromise;
+}`);
+
+    const usageOctokitLine = '  const octokit = new Octokit({ auth: token });';
+    if (content.includes(usageOctokitLine)) {
+      content = content.replace(usageOctokitLine, '  const Octokit = await getOctokit();\n  const octokit = new Octokit({ auth: token });');
+    }
+  }
+
+  // Patch got
+  const requireGotLine = 'const { got } = require("got");';
+  if (content.includes(requireGotLine)) {
+    content = content.replace(requireGotLine, `// ESM_PATCH: got
+let __gotPromise;
+async function getGot() {
+  if (!__gotPromise) {
+    __gotPromise = import("got").then((mod) => {
+      if (mod.got) {
+        return mod.got;
+      }
+      if (mod.default && mod.default.got) {
+        return mod.default.got;
+      }
+      return mod.default || mod;
+    });
+  }
+  return __gotPromise;
+}`);
+
+    const usageGotLine = '    const response = await got(url, requestOptions);';
+    if (content.includes(usageGotLine)) {
+      content = content.replace(usageGotLine, `    const got = await getGot();
+    const response = await got(url, requestOptions);`);
+    }
+  }
+
+  fs.writeFileSync(filePath, content, 'utf8');
+  console.error('✓ Patched gulp-electron download.js for ESM imports');
+} else {
+  console.error('✓ gulp-electron already patched for ESM imports');
+}
+ELECTRONPATCH
+    echo "Warning: Failed to patch gulp-electron for ESM modules. Build may fail with ERR_REQUIRE_ESM." >&2
+  }
+fi
+
 export VSCODE_NODE_GLIBC="-glibc-${GLIBC_VERSION}"
 
 if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then

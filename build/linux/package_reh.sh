@@ -157,43 +157,6 @@ SYSROOTFIX
     echo "Warning: Failed to patch install-sysroot.js for ${VSCODE_ARCH}, continuing anyway..." >&2
   }
   
-  # CRITICAL FIX: Add checksums to vscode-sysroot.txt if missing (needed for ppc64le/s390x)
-  if [[ -f "build/checksums/vscode-sysroot.txt" ]]; then
-    echo "Ensuring sysroot checksums exist for ${VSCODE_ARCH}..." >&2
-    VSCODE_ARCH="${VSCODE_ARCH}" node << 'CHECKSUMFIX' || {
-const fs = require('fs');
-const filePath = 'build/checksums/vscode-sysroot.txt';
-let content = fs.readFileSync(filePath, 'utf8');
-const arch = process.env.VSCODE_ARCH || '';
-
-// Checksums from architecture patches
-const checksums = {
-  'ppc64le': 'fa8176d27be18bb0eeb7f55b0fa22255050b430ef68c29136599f02976eb0b1b  powerpc64le-linux-gnu-glibc-2.28.tar.gz',
-  's390x': '7055f3d40e7195fb1e13f0fbaf5ffadf781bddaca5fd5e0d9972f4157a203fb5  s390x-linux-gnu-glibc-2.28.tar.gz'
-};
-
-if (!arch || !checksums[arch]) {
-  console.error('No checksum needed for architecture:', arch);
-  process.exit(0);
-}
-
-const checksum = checksums[arch];
-const filename = checksum.split(/\s+/)[1];
-
-// Check if checksum already exists
-if (content.includes(filename)) {
-  console.error(`Checksum for ${filename} already exists`);
-  process.exit(0);
-}
-
-// Add checksum at the end of the file
-content = content.trim() + '\n' + checksum + '\n';
-fs.writeFileSync(filePath, content, 'utf8');
-console.error(`✓ Successfully added checksum for ${arch}`);
-CHECKSUMFIX
-      echo "Warning: Failed to add checksum for ${VSCODE_ARCH}, continuing anyway..." >&2
-    }
-  fi
 fi
 
 GLIBC_VERSION="2.28"
@@ -265,6 +228,45 @@ export VSCODE_HOST_MOUNT
 export VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME
 
 sed -i "/target/s/\"20.*\"/\"${NODE_VERSION}\"/" remote/.npmrc
+
+# CRITICAL FIX: Add checksums to vscode-sysroot.txt BEFORE setup-env.sh runs
+# This must happen before sysroot download is attempted
+if [[ -f "build/checksums/vscode-sysroot.txt" ]]; then
+  echo "Ensuring sysroot checksums exist for ${VSCODE_ARCH}..." >&2
+  VSCODE_ARCH="${VSCODE_ARCH}" node << 'CHECKSUMFIX' || {
+const fs = require('fs');
+const filePath = 'build/checksums/vscode-sysroot.txt';
+let content = fs.readFileSync(filePath, 'utf8');
+const arch = process.env.VSCODE_ARCH || '';
+
+// Checksums from architecture patches
+const checksums = {
+  'ppc64le': 'fa8176d27be18bb0eeb7f55b0fa22255050b430ef68c29136599f02976eb0b1b  powerpc64le-linux-gnu-glibc-2.28.tar.gz',
+  's390x': '7055f3d40e7195fb1e13f0fbaf5ffadf781bddaca5fd5e0d9972f4157a203fb5  s390x-linux-gnu-glibc-2.28.tar.gz'
+};
+
+if (!arch || !checksums[arch]) {
+  console.error('No checksum needed for architecture:', arch);
+  process.exit(0);
+}
+
+const checksum = checksums[arch];
+const filename = checksum.split(/\s+/)[1];
+
+// Check if checksum already exists (check for filename, not exact match)
+if (content.includes(filename)) {
+  console.error(`Checksum for ${filename} already exists`);
+  process.exit(0);
+}
+
+// Add checksum at the end of the file
+content = content.trim() + '\n' + checksum + '\n';
+fs.writeFileSync(filePath, content, 'utf8');
+console.error(`✓ Successfully added checksum for ${arch}`);
+CHECKSUMFIX
+    echo "Warning: Failed to add checksum for ${VSCODE_ARCH}, continuing anyway..." >&2
+  }
+fi
 
 if [[ -d "../patches/linux/reh/" ]]; then
   for file in "../patches/linux/reh/"*.patch; do
@@ -748,17 +750,50 @@ const arch = process.env.VSCODE_ARCH || '';
 const nodeVersion = process.env.NODE_VERSION || '';
 
 // First, fix Node.js version for riscv64/loong64 if needed
-// The version is read from package.json, so we need to patch the nodejs function
+// The version is read from package.json at the top level, or passed to nodejs function
 if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
-  // Find where nodeVersion is read from package.json and override it for these architectures
-  // Look for: const nodeVersion = require('../package.json').version;
-  const pkgVersionPattern = /(const\s+nodeVersion\s*=\s*require\([^)]+package\.json[^)]+\)\.version;)/;
-  if (pkgVersionPattern.test(content)) {
-    // Replace with version check that uses environment variable for riscv64/loong64
-    content = content.replace(pkgVersionPattern, (match) => {
+  // Find where nodeVersion is read from package.json (could be at top level or in function)
+  // Pattern 1: const nodeVersion = require('../package.json').version;
+  // Pattern 2: const { version: nodeVersion } = require('../package.json');
+  // Pattern 3: nodeVersion from function parameter - need to patch the function call
+  let patched = false;
+  
+  // Try pattern 1
+  const pkgVersionPattern1 = /(const\s+nodeVersion\s*=\s*require\([^)]+package\.json[^)]+\)\.version;)/;
+  if (pkgVersionPattern1.test(content)) {
+    content = content.replace(pkgVersionPattern1, (match) => {
+      patched = true;
       return `const nodeVersion = (process.env.VSCODE_ARCH === '${arch}' && process.env.NODE_VERSION) ? process.env.NODE_VERSION : require('../package.json').version;`;
     });
+  }
+  
+  // Try pattern 2
+  if (!patched) {
+    const pkgVersionPattern2 = /(const\s+\{\s*version:\s*nodeVersion\s*\}\s*=\s*require\([^)]+package\.json[^)]+\);)/;
+    if (pkgVersionPattern2.test(content)) {
+      content = content.replace(pkgVersionPattern2, (match) => {
+        patched = true;
+        return `const { version: defaultNodeVersion } = require('../package.json');\nconst nodeVersion = (process.env.VSCODE_ARCH === '${arch}' && process.env.NODE_VERSION) ? process.env.NODE_VERSION : defaultNodeVersion;`;
+      });
+    }
+  }
+  
+  // If still not patched, patch the nodejs function to override nodeVersion parameter
+  if (!patched) {
+    // Find the nodejs function and patch it to use NODE_VERSION env var for riscv64/loong64
+    const nodejsFunctionPattern = /(function\s+nodejs\s*\([^)]*\)\s*\{)/;
+    if (nodejsFunctionPattern.test(content)) {
+      content = content.replace(nodejsFunctionPattern, (match) => {
+        return `${match}\n\t// NODE_VERSION_FIX: Override nodeVersion for riscv64/loong64\n\tif (process.env.VSCODE_ARCH === '${arch}' && process.env.NODE_VERSION) {\n\t\tconst originalNodeVersion = nodeVersion || require('../package.json').version;\n\t\tnodeVersion = process.env.NODE_VERSION;\n\t}`;
+      });
+      patched = true;
+    }
+  }
+  
+  if (patched) {
     console.error(`✓ Patched Node.js version to use ${nodeVersion} for ${arch}`);
+  } else {
+    console.error(`⚠ Could not find nodeVersion definition to patch for ${arch}`);
   }
 }
 
@@ -780,10 +815,10 @@ if (!match) {
 
 if (match) {
   // Replace the execSync line with file-based approach
-  // Find the line with execSync and maxBuffer
-  const execSyncPattern = /(\s+)(const\s+contents\s*=\s*cp\.execSync\([^;]+maxBuffer[^;]+;)/;
-  if (execSyncPattern.test(content)) {
-    content = content.replace(execSyncPattern, (match, indent, execLine) => {
+  // The function is at line 171, so find the exact execSync line with maxBuffer
+  const execSyncLinePattern = /(\s+)(const\s+contents\s*=\s*cp\.execSync\([^)]+maxBuffer[^)]+\)[^;]+;)/;
+  if (execSyncLinePattern.test(content)) {
+    content = content.replace(execSyncLinePattern, (match, indent, execLine) => {
       return `${indent}// DOCKER_BUFFER_FIX: Use file output instead of execSync to avoid ENOBUFS
 ${indent}const tmpFile = path.join(os.tmpdir(), \`node-\${nodeVersion}-\${arch}-\${Date.now()}\`);
 ${indent}try {
@@ -798,20 +833,32 @@ ${indent}	}
 ${indent}	throw err;
 ${indent}}`;
     });
-    // Ensure path and os are imported
-    if (!content.includes("const path = require('path')") && !content.includes("const path = require(\"path\")")) {
-      content = content.replace(/(const\s+os\s*=\s*require\([^)]+\);)/, "$1\nconst path = require('path');");
+    // Ensure path, os, and fs are imported at the top
+    const requires = content.match(/const\s+(cp|os|path|fs)\s*=\s*require\([^)]+\);/g) || [];
+    const hasPath = requires.some(r => r.includes('path'));
+    const hasOs = requires.some(r => r.includes('os'));
+    const hasFs = requires.some(r => r.includes('fs'));
+    
+    // Find where to add imports (after other requires)
+    const requireSection = content.match(/(const\s+\w+\s*=\s*require\([^)]+\);[\s\n]*)+/);
+    if (requireSection) {
+      let importsToAdd = '';
+      if (!hasFs) importsToAdd += "const fs = require('fs');\n";
+      if (!hasPath) importsToAdd += "const path = require('path');\n";
+      if (!hasOs && !content.includes("const os = require('os')")) importsToAdd += "const os = require('os');\n";
+      
+      if (importsToAdd) {
+        content = content.replace(requireSection[0], requireSection[0] + importsToAdd);
+      }
     }
-    if (!content.includes("const fs = require('fs')") && !content.includes("const fs = require(\"fs\")")) {
-      content = content.replace(/(const\s+path\s*=\s*require\([^)]+\);)/, "const fs = require('fs');\n$1");
-    }
+    
     fs.writeFileSync(filePath, content, 'utf8');
     console.error('✓ Successfully patched gulpfile.reh.js to use file-based Docker extraction');
   } else {
-    // Fallback: just increase buffer
+    // Fallback: just increase buffer significantly
     content = content.replace(
-      /maxBuffer:\s*100\s*\*\s*1024\s*\*\s*1024/g,
-      'maxBuffer: 1000 * 1024 * 1024'
+      /maxBuffer:\s*\d+\s*\*\s*1024\s*\*\s*1024/g,
+      'maxBuffer: 2000 * 1024 * 1024'
     );
     fs.writeFileSync(filePath, content, 'utf8');
     console.error('✓ Increased maxBuffer in gulpfile.reh.js (fallback)');

@@ -156,6 +156,44 @@ console.error(`✓ Successfully added ${arch} mapping to install-sysroot.js`);
 SYSROOTFIX
     echo "Warning: Failed to patch install-sysroot.js for ${VSCODE_ARCH}, continuing anyway..." >&2
   }
+  
+  # CRITICAL FIX: Add checksums to vscode-sysroot.txt if missing (needed for ppc64le/s390x)
+  if [[ -f "build/checksums/vscode-sysroot.txt" ]]; then
+    echo "Ensuring sysroot checksums exist for ${VSCODE_ARCH}..." >&2
+    VSCODE_ARCH="${VSCODE_ARCH}" node << 'CHECKSUMFIX' || {
+const fs = require('fs');
+const filePath = 'build/checksums/vscode-sysroot.txt';
+let content = fs.readFileSync(filePath, 'utf8');
+const arch = process.env.VSCODE_ARCH || '';
+
+// Checksums from architecture patches
+const checksums = {
+  'ppc64le': 'fa8176d27be18bb0eeb7f55b0fa22255050b430ef68c29136599f02976eb0b1b  powerpc64le-linux-gnu-glibc-2.28.tar.gz',
+  's390x': '7055f3d40e7195fb1e13f0fbaf5ffadf781bddaca5fd5e0d9972f4157a203fb5  s390x-linux-gnu-glibc-2.28.tar.gz'
+};
+
+if (!arch || !checksums[arch]) {
+  console.error('No checksum needed for architecture:', arch);
+  process.exit(0);
+}
+
+const checksum = checksums[arch];
+const filename = checksum.split(/\s+/)[1];
+
+// Check if checksum already exists
+if (content.includes(filename)) {
+  console.error(`Checksum for ${filename} already exists`);
+  process.exit(0);
+}
+
+// Add checksum at the end of the file
+content = content.trim() + '\n' + checksum + '\n';
+fs.writeFileSync(filePath, content, 'utf8');
+console.error(`✓ Successfully added checksum for ${arch}`);
+CHECKSUMFIX
+      echo "Warning: Failed to add checksum for ${VSCODE_ARCH}, continuing anyway..." >&2
+    }
+  fi
 fi
 
 GLIBC_VERSION="2.28"
@@ -709,65 +747,75 @@ let content = fs.readFileSync(filePath, 'utf8');
 const arch = process.env.VSCODE_ARCH || '';
 const nodeVersion = process.env.NODE_VERSION || '';
 
-// Check if already patched
-if (content.includes('// DOCKER_BUFFER_FIX') || content.includes('fs.readFileSync')) {
-  console.error('gulpfile.reh.js already patched for Docker buffer fix');
-  // Still check for Node.js version fix
-} else {
-  // First, fix Node.js version for riscv64/loong64 if needed
-  if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
-    // Replace hardcoded Node.js version with environment variable
-    // Look for patterns like '22.20.0' or version from package.json
-    const versionPattern = /(nodeVersion\s*=\s*['"]?)(\d+\.\d+\.\d+)(['"]?)/g;
-    if (versionPattern.test(content)) {
-      content = content.replace(versionPattern, (match, prefix, version, suffix) => {
-        // Only replace if it's a high version (22.x) for riscv64/loong64
-        if ((arch === 'riscv64' || arch === 'loong64') && version.startsWith('22.')) {
-          return `${prefix}${nodeVersion}${suffix}`;
-        }
-        return match;
-      });
-      console.error(`✓ Patched Node.js version to ${nodeVersion} for ${arch}`);
-    }
+// First, fix Node.js version for riscv64/loong64 if needed
+// The version is read from package.json, so we need to patch the nodejs function
+if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
+  // Find where nodeVersion is read from package.json and override it for these architectures
+  // Look for: const nodeVersion = require('../package.json').version;
+  const pkgVersionPattern = /(const\s+nodeVersion\s*=\s*require\([^)]+package\.json[^)]+\)\.version;)/;
+  if (pkgVersionPattern.test(content)) {
+    // Replace with version check that uses environment variable for riscv64/loong64
+    content = content.replace(pkgVersionPattern, (match) => {
+      return `const nodeVersion = (process.env.VSCODE_ARCH === '${arch}' && process.env.NODE_VERSION) ? process.env.NODE_VERSION : require('../package.json').version;`;
+    });
+    console.error(`✓ Patched Node.js version to use ${nodeVersion} for ${arch}`);
   }
+}
+
+// Check if already patched for Docker
+if (content.includes('// DOCKER_BUFFER_FIX') || (content.includes('fs.readFileSync') && content.includes('tmpFile'))) {
+  console.error('gulpfile.reh.js already patched for Docker buffer fix');
+} else {
 
 // Find extractAlpinefromDocker function and replace execSync with file-based approach
-const functionPattern = /function\s+extractAlpinefromDocker\([^)]*\)\s*\{[\s\S]*?const\s+contents\s*=\s*cp\.execSync\([^;]+;/;
-const match = content.match(functionPattern);
+// The function might already be patched by alpine patch, so check for both patterns
+let functionPattern = /function\s+extractAlpinefromDocker\([^)]*\)\s*\{[\s\S]*?const\s+contents\s*=\s*cp\.execSync\([^;]+;/;
+let match = content.match(functionPattern);
+
+// If not found, try matching the already-patched version (with dockerPlatform)
+if (!match) {
+  functionPattern = /function\s+extractAlpinefromDocker\([^)]*\)\s*\{[\s\S]*?cp\.execSync\([^)]+maxBuffer[^;]+;/;
+  match = content.match(functionPattern);
+}
 
 if (match) {
-  // Replace execSync with file-based approach to avoid buffer limits
-  const replacement = `function extractAlpinefromDocker(nodeVersion, platform, arch) {
-	let imageName = 'node';
-	let dockerPlatform = '';
-
-	if (arch === 'arm64') {
-		imageName = 'arm64v8/node';
-
-		const architecture = cp.execSync(\`docker info --format '{{json .Architecture}}'\`, { encoding: 'utf8' }).trim();
-		if (architecture != '"aarch64"') {
-			dockerPlatform = '--platform=linux/arm64';
-		}
-	}
-
-	log(\`Downloading node.js \${nodeVersion} \${platform} \${arch} from docker image \${imageName}\`);
-	// DOCKER_BUFFER_FIX: Use file output instead of execSync to avoid ENOBUFS
-	const tmpFile = path.join(os.tmpdir(), \`node-\${nodeVersion}-\${arch}-\${Date.now()}\`);
-	try {
-		cp.execSync(\`docker run --rm \${dockerPlatform} \${imageName}:\${nodeVersion}-alpine /bin/sh -c 'cat \\\`which node\\\`' > \${tmpFile}\`, { stdio: 'inherit' });
-		const contents = fs.readFileSync(tmpFile);
-		fs.unlinkSync(tmpFile);
-		return es.readArray([new File({ path: 'node', contents, stat: { mode: parseInt('755', 8) } })]);
-	} catch (err) {
-		if (fs.existsSync(tmpFile)) {
-			fs.unlinkSync(tmpFile);
-		}
-		throw err;
-	}`;
-  
-  content = content.replace(functionPattern, replacement);
-  fs.writeFileSync(filePath, content, 'utf8');
-  console.error('✓ Successfully patched gulpfile.reh.js to use file-based Docker extraction');
+  // Replace the execSync line with file-based approach
+  // Find the line with execSync and maxBuffer
+  const execSyncPattern = /(\s+)(const\s+contents\s*=\s*cp\.execSync\([^;]+maxBuffer[^;]+;)/;
+  if (execSyncPattern.test(content)) {
+    content = content.replace(execSyncPattern, (match, indent, execLine) => {
+      return `${indent}// DOCKER_BUFFER_FIX: Use file output instead of execSync to avoid ENOBUFS
+${indent}const tmpFile = path.join(os.tmpdir(), \`node-\${nodeVersion}-\${arch}-\${Date.now()}\`);
+${indent}try {
+${indent}	cp.execSync(\`docker run --rm \${dockerPlatform} \${imageName}:\${nodeVersion}-alpine /bin/sh -c 'cat \\\`which node\\\`' > \${tmpFile}\`, { stdio: 'inherit' });
+${indent}	const contents = fs.readFileSync(tmpFile);
+${indent}	fs.unlinkSync(tmpFile);
+${indent}	return es.readArray([new File({ path: 'node', contents, stat: { mode: parseInt('755', 8) } })]);
+${indent}} catch (err) {
+${indent}	if (fs.existsSync(tmpFile)) {
+${indent}		fs.unlinkSync(tmpFile);
+${indent}	}
+${indent}	throw err;
+${indent}}`;
+    });
+    // Ensure path and os are imported
+    if (!content.includes("const path = require('path')") && !content.includes("const path = require(\"path\")")) {
+      content = content.replace(/(const\s+os\s*=\s*require\([^)]+\);)/, "$1\nconst path = require('path');");
+    }
+    if (!content.includes("const fs = require('fs')") && !content.includes("const fs = require(\"fs\")")) {
+      content = content.replace(/(const\s+path\s*=\s*require\([^)]+\);)/, "const fs = require('fs');\n$1");
+    }
+    fs.writeFileSync(filePath, content, 'utf8');
+    console.error('✓ Successfully patched gulpfile.reh.js to use file-based Docker extraction');
+  } else {
+    // Fallback: just increase buffer
+    content = content.replace(
+      /maxBuffer:\s*100\s*\*\s*1024\s*\*\s*1024/g,
+      'maxBuffer: 1000 * 1024 * 1024'
+    );
+    fs.writeFileSync(filePath, content, 'utf8');
+    console.error('✓ Increased maxBuffer in gulpfile.reh.js (fallback)');
+  }
 } else {
   // Fallback: just increase buffer
   content = content.replace(

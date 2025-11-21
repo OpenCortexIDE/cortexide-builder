@@ -256,9 +256,9 @@ for i in {1..5}; do # try 5 times
       echo "Npm install failed $i, trying again..."
       continue
     else
-      echo "Npm install failed too many times" >&2
-      exit 1
-    fi
+    echo "Npm install failed too many times" >&2
+    exit 1
+  fi
   }
   
   # Patch native-keymap to disable postinstall before any scripts run
@@ -339,9 +339,9 @@ for i in {1..5}; do # try 5 times
       rm -rf node_modules/@vscode node_modules/node-pty node_modules/native-keymap
       continue
     else
-      echo "Npm install failed too many times" >&2
-      exit 1
-    fi
+    echo "Npm install failed too many times" >&2
+    exit 1
+  fi
   }
   
   # Patch native-keymap to disable postinstall before any scripts run
@@ -451,7 +451,69 @@ REHFIX
   fi
   
   npm run gulp minify-vscode-reh
-  npm run gulp "vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
+  
+  # Verify REH gulp task exists, especially for alternative architectures
+  REH_GULP_TASK="vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
+  echo "Checking if REH gulp task '${REH_GULP_TASK}' exists..."
+  
+  # Try to list tasks and check if our task exists
+  if ! npm run gulp -- --tasks-simple 2>/dev/null | grep -q "^${REH_GULP_TASK}$"; then
+    echo "Warning: REH gulp task '${REH_GULP_TASK}' not found. Ensuring architecture is in BUILD_TARGETS..." >&2
+    
+    # For alternative architectures, ensure they're in BUILD_TARGETS in gulpfile.reh.js
+    if [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]]; then
+      echo "Ensuring ${VSCODE_ARCH} is in BUILD_TARGETS in gulpfile.reh.js..." >&2
+      if [[ -f "build/gulpfile.reh.js" ]]; then
+        if ! grep -q "{ platform: 'linux', arch: '${VSCODE_ARCH}' }" "build/gulpfile.reh.js"; then
+          echo "Adding ${VSCODE_ARCH} to BUILD_TARGETS in gulpfile.reh.js..." >&2
+          node << ARCHFIX || {
+const fs = require('fs');
+const filePath = 'build/gulpfile.reh.js';
+const arch = '${VSCODE_ARCH}';
+try {
+  let content = fs.readFileSync(filePath, 'utf8');
+  
+  if (content.includes(\`{ platform: 'linux', arch: '\${arch}' }\`)) {
+    console.error(\`✓ \${arch} already in BUILD_TARGETS\`);
+    process.exit(0);
+  }
+  
+  // Find the BUILD_TARGETS array and add arch after ppc64le or arm64
+  const pattern = /(\{\s*platform:\s*['"]linux['"],\s*arch:\s*['"](?:ppc64le|arm64)['"]\s*\},)/;
+  if (pattern.test(content)) {
+    content = content.replace(
+      pattern,
+      \`$1\n\t{ platform: 'linux', arch: '\${arch}' },\`
+    );
+    fs.writeFileSync(filePath, content, 'utf8');
+    console.error(\`✓ Added \${arch} to BUILD_TARGETS in gulpfile.reh.js\`);
+  } else {
+    console.error('⚠ Could not find entry to add arch after');
+    process.exit(1);
+  }
+} catch (error) {
+  console.error('Error:', error.message);
+  process.exit(1);
+}
+ARCHFIX
+            echo "Warning: Failed to add ${VSCODE_ARCH} to BUILD_TARGETS in gulpfile.reh.js, but continuing..." >&2
+          } else {
+            echo "✓ ${VSCODE_ARCH} already in BUILD_TARGETS" >&2
+          }
+        fi
+      fi
+      
+      # Re-check if task is now available
+      if ! npm run gulp -- --tasks-simple 2>/dev/null | grep -q "^${REH_GULP_TASK}$"; then
+        echo "Warning: REH gulp task '${REH_GULP_TASK}' still not found after patch attempt." >&2
+        echo "Available REH tasks:" >&2
+        npm run gulp -- --tasks-simple 2>&1 | grep "vscode-reh" | head -10 >&2 || true
+        echo "Attempting to run task anyway..." >&2
+      fi
+    fi
+  fi
+  
+  npm run gulp "${REH_GULP_TASK}"
 
   EXPECTED_GLIBC_VERSION="${EXPECTED_GLIBC_VERSION}" EXPECTED_GLIBCXX_VERSION="${GLIBCXX_VERSION}" SEARCH_PATH="../vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}" ./build/azure-pipelines/linux/verify-glibc-requirements.sh
 
@@ -477,7 +539,69 @@ if [[ "${SHOULD_BUILD_REH_WEB}" != "no" ]]; then
   fi
   
   npm run gulp minify-vscode-reh-web
-  npm run gulp "vscode-reh-web-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
+  
+  # Verify REH-web gulp task exists, especially for alternative architectures
+  REH_WEB_GULP_TASK="vscode-reh-web-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
+  echo "Checking if REH-web gulp task '${REH_WEB_GULP_TASK}' exists..."
+  
+  # Try to list tasks and check if our task exists
+  if ! npm run gulp -- --tasks-simple 2>/dev/null | grep -q "^${REH_WEB_GULP_TASK}$"; then
+    echo "Warning: REH-web gulp task '${REH_WEB_GULP_TASK}' not found. Ensuring architecture is in BUILD_TARGETS..." >&2
+    
+    # For alternative architectures, ensure they're in BUILD_TARGETS in gulpfile.reh.js
+    if [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]]; then
+      echo "Ensuring ${VSCODE_ARCH} is in BUILD_TARGETS in gulpfile.reh.js..." >&2
+      if [[ -f "build/gulpfile.reh.js" ]]; then
+        if ! grep -q "{ platform: 'linux', arch: '${VSCODE_ARCH}' }" "build/gulpfile.reh.js"; then
+          echo "Adding ${VSCODE_ARCH} to BUILD_TARGETS in gulpfile.reh.js..." >&2
+          node << ARCHFIX || {
+const fs = require('fs');
+const filePath = 'build/gulpfile.reh.js';
+const arch = '${VSCODE_ARCH}';
+try {
+  let content = fs.readFileSync(filePath, 'utf8');
+  
+  if (content.includes(\`{ platform: 'linux', arch: '\${arch}' }\`)) {
+    console.error(\`✓ \${arch} already in BUILD_TARGETS\`);
+    process.exit(0);
+  }
+  
+  // Find the BUILD_TARGETS array and add arch after ppc64le or arm64
+  const pattern = /(\{\s*platform:\s*['"]linux['"],\s*arch:\s*['"](?:ppc64le|arm64)['"]\s*\},)/;
+  if (pattern.test(content)) {
+    content = content.replace(
+      pattern,
+      \`$1\n\t{ platform: 'linux', arch: '\${arch}' },\`
+    );
+    fs.writeFileSync(filePath, content, 'utf8');
+    console.error(\`✓ Added \${arch} to BUILD_TARGETS in gulpfile.reh.js\`);
+  } else {
+    console.error('⚠ Could not find entry to add arch after');
+    process.exit(1);
+  }
+} catch (error) {
+  console.error('Error:', error.message);
+  process.exit(1);
+}
+ARCHFIX
+            echo "Warning: Failed to add ${VSCODE_ARCH} to BUILD_TARGETS in gulpfile.reh.js, but continuing..." >&2
+          } else {
+            echo "✓ ${VSCODE_ARCH} already in BUILD_TARGETS" >&2
+          }
+        fi
+      fi
+      
+      # Re-check if task is now available
+      if ! npm run gulp -- --tasks-simple 2>/dev/null | grep -q "^${REH_WEB_GULP_TASK}$"; then
+        echo "Warning: REH-web gulp task '${REH_WEB_GULP_TASK}' still not found after patch attempt." >&2
+        echo "Available REH-web tasks:" >&2
+        npm run gulp -- --tasks-simple 2>&1 | grep "vscode-reh-web" | head -10 >&2 || true
+        echo "Attempting to run task anyway..." >&2
+      fi
+    fi
+  fi
+  
+  npm run gulp "${REH_WEB_GULP_TASK}"
 
   EXPECTED_GLIBC_VERSION="${EXPECTED_GLIBC_VERSION}" EXPECTED_GLIBCXX_VERSION="${GLIBCXX_VERSION}" SEARCH_PATH="../vscode-reh-web-${VSCODE_PLATFORM}-${VSCODE_ARCH}" ./build/azure-pipelines/linux/verify-glibc-requirements.sh
 

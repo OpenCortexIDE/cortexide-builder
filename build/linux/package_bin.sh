@@ -661,87 +661,89 @@ echo "Checking if gulp task '${GULP_TASK}' exists..."
 if ! npm run gulp -- --tasks-simple 2>/dev/null | grep -q "^${GULP_TASK}$"; then
   echo "Warning: Gulp task '${GULP_TASK}' not found. Checking if patch needs to be applied..." >&2
   
-  # For ppc64le, ensure the patch is applied to gulpfile.vscode.js
-  if [[ "${VSCODE_ARCH}" == "ppc64le" ]]; then
-    echo "Ensuring ppc64le is in BUILD_TARGETS in gulpfile.vscode.js..." >&2
+  # For alternative architectures, ensure the patch is applied to gulpfile.vscode.js
+  if [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]]; then
+    echo "Ensuring ${VSCODE_ARCH} is in BUILD_TARGETS in gulpfile.vscode.js..." >&2
     if [[ -f "build/gulpfile.vscode.js" ]]; then
-      # Check if ppc64le is already in BUILD_TARGETS
-      if ! grep -q "{ platform: 'linux', arch: 'ppc64le' }" "build/gulpfile.vscode.js"; then
-        echo "Adding ppc64le to BUILD_TARGETS in gulpfile.vscode.js..." >&2
-        # Find the BUILD_TARGETS array and add ppc64le if not present
-        node << 'PPC64LEFIX' || {
+      # Check if architecture is already in BUILD_TARGETS
+      if ! grep -q "{ platform: 'linux', arch: '${VSCODE_ARCH}' }" "build/gulpfile.vscode.js"; then
+        echo "Adding ${VSCODE_ARCH} to BUILD_TARGETS in gulpfile.vscode.js..." >&2
+        # Find the BUILD_TARGETS array and add architecture if not present
+        node << ARCHFIX || {
 const fs = require('fs');
 const filePath = 'build/gulpfile.vscode.js';
+const arch = '${VSCODE_ARCH}';
 try {
   let content = fs.readFileSync(filePath, 'utf8');
   
-  // Check if ppc64le is already in BUILD_TARGETS
-  if (content.includes("{ platform: 'linux', arch: 'ppc64le' }")) {
-    console.error('✓ ppc64le already in BUILD_TARGETS');
+  // Check if arch is already in BUILD_TARGETS
+  if (content.includes(\`{ platform: 'linux', arch: '\${arch}' }\`)) {
+    console.error(\`✓ \${arch} already in BUILD_TARGETS\`);
     process.exit(0);
   }
   
-  // Find the BUILD_TARGETS array and add ppc64le after arm64
-  // Pattern: { platform: 'linux', arch: 'arm64' },
-  const pattern = /(\{\s*platform:\s*['"]linux['"],\s*arch:\s*['"]arm64['"]\s*\},)/;
+  // Find the BUILD_TARGETS array and add arch after ppc64le or arm64
+  const pattern = /(\{\s*platform:\s*['"]linux['"],\s*arch:\s*['"](?:ppc64le|arm64)['"]\s*\},)/;
   if (pattern.test(content)) {
     content = content.replace(
       pattern,
-      "$1\n\t{ platform: 'linux', arch: 'ppc64le' },"
+      \`$1\n\t{ platform: 'linux', arch: '\${arch}' },\`
     );
     fs.writeFileSync(filePath, content, 'utf8');
-    console.error('✓ Added ppc64le to BUILD_TARGETS in gulpfile.vscode.js');
+    console.error(\`✓ Added \${arch} to BUILD_TARGETS in gulpfile.vscode.js\`);
   } else {
-    console.error('⚠ Could not find arm64 entry to add ppc64le after');
+    console.error('⚠ Could not find entry to add arch after');
     process.exit(1);
   }
 } catch (error) {
   console.error('Error:', error.message);
   process.exit(1);
 }
-PPC64LEFIX
-        echo "Warning: Failed to add ppc64le to BUILD_TARGETS, but continuing..." >&2
-      } else {
-        echo "✓ ppc64le already in BUILD_TARGETS" >&2
-      }
-    fi
-    
-    # Also check gulpfile.vscode.linux.js for ppc64le in BUILD_TARGETS
-    if [[ -f "build/gulpfile.vscode.linux.js" ]]; then
-      if ! grep -q "{ arch: 'ppc64le' }" "build/gulpfile.vscode.linux.js"; then
-        echo "Adding ppc64le to BUILD_TARGETS in gulpfile.vscode.linux.js..." >&2
-        node << 'PPC64LELINUXFIX' || {
+ARCHFIX
+          echo "Warning: Failed to add ${VSCODE_ARCH} to BUILD_TARGETS, but continuing..." >&2
+        } else {
+          echo "✓ ${VSCODE_ARCH} already in BUILD_TARGETS" >&2
+        }
+      fi
+      
+      # Also check gulpfile.vscode.linux.js for architecture in BUILD_TARGETS
+      if [[ -f "build/gulpfile.vscode.linux.js" ]]; then
+        if ! grep -q "{ arch: '${VSCODE_ARCH}' }" "build/gulpfile.vscode.linux.js"; then
+          echo "Adding ${VSCODE_ARCH} to BUILD_TARGETS in gulpfile.vscode.linux.js..." >&2
+          node << ARCHLINUXFIX || {
 const fs = require('fs');
 const filePath = 'build/gulpfile.vscode.linux.js';
+const arch = '${VSCODE_ARCH}';
 try {
   let content = fs.readFileSync(filePath, 'utf8');
   
-  if (content.includes("{ arch: 'ppc64le' }")) {
-    console.error('✓ ppc64le already in BUILD_TARGETS');
+  if (content.includes(\`{ arch: '\${arch}' }\`)) {
+    console.error(\`✓ \${arch} already in BUILD_TARGETS\`);
     process.exit(0);
   }
   
-  const pattern = /(\{\s*arch:\s*['"]arm64['"]\s*\},)/;
+  const pattern = /(\{\s*arch:\s*['"](?:ppc64le|arm64)['"]\s*\},)/;
   if (pattern.test(content)) {
     content = content.replace(
       pattern,
-      "$1\n\t{ arch: 'ppc64le' },"
+      \`$1\n\t{ arch: '\${arch}' },\`
     );
     fs.writeFileSync(filePath, content, 'utf8');
-    console.error('✓ Added ppc64le to BUILD_TARGETS in gulpfile.vscode.linux.js');
+    console.error(\`✓ Added \${arch} to BUILD_TARGETS in gulpfile.vscode.linux.js\`);
   } else {
-    console.error('⚠ Could not find arm64 entry to add ppc64le after');
+    console.error('⚠ Could not find entry to add arch after');
     process.exit(1);
   }
 } catch (error) {
   console.error('Error:', error.message);
   process.exit(1);
 }
-PPC64LELINUXFIX
-        echo "Warning: Failed to add ppc64le to BUILD_TARGETS in gulpfile.vscode.linux.js, but continuing..." >&2
+ARCHLINUXFIX
+            echo "Warning: Failed to add ${VSCODE_ARCH} to BUILD_TARGETS in gulpfile.vscode.linux.js, but continuing..." >&2
+          fi
+        fi
       fi
     fi
-  fi
   
   # Try listing tasks again to see if task is now available
   echo "Re-checking if gulp task '${GULP_TASK}' exists..." >&2

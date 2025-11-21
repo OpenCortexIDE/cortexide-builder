@@ -38,6 +38,126 @@ apply_arch_patch_if_available() {
 
 apply_arch_patch_if_available "${VSCODE_ARCH}"
 
+# CRITICAL FIX: Patch install-sysroot.js to add architecture mappings if patch failed
+# This ensures sysroot download works even when architecture patches fail to apply
+if [[ -f "build/linux/debian/install-sysroot.js" ]]; then
+  echo "Ensuring install-sysroot.js has architecture mappings for ${VSCODE_ARCH}..." >&2
+  VSCODE_ARCH="${VSCODE_ARCH}" node << 'SYSROOTFIX' || {
+const fs = require('fs');
+const filePath = 'build/linux/debian/install-sysroot.js';
+let content = fs.readFileSync(filePath, 'utf8');
+const arch = process.env.VSCODE_ARCH || '';
+
+// Architecture mappings (from architecture patches)
+const archMappings = {
+  'ppc64le': { expectedName: 'powerpc64le-linux-gnu', triple: 'powerpc64le-linux-gnu' },
+  'riscv64': { expectedName: 'riscv64-linux-gnu', triple: 'riscv64-linux-gnu' },
+  'loong64': { expectedName: 'loongarch64-linux-gnu', triple: 'loongarch64-linux-gnu' },
+  's390x': { expectedName: 's390x-linux-gnu', triple: 's390x-linux-gnu' }
+};
+
+if (!arch || !archMappings[arch]) {
+  console.error('No mapping needed for architecture:', arch);
+  process.exit(0);
+}
+
+const mapping = archMappings[arch];
+const casePattern = new RegExp(`case\\s+['"]${arch}['"]:`, 'g');
+
+// Check if case already exists
+if (casePattern.test(content)) {
+  console.error(`Architecture ${arch} mapping already exists in install-sysroot.js`);
+  process.exit(0);
+}
+
+// Find the switch statement for arch - look for async function getVSCodeSysroot
+const switchPattern = /switch\s*\(\s*arch\s*\)\s*\{/;
+const switchMatch = content.match(switchPattern);
+
+if (!switchMatch) {
+  console.error('Could not find switch(arch) statement in install-sysroot.js');
+  process.exit(1);
+}
+
+// Find where to insert - look for the last case before closing brace
+const lines = content.split('\n');
+let insertIndex = -1;
+let inSwitch = false;
+let braceDepth = 0;
+
+for (let i = 0; i < lines.length; i++) {
+  if (lines[i].match(switchPattern)) {
+    inSwitch = true;
+    braceDepth = 1;
+    continue;
+  }
+  
+  if (inSwitch) {
+    braceDepth += (lines[i].match(/\{/g) || []).length;
+    braceDepth -= (lines[i].match(/\}/g) || []).length;
+    
+    // Look for the last case before default or closing
+    if (lines[i].match(/^\s*case\s+['"]/)) {
+      insertIndex = i + 1;
+      // Find the end of this case
+      for (let j = i + 1; j < lines.length; j++) {
+        if (lines[j].match(/^\s*break\s*;/) || lines[j].match(/^\s*default\s*:/)) {
+          insertIndex = j;
+          break;
+        }
+        if (lines[j].match(/^\s*\}/) && braceDepth === 0) {
+          insertIndex = j;
+          break;
+        }
+      }
+    }
+    
+    // If we hit the closing brace of the switch, insert before it
+    if (braceDepth === 0 && lines[i].match(/^\s*\}/)) {
+      if (insertIndex === -1) {
+        insertIndex = i;
+      }
+      break;
+    }
+  }
+}
+
+if (insertIndex === -1) {
+  // Fallback: find arm64 case and insert after it
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].match(/^\s*case\s+['"]arm64['"]:/)) {
+      for (let j = i + 1; j < lines.length; j++) {
+        if (lines[j].match(/^\s*break\s*;/)) {
+          insertIndex = j + 1;
+          break;
+        }
+      }
+      break;
+    }
+  }
+}
+
+if (insertIndex === -1) {
+  console.error('Could not find insertion point for architecture mapping');
+  process.exit(1);
+}
+
+// Insert the case statement
+const indent = lines[insertIndex - 1].match(/^(\s*)/)[1] || '            ';
+const caseCode = `${indent}case '${arch}':\n` +
+                 `${indent}    expectedName = \`${mapping.expectedName}\${prefix}.tar.gz\`;\n` +
+                 `${indent}    triple = \`${mapping.triple}\`;\n` +
+                 `${indent}    break;`;
+
+lines.splice(insertIndex, 0, caseCode);
+content = lines.join('\n');
+fs.writeFileSync(filePath, content, 'utf8');
+console.error(`✓ Successfully added ${arch} mapping to install-sysroot.js`);
+SYSROOTFIX
+    echo "Warning: Failed to patch install-sysroot.js for ${VSCODE_ARCH}, continuing anyway..." >&2
+  }
+fi
+
 GLIBC_VERSION="2.28"
 GLIBCXX_VERSION="3.4.26"
 NODE_VERSION="20.18.2"
@@ -579,43 +699,86 @@ export VSCODE_NODE_GLIBC="-glibc-${GLIBC_VERSION}"
 if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
   echo "Building REH"
   
-  # CRITICAL FIX: Patch gulpfile.reh.js to increase maxBuffer for Docker extraction (fixes ENOBUFS)
+  # CRITICAL FIX: Patch gulpfile.reh.js to use correct Node.js version for riscv64 and fix Docker ENOBUFS
   if [[ -f "build/gulpfile.reh.js" ]]; then
-    echo "Patching gulpfile.reh.js to increase maxBuffer for Docker extraction..." >&2
-    node << 'DOCKERBUFFERFIX' || {
+    echo "Patching gulpfile.reh.js for Node.js version and Docker extraction..." >&2
+    VSCODE_ARCH="${VSCODE_ARCH}" NODE_VERSION="${NODE_VERSION}" node << 'DOCKERBUFFERFIX' || {
 const fs = require('fs');
 const filePath = 'build/gulpfile.reh.js';
 let content = fs.readFileSync(filePath, 'utf8');
+const arch = process.env.VSCODE_ARCH || '';
+const nodeVersion = process.env.NODE_VERSION || '';
 
 // Check if already patched
-if (content.includes('maxBuffer: 500 * 1024 * 1024') || content.includes('maxBuffer: 1000 * 1024 * 1024')) {
-  console.error('gulpfile.reh.js already patched for increased buffer');
-  process.exit(0);
-}
-
-// Increase maxBuffer from 100MB to 500MB (or 1000MB if needed)
-// Replace maxBuffer: 100 * 1024 * 1024 with a larger value
-content = content.replace(
-  /maxBuffer:\s*100\s*\*\s*1024\s*\*\s*1024/g,
-  'maxBuffer: 500 * 1024 * 1024'
-);
-
-// Also check for any other maxBuffer values that might be too small
-content = content.replace(
-  /maxBuffer:\s*(\d+)\s*\*\s*1024\s*\*\s*1024/g,
-  (match, size) => {
-    const sizeNum = parseInt(size, 10);
-    if (sizeNum < 500) {
-      return `maxBuffer: 500 * 1024 * 1024`;
+if (content.includes('// DOCKER_BUFFER_FIX') || content.includes('fs.readFileSync')) {
+  console.error('gulpfile.reh.js already patched for Docker buffer fix');
+  // Still check for Node.js version fix
+} else {
+  // First, fix Node.js version for riscv64/loong64 if needed
+  if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
+    // Replace hardcoded Node.js version with environment variable
+    // Look for patterns like '22.20.0' or version from package.json
+    const versionPattern = /(nodeVersion\s*=\s*['"]?)(\d+\.\d+\.\d+)(['"]?)/g;
+    if (versionPattern.test(content)) {
+      content = content.replace(versionPattern, (match, prefix, version, suffix) => {
+        // Only replace if it's a high version (22.x) for riscv64/loong64
+        if ((arch === 'riscv64' || arch === 'loong64') && version.startsWith('22.')) {
+          return `${prefix}${nodeVersion}${suffix}`;
+        }
+        return match;
+      });
+      console.error(`✓ Patched Node.js version to ${nodeVersion} for ${arch}`);
     }
-    return match;
   }
-);
 
-fs.writeFileSync(filePath, content, 'utf8');
-console.error('✓ Successfully increased maxBuffer in gulpfile.reh.js');
+// Find extractAlpinefromDocker function and replace execSync with file-based approach
+const functionPattern = /function\s+extractAlpinefromDocker\([^)]*\)\s*\{[\s\S]*?const\s+contents\s*=\s*cp\.execSync\([^;]+;/;
+const match = content.match(functionPattern);
+
+if (match) {
+  // Replace execSync with file-based approach to avoid buffer limits
+  const replacement = `function extractAlpinefromDocker(nodeVersion, platform, arch) {
+	let imageName = 'node';
+	let dockerPlatform = '';
+
+	if (arch === 'arm64') {
+		imageName = 'arm64v8/node';
+
+		const architecture = cp.execSync(\`docker info --format '{{json .Architecture}}'\`, { encoding: 'utf8' }).trim();
+		if (architecture != '"aarch64"') {
+			dockerPlatform = '--platform=linux/arm64';
+		}
+	}
+
+	log(\`Downloading node.js \${nodeVersion} \${platform} \${arch} from docker image \${imageName}\`);
+	// DOCKER_BUFFER_FIX: Use file output instead of execSync to avoid ENOBUFS
+	const tmpFile = path.join(os.tmpdir(), \`node-\${nodeVersion}-\${arch}-\${Date.now()}\`);
+	try {
+		cp.execSync(\`docker run --rm \${dockerPlatform} \${imageName}:\${nodeVersion}-alpine /bin/sh -c 'cat \\\`which node\\\`' > \${tmpFile}\`, { stdio: 'inherit' });
+		const contents = fs.readFileSync(tmpFile);
+		fs.unlinkSync(tmpFile);
+		return es.readArray([new File({ path: 'node', contents, stat: { mode: parseInt('755', 8) } })]);
+	} catch (err) {
+		if (fs.existsSync(tmpFile)) {
+			fs.unlinkSync(tmpFile);
+		}
+		throw err;
+	}`;
+  
+  content = content.replace(functionPattern, replacement);
+  fs.writeFileSync(filePath, content, 'utf8');
+  console.error('✓ Successfully patched gulpfile.reh.js to use file-based Docker extraction');
+} else {
+  // Fallback: just increase buffer
+  content = content.replace(
+    /maxBuffer:\s*100\s*\*\s*1024\s*\*\s*1024/g,
+    'maxBuffer: 1000 * 1024 * 1024'
+  );
+  fs.writeFileSync(filePath, content, 'utf8');
+  console.error('✓ Increased maxBuffer in gulpfile.reh.js (fallback)');
+}
 DOCKERBUFFERFIX
-      echo "Warning: Failed to patch gulpfile.reh.js for increased buffer, continuing anyway..." >&2
+      echo "Warning: Failed to patch gulpfile.reh.js for Docker buffer fix, continuing anyway..." >&2
     }
   fi
   

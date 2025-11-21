@@ -16,6 +16,23 @@ chown -R root:root vscode
 
 cd vscode || { echo "'vscode' dir not found"; exit 1; }
 
+apply_arch_patch_if_available() {
+  local arch_patch=""
+  case "$1" in
+    ppc64le) arch_patch="../patches/linux/arch-1-ppc64le.patch" ;;
+    riscv64) arch_patch="../patches/linux/arch-2-riscv64.patch" ;;
+    loong64) arch_patch="../patches/linux/arch-3-loong64.patch" ;;
+    s390x)  arch_patch="../patches/linux/arch-4-s390x.patch" ;;
+  esac
+
+  if [[ -n "${arch_patch}" ]] && [[ -f "${arch_patch}" ]]; then
+    echo "Applying architecture-specific patch for ${1}: ${arch_patch}"
+    apply_patch "${arch_patch}"
+  fi
+}
+
+apply_arch_patch_if_available "${VSCODE_ARCH}"
+
 export VSCODE_PLATFORM='linux'
 export VSCODE_SKIP_NODE_VERSION_CHECK=1
 # VSCODE_SYSROOT_PREFIX should include gcc version for checksum matching

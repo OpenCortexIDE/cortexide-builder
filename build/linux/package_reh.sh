@@ -505,6 +505,80 @@ export VSCODE_NODE_GLIBC="-glibc-${GLIBC_VERSION}"
 if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
   echo "Building REH"
   
+  # CRITICAL FIX: Patch build/lib/extensions.js to handle empty glob patterns (same as main build)
+  # This is needed for REH builds that use doPackageLocalExtensionsStream
+  if [[ -f "build/lib/extensions.js" ]]; then
+    echo "Patching build/lib/extensions.js to handle empty glob patterns..." >&2
+    node << 'EXTENSIONSGLOBFIX' || {
+const fs = require('fs');
+const filePath = 'build/lib/extensions.js';
+let content = fs.readFileSync(filePath, 'utf8');
+let modified = false;
+
+// Fix 1: Find the specific line with dependenciesSrc and ensure it's never empty
+if (content.includes('dependenciesSrc') && content.includes('gulp')) {
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes('dependenciesSrc') && lines[i].includes('gulp') && lines[i].includes('.src(')) {
+      const indent = lines[i].match(/^\s*/)[0];
+      let hasCheck = false;
+      for (let j = Math.max(0, i - 5); j < i; j++) {
+        if (lines[j].includes('dependenciesSrc.length === 0') || lines[j].includes('dependenciesSrc = [\'**')) {
+          hasCheck = true;
+          break;
+        }
+      }
+      if (!hasCheck) {
+        lines.splice(i, 0, `${indent}if (!dependenciesSrc || dependenciesSrc.length === 0) { dependenciesSrc = ['**', '!**/*']; }`);
+        modified = true;
+        i++;
+        console.error(`✓ Added empty check for dependenciesSrc before gulp.src at line ${i + 1}`);
+      }
+      
+      if (!lines[i].includes('allowEmpty')) {
+        lines[i] = lines[i].replace(/(base:\s*['"]\.['"])\s*\}\)/, '$1, allowEmpty: true })');
+        lines[i] = lines[i].replace(/(base:\s*[^}]+)\s*\}\)/, '$1, allowEmpty: true })');
+        if (lines[i].includes('allowEmpty')) {
+          modified = true;
+          console.error(`✓ Added allowEmpty to gulp.src at line ${i + 1}`);
+        }
+      }
+      break;
+    }
+  }
+  content = lines.join('\n');
+}
+
+// Fix 2: Also patch the dependenciesSrc assignment
+if (content.includes('const dependenciesSrc =') && content.includes('.flat()')) {
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes('const dependenciesSrc =') && lines[i].includes('.flat()')) {
+      if (!lines[i].includes('|| [\'**\', \'!**/*\']')) {
+        const indent = lines[i].match(/^\s*/)[0];
+        lines[i] = lines[i].replace(/const dependenciesSrc =/, 'let dependenciesSrc =');
+        lines[i] = lines[i].replace(/\.flat\(\);?$/, ".flat() || ['**', '!**/*'];");
+        lines.splice(i + 1, 0, `${indent}if (dependenciesSrc.length === 0) { dependenciesSrc = ['**', '!**/*']; }`);
+        modified = true;
+        console.error(`✓ Fixed dependenciesSrc assignment at line ${i + 1}`);
+      }
+      break;
+    }
+  }
+  content = lines.join('\n');
+}
+
+if (modified) {
+  fs.writeFileSync(filePath, content, 'utf8');
+  console.error('✓ Successfully patched build/lib/extensions.js for empty glob patterns');
+} else {
+  console.error('⚠ No changes made - file may already be patched or structure is different');
+}
+EXTENSIONSGLOBFIX
+      echo "Warning: Failed to patch build/lib/extensions.js, continuing anyway..." >&2
+    }
+  fi
+  
   # CRITICAL FIX: Handle empty glob patterns in gulpfile.reh.js (same fix as main build.sh)
   if [[ -f "build/gulpfile.reh.js" ]]; then
     echo "Applying critical fix to gulpfile.reh.js for empty glob patterns..." >&2

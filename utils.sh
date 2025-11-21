@@ -219,11 +219,26 @@ apply_patch() {
       mv -f $1{.bak,}
       return 0
     fi
+    # If 3-way also failed, check if non-critical before continuing
+    if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
+      echo "Warning: Non-critical patch $(basename "$1") failed even with 3-way merge. Skipping..." >&2
+      echo "Error: $PATCH_ERROR_3WAY" >&2
+      mv -f $1{.bak,}
+      return 0
+    fi
     # If 3-way also failed, continue with original error handling
     PATCH_ERROR="$PATCH_ERROR_3WAY"
   fi
   
   if [[ -n "$PATCH_FAILED" ]]; then
+    # CRITICAL: Check if non-critical FIRST before any other logic
+    if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
+      echo "Warning: Non-critical patch $(basename "$1") failed to apply. Skipping..." >&2
+      echo "Error: $PATCH_ERROR" >&2
+      echo "This patch may need to be updated for VS Code 1.106" >&2
+      mv -f $1{.bak,}
+      return 0
+    fi
     # First check if this is a non-critical patch - if so, skip it immediately
     if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
       # Still try 3-way merge first if available, but don't fail if it doesn't work
@@ -327,27 +342,29 @@ apply_patch() {
       if [[ "$CAN_USE_3WAY" == "yes" ]]; then
         echo "Warning: Patch failed to apply cleanly, trying with 3-way merge..."
         PATCH_ERROR_3WAY=$(git apply --3way --ignore-whitespace "$1" 2>&1) || PATCH_FAILED_3WAY=1
-      else
-        # Check if this is a non-critical patch before exiting
-        PATCH_NAME=$(basename "$1")
-        if is_non_critical_patch "$1"; then
-          echo "Warning: Non-critical patch $PATCH_NAME failed to apply. Skipping..." >&2
-          echo "Error: $PATCH_ERROR" >&2
-          echo "This patch may need to be updated for VS Code 1.106" >&2
-          mv -f $1{.bak,}
-          return 0
-        fi
-        # CRITICAL: Check one more time if this is non-critical before exiting
-        if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
-          echo "Warning: Non-critical patch $(basename "$1") failed. Skipping..." >&2
-          mv -f $1{.bak,}
-          return 0
-        fi
-        echo "Error: Patch failed to apply and 3-way merge not available (shallow clone)" >&2
-        echo "Patch file: $1" >&2
+    else
+      # CRITICAL: Check if this is a non-critical patch BEFORE any exit
+      if [[ "$PATCH_IS_NON_CRITICAL" == "yes" ]]; then
+        echo "Warning: Non-critical patch $(basename "$1") failed to apply. Skipping..." >&2
         echo "Error: $PATCH_ERROR" >&2
         echo "This patch may need to be updated for VS Code 1.106" >&2
-        exit 1
+        mv -f $1{.bak,}
+        return 0
+      fi
+      # Check if this is a non-critical patch before exiting
+      PATCH_NAME=$(basename "$1")
+      if is_non_critical_patch "$1"; then
+        echo "Warning: Non-critical patch $PATCH_NAME failed to apply. Skipping..." >&2
+        echo "Error: $PATCH_ERROR" >&2
+        echo "This patch may need to be updated for VS Code 1.106" >&2
+        mv -f $1{.bak,}
+        return 0
+      fi
+      echo "Error: Patch failed to apply and 3-way merge not available (shallow clone)" >&2
+      echo "Patch file: $1" >&2
+      echo "Error: $PATCH_ERROR" >&2
+      echo "This patch may need to be updated for VS Code 1.106" >&2
+      exit 1
       fi
       if [[ -n "$PATCH_FAILED_3WAY" ]]; then
         # Check if 3-way merge left any conflicts

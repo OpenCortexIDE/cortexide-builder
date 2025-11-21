@@ -33,7 +33,63 @@ apply_patch() {
     if echo "$patch_path" | grep -q "/osx/\|/linux/\|/windows/"; then
       return 0
     fi
+    # Architecture patches are non-critical (we have runtime fixes that handle them)
+    if echo "$patch_name" | grep -qE "arch-[0-9]+-(ppc64le|riscv64|loong64|s390x)\.patch"; then
+      return 0
+    fi
     echo "$non_critical" | grep -q "$patch_name"
+  }
+  
+  # Helper function to check if architecture patch changes are already applied
+  check_arch_patch_already_applied() {
+    local patch_file="$1"
+    local patch_name=$(basename "$patch_file")
+    
+    # Only check architecture patches
+    if ! echo "$patch_name" | grep -qE "arch-[0-9]+-(ppc64le|riscv64|loong64|s390x)\.patch"; then
+      return 1
+    fi
+    
+    # Extract architecture from patch name
+    local arch=""
+    if echo "$patch_name" | grep -q "ppc64le"; then
+      arch="ppc64le"
+    elif echo "$patch_name" | grep -q "riscv64"; then
+      arch="riscv64"
+    elif echo "$patch_name" | grep -q "loong64"; then
+      arch="loong64"
+    elif echo "$patch_name" | grep -q "s390x"; then
+      arch="s390x"
+    else
+      return 1
+    fi
+    
+    # Check if architecture is already in BUILD_TARGETS in key files
+    # If it's in at least one file, consider it already applied (patch may have partial failures)
+    local found_count=0
+    local files_to_check=(
+      "build/gulpfile.vscode.js"
+      "build/gulpfile.reh.js"
+      "build/gulpfile.vscode.linux.js"
+    )
+    
+    for file in "${files_to_check[@]}"; do
+      if [[ -f "$file" ]]; then
+        # Check if arch is already in BUILD_TARGETS
+        if grep -q "{ platform: 'linux', arch: '${arch}' }" "$file" 2>/dev/null || \
+           grep -q "{ arch: '${arch}' }" "$file" 2>/dev/null; then
+          found_count=$((found_count + 1))
+        fi
+      fi
+    done
+    
+    # If found in any file, consider it already applied (runtime fixes will handle the rest)
+    if [[ $found_count -gt 0 ]]; then
+      echo "Architecture ${arch} already present in some files, skipping patch (runtime fixes will handle it)..." >&2
+      return 0
+    fi
+    
+    return 1
   }
   
   # Check if this is a non-critical patch early, so we can ensure it never causes build failure
@@ -98,6 +154,13 @@ apply_patch() {
       mv -f $1{.bak,}
       return 0
     fi
+  fi
+  
+  # For architecture patches, check if changes are already applied
+  if check_arch_patch_already_applied "$1"; then
+    echo "Architecture patch $(basename "$1") changes appear to be already applied, skipping..." >&2
+    mv -f $1{.bak,}
+    return 0
   fi
   
   # First try normal apply for other patches

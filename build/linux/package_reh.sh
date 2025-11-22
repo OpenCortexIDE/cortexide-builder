@@ -1090,9 +1090,19 @@ ${indent}const tmpFile = path.join(os.tmpdir(), \`node-\${nodeVersion}-\${arch}-
 ${indent}try {
 ${indent}	// Use spawn with file redirection to avoid ENOBUFS
 ${indent}	const { spawnSync } = require('child_process');
-${indent}	const dockerCmd = arch === 'arm64' && process.platform === 'linux' ? 
-${indent}		\`docker run --rm --platform linux/arm64 \${imageName || 'arm64v8/node'}:\${nodeVersion}-alpine /bin/sh -c 'cat \\\`which node\\\`'\` :
-${indent}		\`docker run --rm \${dockerPlatform || ''} \${imageName || 'node'}:\${nodeVersion}-alpine /bin/sh -c 'cat \\\`which node\\\`'\`;
+${indent}		// Construct Docker command properly - handle arm64 and dockerPlatform
+${indent}		let platformFlag = '';
+${indent}		let finalImageName = imageName || 'node';
+${indent}		if (arch === 'arm64') {
+${indent}			if (!dockerPlatform && process.platform === 'linux') {
+${indent}				platformFlag = '--platform linux/arm64 ';
+${indent}			}
+${indent}			if (!finalImageName.includes('arm64v8/') && !finalImageName.includes('/')) {
+${indent}				finalImageName = 'arm64v8/' + finalImageName;
+${indent}			}
+${indent}		}
+${indent}		const dockerPlatformStr = dockerPlatform ? dockerPlatform + ' ' : '';
+${indent}		const dockerCmd = 'docker run --rm ' + platformFlag + dockerPlatformStr + finalImageName + ':' + nodeVersion + '-alpine /bin/sh -c "cat \\`which node\\`";
 ${indent}	const result = spawnSync('sh', ['-c', \`\${dockerCmd} > \${tmpFile}\`], { stdio: 'inherit' });
 ${indent}	if (result.error || result.status !== 0) {
 ${indent}		throw result.error || new Error(\`Docker command failed with status \${result.status}\`);

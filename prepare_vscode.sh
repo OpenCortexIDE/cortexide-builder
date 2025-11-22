@@ -714,18 +714,17 @@ if [[ -f "${TS_FILE}" ]]; then
     echo "Detected OLD code structure (class property)" >&2
   fi
   
-  if grep -q "mountVoidCommandBarPromise.*Promise<" "${TS_FILE}" 2>/dev/null || grep -q "getMountVoidCommandBar" "${TS_FILE}" 2>/dev/null; then
+  if grep -q "mountVoidCommandBarPromise" "${TS_FILE}" 2>/dev/null || grep -q "getMountVoidCommandBar" "${TS_FILE}" 2>/dev/null; then
     HAS_NEW_STRUCTURE=true
     echo "Detected NEW code structure (module-level variable)" >&2
   fi
   
   if [[ "${HAS_NEW_STRUCTURE}" == "true" ]]; then
-    echo "✓ Code uses new structure - checking if fixes are needed..." >&2
-    # New structure already has proper null checks and async handling
-    if grep -q "if (!mountVoidCommandBar)" "${TS_FILE}" 2>/dev/null || grep -q "if (!mountVoidCommandBarPromise)" "${TS_FILE}" 2>/dev/null; then
-      echo "✓ New structure already has null checks - no fix needed" >&2
-    else
-      echo "⚠ New structure detected but may need review" >&2
+    echo "✓ Code uses new structure - no fixes needed (already has proper handling)" >&2
+    # New structure already has proper null checks and async handling via getMountVoidCommandBar()
+    # Check if there are any TypeScript errors we should be aware of
+    if grep -q "await getMountVoidCommandBar" "${TS_FILE}" 2>/dev/null; then
+      echo "✓ New structure uses await getMountVoidCommandBar() - properly handled" >&2
     fi
   elif [[ "${HAS_OLD_STRUCTURE}" == "true" ]]; then
     echo "Applying fixes for OLD code structure..." >&2

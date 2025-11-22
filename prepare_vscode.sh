@@ -762,9 +762,14 @@ if [[ -f "${TS_FILE}" ]]; then
       echo "✓ Null check already present" >&2
     fi
   else
-    echo "⚠ Could not determine code structure - file may have been refactored" >&2
-    echo "  Showing first 50 lines for context:" >&2
-    head -50 "${TS_FILE}" >&2 || true
+    echo "⚠ Could not determine code structure - checking for TypeScript errors..." >&2
+    echo "  Showing relevant sections for debugging:" >&2
+    echo "  Lines 30-45 (module level):" >&2
+    sed -n '30,45p' "${TS_FILE}" 2>/dev/null | head -10 >&2 || true
+    echo "  Lines 560-580 (function calls):" >&2
+    sed -n '560,580p' "${TS_FILE}" 2>/dev/null | head -10 >&2 || true
+    echo "  Searching for mountVoidCommandBar references:" >&2
+    grep -n "mountVoidCommandBar" "${TS_FILE}" 2>/dev/null | head -5 >&2 || true
   fi
   
   echo "TypeScript fixes completed" >&2

@@ -11,7 +11,10 @@
     </xsl:copy>
   </xsl:template>
 
-  <xsl:key name="vId1ToReplace" match="wi:Component[wi:File[contains(@Source,'@@PRODUCT_NAME@@.exe')]]" use="@Id"/>
+  <!-- CRITICAL FIX: Use @@EXE_NAME@@ instead of @@PRODUCT_NAME@@ for executable file search -->
+  <!-- The actual executable is named based on applicationName (e.g., "cortexide.exe"), -->
+  <!-- not PRODUCT_NAME (which may have spaces like "CortexIDE - Insiders") -->
+  <xsl:key name="vId1ToReplace" match="wi:Component[wi:File[contains(@Source,'@@EXE_NAME@@.exe') or contains(@Source,'@@PRODUCT_NAME@@.exe')]]" use="@Id"/>
   <xsl:template match="node()[key('vId1ToReplace', @Id)]">
     <xsl:copy>
       <xsl:attribute name="Id">@@EXE_FILE_ID@@</xsl:attribute>
@@ -19,7 +22,7 @@
       <xsl:apply-templates />
     </xsl:copy>
   </xsl:template>
-  <xsl:template match="wi:Component/wi:File[contains(@Source,'@@PRODUCT_NAME@@.exe')]">
+  <xsl:template match="wi:Component/wi:File[contains(@Source,'@@EXE_NAME@@.exe') or contains(@Source,'@@PRODUCT_NAME@@.exe')]">
      <xsl:copy>
         <xsl:attribute name="Id">@@EXE_FILE_ID@@</xsl:attribute>
         <xsl:copy-of select="@*[name()!='Id']"/>

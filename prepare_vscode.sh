@@ -528,19 +528,21 @@ setpath_json() {
 # product.json
 cp product.json{,.bak}
 
-setpath "product" "checksumFailMoreInfoUrl" "https://go.microsoft.com/fwlink/?LinkId=828886"
+# CRITICAL: Override extensionsGallery to use Open VSX instead of Microsoft Marketplace
+# Microsoft prohibits usage of their marketplace by other products
+setpath_json "product" "extensionsGallery" '{"serviceUrl": "https://open-vsx.org/vscode/gallery", "itemUrl": "https://open-vsx.org/vscode/item"}'
+
+setpath "product" "checksumFailMoreInfoUrl" "https://cortexide.com"
 setpath "product" "documentationUrl" "https://cortexide.com"
-# setpath_json "product" "extensionsGallery" '{"serviceUrl": "https://open-vsx.org/vscode/gallery", "itemUrl": "https://open-vsx.org/vscode/item"}'
-setpath "product" "introductoryVideosUrl" "https://go.microsoft.com/fwlink/?linkid=832146"
-setpath "product" "keyboardShortcutsUrlLinux" "https://go.microsoft.com/fwlink/?linkid=832144"
-setpath "product" "keyboardShortcutsUrlMac" "https://go.microsoft.com/fwlink/?linkid=832143"
-setpath "product" "keyboardShortcutsUrlWin" "https://go.microsoft.com/fwlink/?linkid=832145"
+setpath "product" "introductoryVideosUrl" "https://cortexide.com"
+setpath "product" "keyboardShortcutsUrlLinux" "https://cortexide.com/docs"
+setpath "product" "keyboardShortcutsUrlMac" "https://cortexide.com/docs"
+setpath "product" "keyboardShortcutsUrlWin" "https://cortexide.com/docs"
 setpath "product" "licenseUrl" "https://github.com/cortexide/cortexide/blob/main/LICENSE.txt"
-# setpath_json "product" "linkProtectionTrustedDomains" '["https://open-vsx.org"]'
-# setpath "product" "releaseNotesUrl" "https://go.microsoft.com/fwlink/?LinkID=533483#vscode"
+setpath_json "product" "linkProtectionTrustedDomains" '["https://open-vsx.org", "https://opencortexide.com", "https://github.com/opencortexide"]'
 setpath "product" "reportIssueUrl" "https://github.com/cortexide/cortexide/issues/new"
 setpath "product" "requestFeatureUrl" "https://github.com/cortexide/cortexide/issues/new"
-setpath "product" "tipsAndTricksUrl" "https://go.microsoft.com/fwlink/?linkid=852118"
+setpath "product" "tipsAndTricksUrl" "https://cortexide.com/docs"
 setpath "product" "twitterUrl" "https://x.com/cortexide"
 
 if [[ "${DISABLE_UPDATE}" != "yes" ]]; then
@@ -601,7 +603,36 @@ cat product.json
 # package.json
 cp package.json{,.bak}
 
-setpath "package" "version" "${RELEASE_VERSION%-insider}"
+# CRITICAL: Validate RELEASE_VERSION is set, otherwise fallback to package.json version
+if [[ -z "${RELEASE_VERSION}" ]]; then
+  echo "Warning: RELEASE_VERSION is not set, attempting to read from package.json..." >&2
+  # Try to read version from package.json as fallback
+  if [[ -f "package.json" ]]; then
+    FALLBACK_VERSION=$( jq -r '.version' "package.json" 2>/dev/null || echo "" )
+    if [[ -n "${FALLBACK_VERSION}" && "${FALLBACK_VERSION}" != "null" ]]; then
+      RELEASE_VERSION="${FALLBACK_VERSION}"
+      echo "Using fallback version from package.json: ${RELEASE_VERSION}" >&2
+    else
+      echo "Error: RELEASE_VERSION is not set and could not read version from package.json" >&2
+      echo "This will cause a blank version in the built application." >&2
+      exit 1
+    fi
+  else
+    echo "Error: RELEASE_VERSION is not set and package.json not found" >&2
+    exit 1
+  fi
+fi
+
+# Remove -insider suffix if present for package.json version
+PACKAGE_VERSION="${RELEASE_VERSION%-insider}"
+
+# Validate the version is not empty after processing
+if [[ -z "${PACKAGE_VERSION}" ]]; then
+  echo "Error: Version is empty after processing RELEASE_VERSION: '${RELEASE_VERSION}'" >&2
+  exit 1
+fi
+
+setpath "package" "version" "${PACKAGE_VERSION}"
 
 replace 's|Microsoft Corporation|CortexIDE|' package.json
 

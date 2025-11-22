@@ -38,6 +38,129 @@ apply_arch_patch_if_available() {
 
 apply_arch_patch_if_available "${VSCODE_ARCH}"
 
+# CRITICAL FIX: Patch install-sysroot.js to add architecture mappings if patch failed
+# This ensures sysroot download works even when architecture patches fail to apply
+if [[ -f "build/linux/debian/install-sysroot.js" ]]; then
+  echo "Ensuring install-sysroot.js has architecture mappings for ${VSCODE_ARCH}..." >&2
+  node << 'SYSROOTFIX' || {
+const fs = require('fs');
+const filePath = 'build/linux/debian/install-sysroot.js';
+let content = fs.readFileSync(filePath, 'utf8');
+const arch = process.env.VSCODE_ARCH || '';
+
+// Architecture mappings (from architecture patches)
+const archMappings = {
+  'ppc64le': { expectedName: 'powerpc64le-linux-gnu', triple: 'powerpc64le-linux-gnu' },
+  'riscv64': { expectedName: 'riscv64-linux-gnu', triple: 'riscv64-linux-gnu' },
+  'loong64': { expectedName: 'loongarch64-linux-gnu', triple: 'loongarch64-linux-gnu' },
+  's390x': { expectedName: 's390x-linux-gnu', triple: 's390x-linux-gnu' }
+};
+
+if (!arch || !archMappings[arch]) {
+  console.error('No mapping needed for architecture:', arch);
+  process.exit(0);
+}
+
+const mapping = archMappings[arch];
+const casePattern = new RegExp(`case\\s+['"]${arch}['"]:`, 'g');
+
+// Check if case already exists
+if (casePattern.test(content)) {
+  console.error(`Architecture ${arch} mapping already exists in install-sysroot.js`);
+  process.exit(0);
+}
+
+// Find the switch statement for arch
+const switchPattern = /switch\s*\(\s*arch\s*\)\s*\{/;
+const switchMatch = content.match(switchPattern);
+
+if (!switchMatch) {
+  console.error('Could not find switch(arch) statement in install-sysroot.js');
+  process.exit(1);
+}
+
+// Find where to insert (before the closing brace of the switch or after the last case)
+// Look for the last case before the default or closing brace
+const lines = content.split('\n');
+let insertIndex = -1;
+let inSwitch = false;
+let braceDepth = 0;
+
+for (let i = 0; i < lines.length; i++) {
+  if (lines[i].match(switchPattern)) {
+    inSwitch = true;
+    braceDepth = 1;
+    continue;
+  }
+  
+  if (inSwitch) {
+    // Count braces to track switch block
+    braceDepth += (lines[i].match(/\{/g) || []).length;
+    braceDepth -= (lines[i].match(/\}/g) || []).length;
+    
+    // Look for the last case before default or closing
+    if (lines[i].match(/^\s*case\s+['"]/)) {
+      insertIndex = i + 1;
+      // Find the end of this case (next break or closing brace)
+      for (let j = i + 1; j < lines.length; j++) {
+        if (lines[j].match(/^\s*break\s*;/) || lines[j].match(/^\s*default\s*:/)) {
+          insertIndex = j;
+          break;
+        }
+        if (lines[j].match(/^\s*\}/) && braceDepth === 0) {
+          insertIndex = j;
+          break;
+        }
+      }
+    }
+    
+    // If we hit the closing brace of the switch, insert before it
+    if (braceDepth === 0 && lines[i].match(/^\s*\}/)) {
+      if (insertIndex === -1) {
+        insertIndex = i;
+      }
+      break;
+    }
+  }
+}
+
+if (insertIndex === -1) {
+  // Fallback: find any case statement and insert after it
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].match(/^\s*case\s+['"]arm64['"]:/)) {
+      // Find the break after this case
+      for (let j = i + 1; j < lines.length; j++) {
+        if (lines[j].match(/^\s*break\s*;/)) {
+          insertIndex = j + 1;
+          break;
+        }
+      }
+      break;
+    }
+  }
+}
+
+if (insertIndex === -1) {
+  console.error('Could not find insertion point for architecture mapping');
+  process.exit(1);
+}
+
+// Insert the case statement
+const indent = lines[insertIndex - 1].match(/^(\s*)/)[1] || '            ';
+const caseCode = `${indent}case '${arch}':\n` +
+                 `${indent}    expectedName = \`${mapping.expectedName}\${prefix}.tar.gz\`;\n` +
+                 `${indent}    triple = \`${mapping.triple}\`;\n` +
+                 `${indent}    break;`;
+
+lines.splice(insertIndex, 0, caseCode);
+content = lines.join('\n');
+fs.writeFileSync(filePath, content, 'utf8');
+console.error(`✓ Successfully added ${arch} mapping to install-sysroot.js`);
+SYSROOTFIX
+    echo "Warning: Failed to patch install-sysroot.js for ${VSCODE_ARCH}, continuing anyway..." >&2
+  }
+fi
+
 export VSCODE_PLATFORM='linux'
 export VSCODE_SKIP_NODE_VERSION_CHECK=1
 # VSCODE_SYSROOT_PREFIX should include gcc version for checksum matching

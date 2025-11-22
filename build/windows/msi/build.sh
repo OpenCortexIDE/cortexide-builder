@@ -64,6 +64,10 @@ fi
 sed -i "s|@@PRODUCT_UPGRADE_CODE@@|${PRODUCT_UPGRADE_CODE}|g" .\\includes\\vscodium-variables.wxi
 sed -i "s|@@PRODUCT_NAME@@|${PRODUCT_NAME}|g" .\\vscodium.xsl
 sed -i "s|@@EXE_FILE_ID@@|${EXE_FILE_ID}|g" .\\vscodium.xsl
+# CRITICAL: Replace @@EXE_NAME@@ with actual executable name (lowercase, no spaces)
+# The XSL file searches for the executable file, which is named based on applicationName
+# not PRODUCT_NAME (which has spaces and different casing)
+sed -i "s|@@EXE_NAME@@|${EXE_NAME}|g" .\\vscodium.xsl
 
 find i18n -name '*.wxl' -print0 | xargs -0 sed -i "s|@@PRODUCT_NAME@@|${PRODUCT_NAME}|g"
 
@@ -135,11 +139,41 @@ BuildSetupTranslationTransform() {
 	rm -f "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.${CULTURE}.mst"
 }
 
+# CRITICAL: Validate RELEASE_VERSION is set before building MSI
+if [[ -z "${RELEASE_VERSION}" ]]; then
+  echo "Error: RELEASE_VERSION is not set. Cannot build MSI installer." >&2
+  echo "Attempting to read version from built package..." >&2
+  
+  # Try to read from the built package's package.json
+  if [[ -f "${BINARY_DIR}\\resources\\app\\package.json" ]]; then
+    FALLBACK_VERSION=$( node -p "require('${BINARY_DIR}/resources/app/package.json').version" 2>/dev/null || echo "" )
+    if [[ -n "${FALLBACK_VERSION}" && "${FALLBACK_VERSION}" != "null" && "${FALLBACK_VERSION}" != "undefined" ]]; then
+      RELEASE_VERSION="${FALLBACK_VERSION}"
+      echo "Using fallback version from built package.json: ${RELEASE_VERSION}" >&2
+    else
+      echo "Error: Could not read version from built package.json" >&2
+      exit 1
+    fi
+  else
+    echo "Error: Built package.json not found at ${BINARY_DIR}\\resources\\app\\package.json" >&2
+    exit 1
+  fi
+fi
+
 # Transform version to MSI-compatible format
 MSI_VERSION=$(transformMsiVersion "${RELEASE_VERSION}")
 
+# Validate MSI_VERSION is not empty
+if [[ -z "${MSI_VERSION}" ]]; then
+  echo "Error: MSI_VERSION is empty after transformation. RELEASE_VERSION was: '${RELEASE_VERSION}'" >&2
+  exit 1
+fi
+
 "${WIX}bin\\heat.exe" dir "${BINARY_DIR}" -out "Files-${OUTPUT_BASE_FILENAME}.wxs" -t vscodium.xsl -gg -sfrag -scom -sreg -srd -ke -cg "AppFiles" -var var.ManufacturerName -var var.AppName -var var.AppCodeName -var var.ProductVersion -var var.IconDir -var var.LicenseDir -var var.BinaryDir -dr APPLICATIONFOLDER -platform "${PLATFORM}"
-"${WIX}bin\\candle.exe" -arch "${PLATFORM}" vscodium.wxs "Files-${OUTPUT_BASE_FILENAME}.wxs" -ext WixUIExtension -ext WixUtilExtension -ext WixNetFxExtension -dManufacturerName="Void" -dAppCodeName="${PRODUCT_CODE}" -dAppName="${PRODUCT_NAME}" -dProductVersion="${MSI_VERSION}" -dProductId="${PRODUCT_ID}" -dBinaryDir="${BINARY_DIR}" -dIconDir="${ICON_DIR}" -dLicenseDir="${LICENSE_DIR}" -dSetupResourcesDir="${SETUP_RESOURCES_DIR}" -dCulture="${CULTURE}" -dExeFileId="${EXE_FILE_ID}"
+# Set manufacturer name - use CortexIDE instead of Void
+MANUFACTURER_NAME="CortexIDE"
+
+"${WIX}bin\\candle.exe" -arch "${PLATFORM}" vscodium.wxs "Files-${OUTPUT_BASE_FILENAME}.wxs" -ext WixUIExtension -ext WixUtilExtension -ext WixNetFxExtension -dManufacturerName="${MANUFACTURER_NAME}" -dAppCodeName="${PRODUCT_CODE}" -dAppName="${PRODUCT_NAME}" -dProductVersion="${MSI_VERSION}" -dProductId="${PRODUCT_ID}" -dBinaryDir="${BINARY_DIR}" -dIconDir="${ICON_DIR}" -dLicenseDir="${LICENSE_DIR}" -dSetupResourcesDir="${SETUP_RESOURCES_DIR}" -dCulture="${CULTURE}" -dExeFileId="${EXE_FILE_ID}"
 "${WIX}bin\\light.exe" vscodium.wixobj "Files-${OUTPUT_BASE_FILENAME}.wixobj" -ext WixUIExtension -ext WixUtilExtension -ext WixNetFxExtension -spdb -cc "${TEMP}\\vscodium-cab-cache\\${PLATFORM}" -out "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.msi" -loc "i18n\\vscodium.${CULTURE}.wxl" -cultures:"${CULTURE}" -sice:ICE60 -sice:ICE69
 
 BuildSetupTranslationTransform de-de 1031

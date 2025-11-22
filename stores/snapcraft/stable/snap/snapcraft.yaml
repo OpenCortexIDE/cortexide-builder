@@ -1,8 +1,8 @@
-name: codium
-adopt-info: codium
-summary: Code editing. Redefined.
+name: cortexide
+adopt-info: cortexide
+summary: CortexIDE. Code editing with AI-first workflows.
 description: |
-  Binary releases of Visual Studio Code without branding/telemetry/licensing
+  CortexIDE is an AI-powered code editor built on VS Code technology
 
 base: core20
 grade: stable
@@ -10,12 +10,12 @@ confinement: classic
 compression: lzo
 
 parts:
-  codium:
+  cortexide:
     plugin: nil
     override-build: |
       set -eu
       # Get .deb url
-      wget --quiet https://api.github.com/repos/VSCodium/vscodium/releases -O latest.json
+      wget --quiet https://api.github.com/repos/OpenCortexIDE/cortexide-binaries/releases -O latest.json
       VERSION=$( jq -r 'sort_by(.tag_name)|last.tag_name' latest.json )
       DEB_URL=$( jq -r 'map(select(.tag_name == "'"${VERSION}"'"))|first.assets[].browser_download_url|select(endswith("'"_${SNAPCRAFT_TARGET_ARCH}.deb"'"))' latest.json )
       DEB_NAME=$( basename "${DEB_URL}" )
@@ -30,12 +30,12 @@ parts:
       snapcraftctl set-version "${VERSION}"
       # Prepare GUI
       mkdir -p "${SNAPCRAFT_PART_INSTALL}/meta/gui"
-      cp "${SNAPCRAFT_PART_INSTALL}/usr/share/codium/resources/app/resources/linux/code.png" "${SNAPCRAFT_PART_INSTALL}/meta/gui/codium.png"
+      cp "${SNAPCRAFT_PART_INSTALL}/usr/share/cortexide/resources/app/resources/linux/code.png" "${SNAPCRAFT_PART_INSTALL}/meta/gui/cortexide.png"
       # Update paths
-      sed -i 's|Exec=/usr/share/codium/codium|Exec=codium --force-user-env|g' "${SNAPCRAFT_PART_INSTALL}/usr/share/applications/codium.desktop"
-      sed -i 's|Exec=/usr/share/codium/codium|Exec=codium --force-user-env|g' "${SNAPCRAFT_PART_INSTALL}/usr/share/applications/codium-url-handler.desktop"
-      sed -i 's|Icon=vscodium|Icon=${SNAP}/meta/gui/codium.png|g' "${SNAPCRAFT_PART_INSTALL}/usr/share/applications/codium.desktop"
-      sed -i 's|Icon=vscodium|Icon=${SNAP}/meta/gui/codium.png|g' "${SNAPCRAFT_PART_INSTALL}/usr/share/applications/codium-url-handler.desktop"
+      sed -i 's|Exec=/usr/share/cortexide/cortexide|Exec=cortexide --force-user-env|g' "${SNAPCRAFT_PART_INSTALL}/usr/share/applications/cortexide.desktop"
+      sed -i 's|Exec=/usr/share/cortexide/cortexide|Exec=cortexide --force-user-env|g' "${SNAPCRAFT_PART_INSTALL}/usr/share/applications/cortexide-url-handler.desktop"
+      sed -i 's|Icon=cortexide|Icon=${SNAP}/meta/gui/cortexide.png|g' "${SNAPCRAFT_PART_INSTALL}/usr/share/applications/cortexide.desktop"
+      sed -i 's|Icon=cortexide|Icon=${SNAP}/meta/gui/cortexide.png|g' "${SNAPCRAFT_PART_INSTALL}/usr/share/applications/cortexide-url-handler.desktop"
     build-packages:
       - wget
       - jq
@@ -75,7 +75,7 @@ parts:
       - -usr/share/icons
       - -usr/share/lintian
       - -usr/share/man
-      - -usr/share/codium/chrome-sandbox
+      - -usr/share/cortexide/chrome-sandbox
     build-attributes:
       - enable-patchelf
     override-prime: |
@@ -88,16 +88,16 @@ parts:
 
   electron-launch:
     after:
-      - codium
+      - cortexide
     plugin: dump
     source: snap/local/bin
 
 apps:
-  codium:
-    command: electron-launch $SNAP/usr/share/codium/bin/codium --no-sandbox
-    desktop: usr/share/applications/codium.desktop
-    common-id: codium.desktop
+  cortexide:
+    command: electron-launch $SNAP/usr/share/cortexide/bin/cortexide --no-sandbox
+    desktop: usr/share/applications/cortexide.desktop
+    common-id: cortexide.desktop
 
   url-handler:
-    command: electron-launch $SNAP/usr/share/codium/bin/codium --open-url --no-sandbox
-    desktop: usr/share/applications/codium-url-handler.desktop
+    command: electron-launch $SNAP/usr/share/cortexide/bin/cortexide --open-url --no-sandbox
+    desktop: usr/share/applications/cortexide-url-handler.desktop

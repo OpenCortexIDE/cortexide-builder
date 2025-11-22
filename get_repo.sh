@@ -46,8 +46,19 @@ if [[ -d "${CORTEXIDE_REPO}" && -f "${CORTEXIDE_REPO}/package.json" ]]; then
   cd vscode || { echo "'vscode' dir not found"; exit 1; }
   
   # Get version info from local repo
-  MS_TAG=$( jq -r '.version' "package.json" )
+  MS_TAG=$( jq -r '.version' "package.json" 2>/dev/null || echo "" )
   MS_COMMIT=$( git rev-parse HEAD 2>/dev/null || echo "local" )
+  
+  # CRITICAL: Validate MS_TAG is not empty
+  if [[ -z "${MS_TAG}" || "${MS_TAG}" == "null" ]]; then
+    echo "Error: Could not read version from package.json. MS_TAG is empty." >&2
+    echo "package.json path: $(pwd)/package.json" >&2
+    if [[ -f "package.json" ]]; then
+      echo "package.json contents:" >&2
+      cat package.json | head -20 >&2
+    fi
+    exit 1
+  fi
   
   # Check for CortexIDE version fields (cortexVersion/cortexRelease) or fallback to voidVersion/voidRelease
   if jq -e '.cortexVersion' product.json > /dev/null 2>&1; then
@@ -70,6 +81,12 @@ if [[ -d "${CORTEXIDE_REPO}" && -f "${CORTEXIDE_REPO}/package.json" ]]; then
     RELEASE_VERSION="${MS_TAG}${CORTEX_RELEASE}"
   else
     RELEASE_VERSION="${MS_TAG}0000"
+  fi
+  
+  # CRITICAL: Validate RELEASE_VERSION is not empty
+  if [[ -z "${RELEASE_VERSION}" ]]; then
+    echo "Error: RELEASE_VERSION is empty. MS_TAG='${MS_TAG}', CORTEX_RELEASE='${CORTEX_RELEASE}'" >&2
+    exit 1
   fi
 else
   # Fallback to cloning from GitHub (for CI or if local repo not found)
@@ -103,8 +120,19 @@ else
     git checkout FETCH_HEAD
   fi
   
-  MS_TAG=$( jq -r '.version' "package.json" )
+  MS_TAG=$( jq -r '.version' "package.json" 2>/dev/null || echo "" )
   MS_COMMIT=$CORTEXIDE_BRANCH
+  
+  # CRITICAL: Validate MS_TAG is not empty
+  if [[ -z "${MS_TAG}" || "${MS_TAG}" == "null" ]]; then
+    echo "Error: Could not read version from package.json. MS_TAG is empty." >&2
+    echo "package.json path: $(pwd)/package.json" >&2
+    if [[ -f "package.json" ]]; then
+      echo "package.json contents:" >&2
+      cat package.json | head -20 >&2
+    fi
+    exit 1
+  fi
   
   # Check for CortexIDE version fields or fallback
   if jq -e '.cortexVersion' product.json > /dev/null 2>&1; then
@@ -127,6 +155,12 @@ else
     RELEASE_VERSION="${MS_TAG}${CORTEX_RELEASE}"
   else
     RELEASE_VERSION="${MS_TAG}0000"
+  fi
+  
+  # CRITICAL: Validate RELEASE_VERSION is not empty
+  if [[ -z "${RELEASE_VERSION}" ]]; then
+    echo "Error: RELEASE_VERSION is empty. MS_TAG='${MS_TAG}', CORTEX_RELEASE='${CORTEX_RELEASE}'" >&2
+    exit 1
   fi
 fi
 

@@ -37,6 +37,7 @@ env:
   APP_NAME: CortexIDE
   ASSETS_REPOSITORY: ${{ github.repository_owner }}/cortexide-binaries
   BINARY_NAME: cortexide
+  GITHUB_BRANCH: ${{ github.ref }}
   GH_REPO_PATH: ${{ github.repository_owner }}/cortexide-binaries
   ORG_NAME: ${{ github.repository_owner }}
   OS_NAME: windows
@@ -47,11 +48,11 @@ jobs:
   check:
     runs-on: ubuntu-latest
     outputs:
-      MS_COMMIT: ${{ env.MS_COMMIT }}
-      MS_TAG: ${{ env.MS_TAG }}
-      RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
-      SHOULD_BUILD: ${{ env.SHOULD_BUILD }}
-      SHOULD_DEPLOY: ${{ env.SHOULD_DEPLOY }}
+      MS_COMMIT: ${{ steps.export-check-env.outputs.ms_commit }}
+      MS_TAG: ${{ steps.export-check-env.outputs.ms_tag }}
+      RELEASE_VERSION: ${{ steps.export-check-env.outputs.release_version }}
+      SHOULD_BUILD: ${{ steps.export-check-env.outputs.should_build }}
+      SHOULD_DEPLOY: ${{ steps.export-check-env.outputs.should_deploy }}
 
     steps:
       - uses: actions/checkout@v4
@@ -80,6 +81,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CHECK_ALL: 'yes'
         run: ./check_tags.sh
+
+      - name: Export check results
+        id: export-check-env
+        run: |
+          {
+            echo "ms_commit=${MS_COMMIT:-}";
+            echo "ms_tag=${MS_TAG:-}";
+            echo "release_version=${RELEASE_VERSION:-}";
+            echo "should_build=${SHOULD_BUILD:-}";
+            echo "should_deploy=${SHOULD_DEPLOY:-}";
+          } >> "$GITHUB_OUTPUT"
 
   compile:
     needs:

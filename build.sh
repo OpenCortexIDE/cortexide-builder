@@ -1431,6 +1431,34 @@ EOFPATCH2
 
     find "../VSCode-darwin-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
 
+    # CRITICAL: Verify workbench.html exists in the built app to prevent blank screen
+    echo "Verifying critical files in macOS app bundle..."
+    APP_BUNDLE="../VSCode-darwin-${VSCODE_ARCH}/${APP_NAME}.app"
+    WORKBENCH_HTML="${APP_BUNDLE}/Contents/Resources/app/out/vs/code/electron-browser/workbench/workbench.html"
+    MAIN_JS="${APP_BUNDLE}/Contents/Resources/app/out/main.js"
+    
+    if [[ ! -f "${WORKBENCH_HTML}" ]]; then
+      echo "ERROR: workbench.html is missing from app bundle!" >&2
+      echo "  Expected at: ${WORKBENCH_HTML}" >&2
+      echo "  This will cause a blank screen. Checking if file exists in out-build..." >&2
+      if [[ -f "out-build/vs/code/electron-browser/workbench/workbench.html" ]]; then
+        echo "  workbench.html exists in out-build but wasn't copied to app bundle!" >&2
+        echo "  This indicates a packaging issue in gulpfile.vscode.js" >&2
+      else
+        echo "  workbench.html is also missing from out-build!" >&2
+        echo "  The minify-vscode task may have failed silently." >&2
+      fi
+      exit 1
+    fi
+    
+    if [[ ! -f "${MAIN_JS}" ]]; then
+      echo "ERROR: main.js is missing from app bundle!" >&2
+      echo "  Expected at: ${MAIN_JS}" >&2
+      exit 1
+    fi
+    
+    echo "✓ Critical files verified in app bundle"
+
     if ! . ../build_cli.sh; then
       echo "Error: CLI build failed for macOS. Check for:" >&2
       echo "  - Rust/Cargo compilation errors" >&2
@@ -1571,6 +1599,34 @@ APPXFIX
         exit 1
       fi
 
+      # CRITICAL: Verify workbench.html exists in the built Windows package to prevent blank screen
+      echo "Verifying critical files in Windows package..."
+      WIN_PACKAGE="../VSCode-win32-${VSCODE_ARCH}"
+      WORKBENCH_HTML="${WIN_PACKAGE}/resources/app/out/vs/code/electron-browser/workbench/workbench.html"
+      MAIN_JS="${WIN_PACKAGE}/resources/app/out/main.js"
+      
+      if [[ ! -f "${WORKBENCH_HTML}" ]]; then
+        echo "ERROR: workbench.html is missing from Windows package!" >&2
+        echo "  Expected at: ${WORKBENCH_HTML}" >&2
+        echo "  This will cause a blank screen. Checking if file exists in out-build..." >&2
+        if [[ -f "out-build/vs/code/electron-browser/workbench/workbench.html" ]]; then
+          echo "  workbench.html exists in out-build but wasn't copied to package!" >&2
+          echo "  This indicates a packaging issue in gulpfile.vscode.js" >&2
+        else
+          echo "  workbench.html is also missing from out-build!" >&2
+          echo "  The minify-vscode task may have failed silently." >&2
+        fi
+        exit 1
+      fi
+      
+      if [[ ! -f "${MAIN_JS}" ]]; then
+        echo "ERROR: main.js is missing from Windows package!" >&2
+        echo "  Expected at: ${MAIN_JS}" >&2
+        exit 1
+      fi
+      
+      echo "✓ Critical files verified in Windows package"
+
       if [[ "${VSCODE_ARCH}" != "x64" ]]; then
         SHOULD_BUILD_REH="no"
         SHOULD_BUILD_REH_WEB="no"
@@ -1602,6 +1658,34 @@ APPXFIX
       fi
 
       find "../VSCode-linux-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
+
+      # CRITICAL: Verify workbench.html exists in the built Linux package to prevent blank screen
+      echo "Verifying critical files in Linux package..."
+      LINUX_PACKAGE="../VSCode-linux-${VSCODE_ARCH}"
+      WORKBENCH_HTML="${LINUX_PACKAGE}/resources/app/out/vs/code/electron-browser/workbench/workbench.html"
+      MAIN_JS="${LINUX_PACKAGE}/resources/app/out/main.js"
+      
+      if [[ ! -f "${WORKBENCH_HTML}" ]]; then
+        echo "ERROR: workbench.html is missing from Linux package!" >&2
+        echo "  Expected at: ${WORKBENCH_HTML}" >&2
+        echo "  This will cause a blank screen. Checking if file exists in out-build..." >&2
+        if [[ -f "out-build/vs/code/electron-browser/workbench/workbench.html" ]]; then
+          echo "  workbench.html exists in out-build but wasn't copied to package!" >&2
+          echo "  This indicates a packaging issue in gulpfile.vscode.js" >&2
+        else
+          echo "  workbench.html is also missing from out-build!" >&2
+          echo "  The minify-vscode task may have failed silently." >&2
+        fi
+        exit 1
+      fi
+      
+      if [[ ! -f "${MAIN_JS}" ]]; then
+        echo "ERROR: main.js is missing from Linux package!" >&2
+        echo "  Expected at: ${MAIN_JS}" >&2
+        exit 1
+      fi
+      
+      echo "✓ Critical files verified in Linux package"
 
       if ! . ../build_cli.sh; then
         echo "Error: CLI build failed for Linux. Check for:" >&2

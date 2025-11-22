@@ -155,15 +155,19 @@ content = lines.join('\n');
 // Also patch fetchUrl to handle missing assets gracefully for remote sysroot
 // Some architectures (ppc64le, s390x) don't have -gcc-8.5.0 variants in releases
 if (!content.includes('// REMOTE_SYSROOT_FALLBACK')) {
-  // Find where the error is thrown and add fallback logic before it
-  const errorThrowPattern = /(throw\s+new\s+Error\([^)]*Could not find asset[^)]*\))/;
+  // Find where the error is thrown - it's in the fetchUrl function where asset is not found
+  // The asset variable is available, and we can check its name
+  const errorThrowPattern = /(if\s*\(\s*!asset\s*\)\s*\{[\s\S]*?throw\s+new\s+Error\([^)]*Could not find asset[^)]*\))/;
   if (errorThrowPattern.test(content)) {
     content = content.replace(errorThrowPattern, (match) => {
-      return `// REMOTE_SYSROOT_FALLBACK: If remote sysroot doesn't exist, try without gcc suffix or skip
-        if (expectedName && expectedName.includes('-gcc-') && process.env.VSCODE_SYSROOT_PREFIX && process.env.VSCODE_SYSROOT_PREFIX.includes('-gcc-')) {
-          console.error(\`Warning: Remote sysroot \${expectedName} not found, trying without gcc suffix...\`);
-          const fallbackName = expectedName.replace(/-gcc-[^-]+\.tar\.gz$/, '.tar.gz');
-          if (fallbackName !== expectedName) {
+      // Patch the if (!asset) block to add fallback logic
+      return match.replace(
+        /(if\s*\(\s*!asset\s*\)\s*\{)/,
+        `// REMOTE_SYSROOT_FALLBACK: If remote sysroot doesn't exist, try without gcc suffix or skip
+        if (!asset && options.name && options.name.includes('-gcc-') && process.env.VSCODE_SYSROOT_PREFIX && process.env.VSCODE_SYSROOT_PREFIX.includes('-gcc-')) {
+          console.error(\`Warning: Remote sysroot \${options.name} not found, trying without gcc suffix...\`);
+          const fallbackName = options.name.replace(/-gcc-[^-]+\.tar\.gz$/, '.tar.gz');
+          if (fallbackName !== options.name) {
             // Retry with fallback name
             const fallbackAsset = assets.find(a => a.name === fallbackName);
             if (fallbackAsset) {
@@ -171,10 +175,11 @@ if (!content.includes('// REMOTE_SYSROOT_FALLBACK')) {
             }
           }
           // If still not found, return null to skip remote sysroot (client sysroot will be used)
-          console.error(\`Warning: Remote sysroot not available for \${expectedName}, skipping. Client sysroot will be used.\`);
+          console.error(\`Warning: Remote sysroot not available for \${options.name}, skipping. Client sysroot will be used.\`);
           return null;
         }
-        ${match}`;
+        $1`
+      );
     });
     console.error('✓ Patched fetchUrl to handle missing remote sysroot assets gracefully');
   }
@@ -897,6 +902,22 @@ if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
     }
   }
   
+  // Strategy 6: Patch the actual URL construction in fetchUrls calls
+  if (!patched) {
+    // Find fetchUrls calls with nodeVersion and replace them
+    const fetchUrlsCallPattern = new RegExp(`(fetchUrls\\([^)]*['"]/v\\\\\\$\\\\{nodeVersion\\\\}/node-v\\\\\\$\\\\{nodeVersion\\\\}-[^}]+-${arch}[^}]+['"][^)]*\\))`, 'g');
+    if (fetchUrlsCallPattern.test(content)) {
+      content = content.replace(fetchUrlsCallPattern, (match) => {
+        patched = true;
+        // Replace all occurrences of ${nodeVersion} with the actual version
+        return match.replace(/\\\$\\{nodeVersion\\}/g, nodeVersion);
+      });
+      if (patched) {
+        console.error(`✓ Patched fetchUrls calls to use ${nodeVersion} for ${arch}`);
+      }
+    }
+  }
+  
   if (patched) {
     console.error(`✓ Patched Node.js version to use ${nodeVersion} for ${arch}`);
   } else {
@@ -929,7 +950,15 @@ if (match) {
       return `${indent}// DOCKER_BUFFER_FIX: Use file output instead of execSync to avoid ENOBUFS
 ${indent}const tmpFile = path.join(os.tmpdir(), \`node-\${nodeVersion}-\${arch}-\${Date.now()}\`);
 ${indent}try {
-${indent}	cp.execSync(\`docker run --rm \${dockerPlatform} \${imageName}:\${nodeVersion}-alpine /bin/sh -c 'cat \\\`which node\\\`' > \${tmpFile}\`, { stdio: 'inherit' });
+${indent}	// Use spawn with file redirection to avoid ENOBUFS
+${indent}	const { spawnSync } = require('child_process');
+${indent}	const dockerCmd = arch === 'arm64' && process.platform === 'linux' ? 
+${indent}		\`docker run --rm --platform linux/arm64 \${imageName || 'arm64v8/node'}:\${nodeVersion}-alpine /bin/sh -c 'cat \\\`which node\\\`'\` :
+${indent}		\`docker run --rm \${dockerPlatform || ''} \${imageName || 'node'}:\${nodeVersion}-alpine /bin/sh -c 'cat \\\`which node\\\`'\`;
+${indent}	const result = spawnSync('sh', ['-c', \`\${dockerCmd} > \${tmpFile}\`], { stdio: 'inherit' });
+${indent}	if (result.error || result.status !== 0) {
+${indent}		throw result.error || new Error(\`Docker command failed with status \${result.status}\`);
+${indent}	}
 ${indent}	const contents = fs.readFileSync(tmpFile);
 ${indent}	fs.unlinkSync(tmpFile);
 ${indent}	return es.readArray([new File({ path: 'node', contents, stat: { mode: parseInt('755', 8) } })]);

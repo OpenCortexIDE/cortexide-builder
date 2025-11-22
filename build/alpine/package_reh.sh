@@ -154,12 +154,20 @@ if (match || execSyncLine >= 0) {
     const line = lines[execSyncLine];
     const indent = line.match(/^\s*/)[0];
     
-    // Replace the line with file-based approach using shell redirection
+    // Replace the line with file-based approach using spawn instead of execSync
+    // For ARM64 on AMD64 host, we need to handle cross-platform differently
     lines[execSyncLine] = `${indent}// DOCKER_BUFFER_FIX: Use file output instead of execSync to avoid ENOBUFS
 ${indent}const tmpFile = path.join(os.tmpdir(), \`node-\${nodeVersion || 'unknown'}-\${arch || 'unknown'}-\${Date.now()}\`);
 ${indent}try {
-${indent}	// Use shell redirection to write directly to file, avoiding ENOBUFS
-${indent}	cp.execSync(\`docker run --rm \${dockerPlatform || ''} \${imageName || 'node'}:\${nodeVersion || 'unknown'}-alpine /bin/sh -c 'cat \\\`which node\\\`' > \${tmpFile}\`, { stdio: 'inherit' });
+${indent}	// Use spawn with file redirection to avoid ENOBUFS
+${indent}	const { spawnSync } = require('child_process');
+${indent}	const dockerCmd = arch === 'arm64' && process.platform === 'linux' ? 
+${indent}		\`docker run --rm --platform linux/arm64 \${imageName || 'arm64v8/node'}:\${nodeVersion || 'unknown'}-alpine /bin/sh -c 'cat \\\`which node\\\`'\` :
+${indent}		\`docker run --rm \${dockerPlatform || ''} \${imageName || 'node'}:\${nodeVersion || 'unknown'}-alpine /bin/sh -c 'cat \\\`which node\\\`'\`;
+${indent}	const result = spawnSync('sh', ['-c', \`\${dockerCmd} > \${tmpFile}\`], { stdio: 'inherit' });
+${indent}	if (result.error || result.status !== 0) {
+${indent}		throw result.error || new Error(\`Docker command failed with status \${result.status}\`);
+${indent}	}
 ${indent}	const contents = fs.readFileSync(tmpFile);
 ${indent}	fs.unlinkSync(tmpFile);
 ${indent}	return es.readArray([new File({ path: 'node', contents, stat: { mode: parseInt('755', 8) } })]);
@@ -187,8 +195,15 @@ ${indent}}`;
           return `${indent}// DOCKER_BUFFER_FIX: Use file output instead of execSync to avoid ENOBUFS
 ${indent}const tmpFile = path.join(os.tmpdir(), \`node-\${nodeVersion || 'unknown'}-\${arch || 'unknown'}-\${Date.now()}\`);
 ${indent}try {
-${indent}	// Use shell redirection to write directly to file, avoiding ENOBUFS
-${indent}	cp.execSync(\`docker run --rm \${dockerPlatform || ''} \${imageName || 'node'}:\${nodeVersion || 'unknown'}-alpine /bin/sh -c 'cat \\\`which node\\\`' > \${tmpFile}\`, { stdio: 'inherit' });
+${indent}	// Use spawn with file redirection to avoid ENOBUFS
+${indent}	const { spawnSync } = require('child_process');
+${indent}	const dockerCmd = arch === 'arm64' && process.platform === 'linux' ? 
+${indent}		\`docker run --rm --platform linux/arm64 \${imageName || 'arm64v8/node'}:\${nodeVersion || 'unknown'}-alpine /bin/sh -c 'cat \\\`which node\\\`'\` :
+${indent}		\`docker run --rm \${dockerPlatform || ''} \${imageName || 'node'}:\${nodeVersion || 'unknown'}-alpine /bin/sh -c 'cat \\\`which node\\\`'\`;
+${indent}	const result = spawnSync('sh', ['-c', \`\${dockerCmd} > \${tmpFile}\`], { stdio: 'inherit' });
+${indent}	if (result.error || result.status !== 0) {
+${indent}		throw result.error || new Error(\`Docker command failed with status \${result.status}\`);
+${indent}	}
 ${indent}	const contents = fs.readFileSync(tmpFile);
 ${indent}	fs.unlinkSync(tmpFile);
 ${indent}	return es.readArray([new File({ path: 'node', contents, stat: { mode: parseInt('755', 8) } })]);

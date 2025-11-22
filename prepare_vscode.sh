@@ -82,7 +82,8 @@ if [[ -d "../patches/${OS_NAME}/" ]]; then
           echo "CRITICAL: Window visibility patch failed. Applying script-based fix..." >&2
           if [[ -f "../patches/${OS_NAME}/apply-window-visibility-fix.sh" ]]; then
             chmod +x "../patches/${OS_NAME}/apply-window-visibility-fix.sh"
-            if "../patches/${OS_NAME}/apply-window-visibility-fix.sh" "src/vs/code/electron-main/window.ts"; then
+            # Let the script auto-detect the correct file path
+            if "../patches/${OS_NAME}/apply-window-visibility-fix.sh"; then
               echo "✓ Window visibility fix applied via script fallback" >&2
             else
               echo "ERROR: Script-based window visibility fix also failed!" >&2

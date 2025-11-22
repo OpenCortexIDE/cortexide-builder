@@ -698,21 +698,27 @@ elif [[ "${OS_NAME}" == "windows" ]]; then
 fi
 
 # Fix TypeScript errors in cortexideCommandBarService.ts
-# Simple direct fix using sed/perl - no complex scripts
+# Direct fix using perl - match exact patterns from the patch
 echo "Fixing TypeScript errors in cortexideCommandBarService.ts..." >&2
 if [[ -f "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" ]]; then
   echo "File found, applying direct fixes..." >&2
   
-  # Fix 1: Property type declaration - add | (() => void) union
-  # Use perl for multi-line matching (more reliable than sed)
-  if command -v perl >/dev/null 2>&1; then
-    perl -i.bak -0pe 's/(mountVoidCommandBar:\s*Promise<\s*\n\s*\t\t)(\(rootElement[^>]+)(>\s*\|\s*undefined)/$1($2) | (() => void)$3/s' \
-      "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 && echo "✓ Fixed property type declaration" >&2 || true
-  fi
+  # Fix 1: Property type declaration (line 9) - wrap in parentheses and add union
+  # Change: (rootElement: any, ...) => { ... } | undefined
+  # To:     ((rootElement: any, ...) => { ... } | undefined) | (() => void)
+  perl -i.bak -0pe 's/(\t\t)\(rootElement: any, accessor: any, props: any\) => \{ rerender: \(props2: any\) => void; dispose: \(\) => void; \} \| undefined/$1((rootElement: any, accessor: any, props: any) => { rerender: (props2: any) => void; dispose: () => void; } | undefined) | (() => void)/s' \
+    "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 && echo "✓ Fixed property type declaration" >&2 || echo "⚠ Property type fix may have failed or already applied" >&2
   
-  # Fix 2: Line 572 - add null check and await
-  perl -i.bak2 -0pe 's/(\s+)(mountVoidCommandBar\s*\(rootElement[^)]+\)\s*;)/$1if (this.mountVoidCommandBar) {\n$1\t(await this.mountVoidCommandBar)(rootElement, accessor, props);\n$1}/' \
-    "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 && echo "✓ Fixed function call at line 572" >&2 || true
+  # Fix 2: Any assignments that create Promise<...> types - update them too
+  # Look for patterns like: = ... as Promise<...> and update the type
+  perl -i.bak2 -0pe 's/(as\s+Promise<)\s*\(rootElement: any, accessor: any, props: any\) => \{ rerender: \(props2: any\) => void; dispose: \(\) => void; \} \| undefined(\s*>)/$1((rootElement: any, accessor: any, props: any) => { rerender: (props2: any) => void; dispose: () => void; } | undefined) | (() => void)$2/s' \
+    "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 && echo "✓ Fixed assignment types" >&2 || echo "⚠ Assignment type fix may have failed or not needed" >&2
+  
+  # Fix 3: Line 572 - add null check and await
+  # Change: mountVoidCommandBar(rootElement, accessor, props);
+  # To:     if (this.mountVoidCommandBar) { (await this.mountVoidCommandBar)(rootElement, accessor, props); }
+  perl -i.bak3 -0pe 's/(\t+)mountVoidCommandBar\(rootElement, accessor, props\);/$1if (this.mountVoidCommandBar) {\n$1\t(await this.mountVoidCommandBar)(rootElement, accessor, props);\n$1}/' \
+    "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 && echo "✓ Fixed function call at line 572" >&2 || echo "⚠ Function call fix may have failed or already applied" >&2
   
   echo "TypeScript fixes applied" >&2
 else

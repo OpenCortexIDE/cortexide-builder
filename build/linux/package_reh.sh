@@ -240,9 +240,20 @@ let content = fs.readFileSync(filePath, 'utf8');
 const arch = process.env.VSCODE_ARCH || '';
 
 // Checksums from architecture patches
+// Note: Remote sysroot uses gcc suffix, but may use same checksum or need separate entry
 const checksums = {
-  'ppc64le': 'fa8176d27be18bb0eeb7f55b0fa22255050b430ef68c29136599f02976eb0b1b  powerpc64le-linux-gnu-glibc-2.28.tar.gz',
-  's390x': '7055f3d40e7195fb1e13f0fbaf5ffadf781bddaca5fd5e0d9972f4157a203fb5  s390x-linux-gnu-glibc-2.28.tar.gz'
+  'ppc64le': [
+    'fa8176d27be18bb0eeb7f55b0fa22255050b430ef68c29136599f02976eb0b1b  powerpc64le-linux-gnu-glibc-2.28.tar.gz',
+    // Remote sysroot may use same checksum with gcc suffix - if different, add here
+    'fa8176d27be18bb0eeb7f55b0fa22255050b430ef68c29136599f02976eb0b1b  powerpc64le-linux-gnu-glibc-2.28-gcc-8.5.0.tar.gz',
+    'fa8176d27be18bb0eeb7f55b0fa22255050b430ef68c29136599f02976eb0b1b  powerpc64le-linux-gnu-glibc-2.28-gcc-10.5.0.tar.gz'
+  ],
+  's390x': [
+    '7055f3d40e7195fb1e13f0fbaf5ffadf781bddaca5fd5e0d9972f4157a203fb5  s390x-linux-gnu-glibc-2.28.tar.gz',
+    // Remote sysroot may use same checksum with gcc suffix
+    '7055f3d40e7195fb1e13f0fbaf5ffadf781bddaca5fd5e0d9972f4157a203fb5  s390x-linux-gnu-glibc-2.28-gcc-8.5.0.tar.gz',
+    '7055f3d40e7195fb1e13f0fbaf5ffadf781bddaca5fd5e0d9972f4157a203fb5  s390x-linux-gnu-glibc-2.28-gcc-10.5.0.tar.gz'
+  ]
 };
 
 if (!arch || !checksums[arch]) {
@@ -250,19 +261,27 @@ if (!arch || !checksums[arch]) {
   process.exit(0);
 }
 
-const checksum = checksums[arch];
-const filename = checksum.split(/\s+/)[1];
+const archChecksums = checksums[arch];
+let added = false;
 
-// Check if checksum already exists (check for filename, not exact match)
-if (content.includes(filename)) {
-  console.error(`Checksum for ${filename} already exists`);
-  process.exit(0);
+for (const checksum of archChecksums) {
+  const filename = checksum.split(/\s+/)[1];
+  
+  // Check if checksum already exists (check for filename)
+  if (!content.includes(filename)) {
+    // Add checksum at the end of the file
+    content = content.trim() + '\n' + checksum + '\n';
+    added = true;
+    console.error(`✓ Added checksum for ${filename}`);
+  }
 }
 
-// Add checksum at the end of the file
-content = content.trim() + '\n' + checksum + '\n';
-fs.writeFileSync(filePath, content, 'utf8');
-console.error(`✓ Successfully added checksum for ${arch}`);
+if (added) {
+  fs.writeFileSync(filePath, content, 'utf8');
+  console.error(`✓ Successfully added checksums for ${arch}`);
+} else {
+  console.error(`All checksums for ${arch} already exist`);
+}
 CHECKSUMFIX
     echo "Warning: Failed to add checksum for ${VSCODE_ARCH}, continuing anyway..." >&2
   }
@@ -750,43 +769,40 @@ const arch = process.env.VSCODE_ARCH || '';
 const nodeVersion = process.env.NODE_VERSION || '';
 
 // First, fix Node.js version for riscv64/loong64 if needed
-// The version is read from package.json at the top level, or passed to nodejs function
+// The nodejs function receives nodeVersion as a parameter, but it's read from package.json
+// We need to patch where nodeVersion is used in the function, or where the function is called
 if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
-  // Find where nodeVersion is read from package.json (could be at top level or in function)
-  // Pattern 1: const nodeVersion = require('../package.json').version;
-  // Pattern 2: const { version: nodeVersion } = require('../package.json');
-  // Pattern 3: nodeVersion from function parameter - need to patch the function call
   let patched = false;
   
-  // Try pattern 1
-  const pkgVersionPattern1 = /(const\s+nodeVersion\s*=\s*require\([^)]+package\.json[^)]+\)\.version;)/;
-  if (pkgVersionPattern1.test(content)) {
-    content = content.replace(pkgVersionPattern1, (match) => {
+  // Strategy 1: Patch the nodejs function to override nodeVersion at the start
+  // Look for: function nodejs(platform, arch) { ... and add version override
+  const nodejsFunctionStart = /(function\s+nodejs\s*\([^)]*platform[^)]*arch[^)]*\)\s*\{)/;
+  if (nodejsFunctionStart.test(content) && !content.includes('NODE_VERSION_FIX')) {
+    content = content.replace(nodejsFunctionStart, (match) => {
       patched = true;
-      return `const nodeVersion = (process.env.VSCODE_ARCH === '${arch}' && process.env.NODE_VERSION) ? process.env.NODE_VERSION : require('../package.json').version;`;
+      return `${match}\n\t// NODE_VERSION_FIX: Override nodeVersion for riscv64/loong64\n\tif (process.env.VSCODE_ARCH === '${arch}' && process.env.NODE_VERSION) {\n\t\tif (typeof nodeVersion === 'undefined' || nodeVersion === null) {\n\t\t\tnodeVersion = require('../package.json').version;\n\t\t}\n\t\t// Override with environment variable\n\t\tconst envNodeVersion = process.env.NODE_VERSION;\n\t\tif (envNodeVersion) {\n\t\t\tnodeVersion = envNodeVersion;\n\t\t}\n\t}`;
     });
   }
   
-  // Try pattern 2
+  // Strategy 2: Patch where nodejs is called to pass the correct version
+  // Look for: nodejs('linux', 'riscv64') or similar calls
   if (!patched) {
-    const pkgVersionPattern2 = /(const\s+\{\s*version:\s*nodeVersion\s*\}\s*=\s*require\([^)]+package\.json[^)]+\);)/;
-    if (pkgVersionPattern2.test(content)) {
-      content = content.replace(pkgVersionPattern2, (match) => {
-        patched = true;
-        return `const { version: defaultNodeVersion } = require('../package.json');\nconst nodeVersion = (process.env.VSCODE_ARCH === '${arch}' && process.env.NODE_VERSION) ? process.env.NODE_VERSION : defaultNodeVersion;`;
-      });
+    const nodejsCallPattern = new RegExp(`(nodejs\\s*\\([^)]*['"]${arch}['"][^)]*\\))`, 'g');
+    if (nodejsCallPattern.test(content)) {
+      // This is trickier - we'd need to inject the version into the call
+      // For now, rely on Strategy 1
+      console.error(`Found nodejs calls for ${arch}, but patching function start instead`);
     }
   }
   
-  // If still not patched, patch the nodejs function to override nodeVersion parameter
+  // Strategy 3: Patch at the top level where nodeVersion might be defined
   if (!patched) {
-    // Find the nodejs function and patch it to use NODE_VERSION env var for riscv64/loong64
-    const nodejsFunctionPattern = /(function\s+nodejs\s*\([^)]*\)\s*\{)/;
-    if (nodejsFunctionPattern.test(content)) {
-      content = content.replace(nodejsFunctionPattern, (match) => {
-        return `${match}\n\t// NODE_VERSION_FIX: Override nodeVersion for riscv64/loong64\n\tif (process.env.VSCODE_ARCH === '${arch}' && process.env.NODE_VERSION) {\n\t\tconst originalNodeVersion = nodeVersion || require('../package.json').version;\n\t\tnodeVersion = process.env.NODE_VERSION;\n\t}`;
+    const topLevelVersion = /(const\s+nodeVersion\s*=\s*require\([^)]+package\.json[^)]+\)\.version;)/;
+    if (topLevelVersion.test(content)) {
+      content = content.replace(topLevelVersion, (match) => {
+        patched = true;
+        return `const nodeVersion = (process.env.VSCODE_ARCH === '${arch}' && process.env.NODE_VERSION) ? process.env.NODE_VERSION : require('../package.json').version;`;
       });
-      patched = true;
     }
   }
   
@@ -794,6 +810,11 @@ if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
     console.error(`✓ Patched Node.js version to use ${nodeVersion} for ${arch}`);
   } else {
     console.error(`⚠ Could not find nodeVersion definition to patch for ${arch}`);
+    // Last resort: try to patch the fetchUrls call directly
+    const fetchUrlsPattern = new RegExp(`(/v\\$\\{nodeVersion\\}/node-v\\$\\{nodeVersion\\}-[^}]+-${arch}[^}]+)`, 'g');
+    if (fetchUrlsPattern.test(content)) {
+      console.error(`Found fetchUrls pattern for ${arch}, but nodeVersion override needed at function level`);
+    }
   }
 }
 

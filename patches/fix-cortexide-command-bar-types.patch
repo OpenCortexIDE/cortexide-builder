@@ -1,25 +1,26 @@
 diff --git a/src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts b/src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts
-index 0000000..1111111 100644
+index 9b18411..0101a1d 100644
 --- a/src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts
 +++ b/src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts
-@@ -29,9 +29,9 @@ export class CortexIDECommandBarService extends Disposable implements ICortexIDE
- 	private readonly _onDidChangeCommandBar = this._register(new Emitter<void>());
- 
- 	private mountVoidCommandBar: Promise<
--		(rootElement: any, accessor: any, props: any) => { rerender: (props2: any) => void; dispose: () => void; } | undefined
-+		((rootElement: any, accessor: any, props: any) => { rerender: (props2: any) => void; dispose: () => void; } | undefined) | (() => void)
- 	> | undefined;
- 
- 	constructor(
- 		@IInstantiationService private readonly instantiationService: IInstantiationService,
-@@ -566,9 +566,11 @@ export class CortexIDECommandBarService extends Disposable implements ICortexIDE
- 		if (!this.shouldShowCommandBar()) {
- 			return;
- 		}
- 
--		mountVoidCommandBar(rootElement, accessor, props);
-+		if (this.mountVoidCommandBar) {
-+			(await this.mountVoidCommandBar)(rootElement, accessor, props);
-+		}
+@@ -36,8 +36,8 @@ function getMountVoidCommandBar() {
+ 			.then(m => m.mountVoidCommandBar)
+ 			.catch(error => {
+ 				console.error('[CortexideCommandBar] Failed to load React component:', error);
+-				// Return a no-op function to prevent crashes
+-				return () => { /* no-op */ };
++				// Return a typed no-op mount function so downstream code can keep its narrow type
++				return (_rootElement: any, _accessor: any, _props: any) => undefined;
+ 			});
  	}
- }
+ 	return mountVoidCommandBarPromise;
+@@ -563,6 +563,10 @@ class AcceptRejectAllFloatingWidget extends Widget implements IOverlayWidget {
+ 		// Instead, get the mount function first, then call invokeFunction with a fresh accessor
+ 		(async () => {
+ 			const mountVoidCommandBar = await getMountVoidCommandBar();
++			if (!mountVoidCommandBar) {
++				console.warn('[CortexideCommandBar] mountVoidCommandBar was not resolved');
++				return;
++			}
+ 			const uri = editor.getModel()?.uri || null
+ 
+ 			// Get a fresh accessor for mountVoidCommandBar - this accessor will be valid

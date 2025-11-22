@@ -700,6 +700,7 @@ fi
 # Fix TypeScript errors in cortexideCommandBarService.ts
 echo "Fixing TypeScript errors in cortexideCommandBarService.ts..." >&2
 if [[ -f "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" ]]; then
+  echo "File found, running TypeScript fix script..." >&2
   # Use Node.js to fix the type declaration and function call
   node << 'TYPESCRIPT_FIX' 2>&1
 const fs = require('fs');
@@ -1014,9 +1015,46 @@ try {
 }
 console.error('=== TypeScript Fix Script Completed ===');
 TYPESCRIPT_FIX
-  if [[ $? -ne 0 ]]; then
-    echo "Warning: Failed to fix TypeScript errors in cortexideCommandBarService.ts" >&2
-    echo "This may cause compilation errors, but build will continue..." >&2
+  
+  if [[ $? -eq 0 ]]; then
+    echo "TypeScript fix script completed successfully" >&2
+  else
+    echo "Warning: TypeScript fix script failed" >&2
+    echo "Attempting direct sed-based fix as fallback..." >&2
+    
+    # Fallback: Use sed to directly fix the property declaration
+    # Pattern: mountVoidCommandBar: Promise<...> | undefined;
+    # Need to handle multi-line, so use a different approach
+    
+    # First, try to fix the property declaration using perl (more powerful than sed for multi-line)
+    if command -v perl >/dev/null 2>&1; then
+      echo "Using perl for multi-line property declaration fix..." >&2
+      perl -i.bak -0pe 's/(mountVoidCommandBar:\s*Promise<\s*)(\(rootElement[^>]+)(>\s*\|\s*undefined)/$1($2) | (() => void)$3/s' \
+        "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 || {
+        echo "Perl fix failed, trying simpler sed approach..." >&2
+        # Simpler sed approach - fix each line individually
+        sed -i.bak2 's/\(mountVoidCommandBar:\s*Promise<\)\s*\([^>]*rootElement[^>]*\)\(>\s*|\s*undefined\)/\1(\2) | (() => void)\3/' \
+          "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 || true
+      }
+    else
+      echo "Perl not available, using sed..." >&2
+      # Try sed with a simpler pattern
+      sed -i.bak 's/\(mountVoidCommandBar:\s*Promise<\)\s*\([^>]*rootElement[^>]*\)\(>\s*|\s*undefined\)/\1(\2) | (() => void)\3/' \
+        "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 || true
+    fi
+    
+    # Fix line 572 - add null check and await
+    echo "Fixing line 572 (function call)..." >&2
+    # Use perl for multi-line insertion if available
+    if command -v perl >/dev/null 2>&1; then
+      perl -i.bak3 -0pe 's/(\s+)(mountVoidCommandBar\s*\(rootElement[^)]+\)\s*;)/$1if (this.mountVoidCommandBar) {\n$1\t(await this.mountVoidCommandBar)(rootElement, accessor, props);\n$1}/' \
+        "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 || true
+    else
+      # Fallback to sed - this is trickier for multi-line
+      echo "Note: sed-based line 572 fix may not work for multi-line patterns" >&2
+    fi
+    
+    echo "Fallback fixes attempted. Build will continue..." >&2
   fi
 else
   echo "cortexideCommandBarService.ts not found, skipping TypeScript fix"

@@ -169,9 +169,46 @@ if [[ -z "${MSI_VERSION}" ]]; then
   exit 1
 fi
 
+# CRITICAL: Verify the executable file exists before running heat.exe
+EXE_FILE_PATH="${BINARY_DIR}\\bin\\${EXE_NAME}.exe"
+echo "Checking for executable at: ${EXE_FILE_PATH}" >&2
+if [[ ! -f "${EXE_FILE_PATH}" ]]; then
+  echo "Error: Executable file not found at ${EXE_FILE_PATH}" >&2
+  echo "Expected file: ${EXE_NAME}.exe" >&2
+  echo "Looking for alternative locations..." >&2
+  # Try to find the actual executable
+  FOUND_EXE=$(find "${BINARY_DIR}" -name "*.exe" -type f 2>/dev/null | grep -v "tunnel\|server" | head -1)
+  if [[ -n "${FOUND_EXE}" ]]; then
+    FOUND_EXE_NAME=$(basename "${FOUND_EXE}" .exe)
+    echo "Found executable: ${FOUND_EXE}" >&2
+    echo "Updating EXE_NAME from '${EXE_NAME}' to '${FOUND_EXE_NAME}'" >&2
+    EXE_NAME="${FOUND_EXE_NAME}"
+    EXE_FILE_ID="$( echo "${EXE_NAME}.exe" | tr '[:lower:]' '[:upper:]' )"
+    # Update the XSL file with the correct name
+    sed -i "s|@@EXE_NAME@@|${EXE_NAME}|g" .\\vscodium.xsl
+    sed -i "s|@@EXE_FILE_ID@@|${EXE_FILE_ID}|g" .\\vscodium.xsl
+  else
+    echo "Error: No executable file found in ${BINARY_DIR}" >&2
+    echo "Listing bin directory contents:" >&2
+    ls -la "${BINARY_DIR}\\bin" 2>&1 || echo "bin directory not found" >&2
+    exit 1
+  fi
+else
+  echo "✓ Executable found: ${EXE_FILE_PATH}" >&2
+fi
+
 "${WIX}bin\\heat.exe" dir "${BINARY_DIR}" -out "Files-${OUTPUT_BASE_FILENAME}.wxs" -t vscodium.xsl -gg -sfrag -scom -sreg -srd -ke -cg "AppFiles" -var var.ManufacturerName -var var.AppName -var var.AppCodeName -var var.ProductVersion -var var.IconDir -var var.LicenseDir -var var.BinaryDir -dr APPLICATIONFOLDER -platform "${PLATFORM}"
 # Set manufacturer name - use CortexIDE instead of Void
 MANUFACTURER_NAME="CortexIDE"
+
+# Verify the generated Files-*.wxs contains the executable file
+echo "Verifying generated Files-*.wxs contains executable..." >&2
+if ! grep -qi "File.*Id.*${EXE_FILE_ID}" "Files-${OUTPUT_BASE_FILENAME}.wxs" 2>/dev/null && ! grep -qi "File.*Id.*${EXE_NAME}.exe" "Files-${OUTPUT_BASE_FILENAME}.wxs" 2>/dev/null; then
+  echo "Warning: Executable file ID not found in generated Files-*.wxs" >&2
+  echo "Searching for executable references in generated file..." >&2
+  grep -i "\.exe" "Files-${OUTPUT_BASE_FILENAME}.wxs" | head -5 >&2 || echo "No .exe files found" >&2
+  echo "This may cause unresolved reference errors. Continuing anyway..." >&2
+fi
 
 "${WIX}bin\\candle.exe" -arch "${PLATFORM}" vscodium.wxs "Files-${OUTPUT_BASE_FILENAME}.wxs" -ext WixUIExtension -ext WixUtilExtension -ext WixNetFxExtension -dManufacturerName="${MANUFACTURER_NAME}" -dAppCodeName="${PRODUCT_CODE}" -dAppName="${PRODUCT_NAME}" -dProductVersion="${MSI_VERSION}" -dProductId="${PRODUCT_ID}" -dBinaryDir="${BINARY_DIR}" -dIconDir="${ICON_DIR}" -dLicenseDir="${LICENSE_DIR}" -dSetupResourcesDir="${SETUP_RESOURCES_DIR}" -dCulture="${CULTURE}" -dExeFileId="${EXE_FILE_ID}"
 "${WIX}bin\\light.exe" vscodium.wixobj "Files-${OUTPUT_BASE_FILENAME}.wixobj" -ext WixUIExtension -ext WixUtilExtension -ext WixNetFxExtension -spdb -cc "${TEMP}\\vscodium-cab-cache\\${PLATFORM}" -out "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.msi" -loc "i18n\\vscodium.${CULTURE}.wxl" -cultures:"${CULTURE}" -sice:ICE60 -sice:ICE69

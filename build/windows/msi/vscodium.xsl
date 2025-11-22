@@ -15,9 +15,12 @@
   <!-- heat.exe generates paths like $(var.BinaryDir)\bin\cortexide.exe -->
   <!-- After sed replacement, @@EXE_NAME@@ becomes the actual name (e.g., "cortexide") -->
   <!-- Match any .exe file in bin\ directory that matches the executable name -->
-  <!-- Use a simple pattern: contains both "bin" and "@@EXE_NAME@@.exe" -->
+  <!-- Use case-insensitive matching to handle different path formats -->
   <xsl:key name="vId1ToReplace" match="wi:Component[wi:File[
-    (contains(@Source,'bin') and contains(@Source,'@@EXE_NAME@@.exe') and not(contains(@Source,'-tunnel')) and not(contains(@Source,'-server')))
+    (contains(translate(@Source,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'bin') and 
+     contains(translate(@Source,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),translate('@@EXE_NAME@@.exe','ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')) and 
+     not(contains(translate(@Source,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'-tunnel')) and 
+     not(contains(translate(@Source,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'-server')))
   ]]" use="@Id"/>
   <xsl:template match="node()[key('vId1ToReplace', @Id)]">
     <xsl:copy>
@@ -27,7 +30,10 @@
     </xsl:copy>
   </xsl:template>
   <xsl:template match="wi:Component/wi:File[
-    (contains(@Source,'bin') and contains(@Source,'@@EXE_NAME@@.exe') and not(contains(@Source,'-tunnel')) and not(contains(@Source,'-server')))
+    (contains(translate(@Source,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'bin') and 
+     contains(translate(@Source,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),translate('@@EXE_NAME@@.exe','ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')) and 
+     not(contains(translate(@Source,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'-tunnel')) and 
+     not(contains(translate(@Source,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'-server')))
   ]">
      <xsl:copy>
         <xsl:attribute name="Id">@@EXE_FILE_ID@@</xsl:attribute>

@@ -200,8 +200,8 @@ ${indent}}`;
     content = lines.join('\n');
     console.error(`✓ Patched fetchUrl at line ${throwLineIndex + 1} to handle missing remote sysroot assets gracefully`);
     
-    // Also patch getVSCodeSysroot to handle null returns from fetchUrl
-    // Find where getVSCodeSysroot calls fetchUrl and add null check
+    // Also patch getVSCodeSysroot to handle null returns and errors from fetchUrl
+    // Find where getVSCodeSysroot calls fetchUrl and wrap it in try-catch
     let getVSCodeSysrootStart = -1;
     for (let i = 0; i < lines.length; i++) {
       if (lines[i].includes('async function getVSCodeSysroot') || lines[i].includes('function getVSCodeSysroot')) {
@@ -211,29 +211,50 @@ ${indent}}`;
     }
     
     if (getVSCodeSysrootStart >= 0) {
-      // Find where fetchUrl is called in getVSCodeSysroot
-      for (let i = getVSCodeSysrootStart; i < Math.min(getVSCodeSysrootStart + 100, lines.length); i++) {
-        if (lines[i].includes('fetchUrl') && lines[i].includes('await')) {
-          // Check if there's already a null check
-          if (!lines[i + 1] || !lines[i + 1].includes('if') || !lines[i + 1].includes('null')) {
+      // Find where fetchUrl is called in getVSCodeSysroot - look for remote sysroot download
+      for (let i = getVSCodeSysrootStart; i < Math.min(getVSCodeSysrootStart + 150, lines.length); i++) {
+        if (lines[i].includes('fetchUrl') && (lines[i].includes('await') || lines[i].includes('const url'))) {
+          // Check if this is the remote sysroot call (has VSCODE_SYSROOT_PREFIX or gcc in context)
+          const contextLines = lines.slice(Math.max(0, i - 5), Math.min(lines.length, i + 10)).join('\n');
+          if (contextLines.includes('VSCODE_SYSROOT_PREFIX') || contextLines.includes('gcc') || contextLines.includes('remote')) {
+            // Wrap the fetchUrl call in try-catch to handle errors gracefully
             const callIndent = lines[i].match(/^(\s*)/)[1] || '            ';
-            const nullCheckCode = `${callIndent}// Handle null return from fetchUrl (remote sysroot not available)
-${callIndent}const url = await fetchUrl(options);
-${callIndent}if (url === null) {
-${callIndent}  console.error('Remote sysroot not available, skipping download');
-${callIndent}  return; // Skip remote sysroot download
-${callIndent}}`;
-            // Replace the fetchUrl call line with null-checked version
             const originalLine = lines[i];
-            if (originalLine.includes('const url') || originalLine.includes('let url') || originalLine.includes('var url')) {
-              // Already has variable assignment, just add null check after
-              lines.splice(i + 1, 0, `${callIndent}if (url === null) {`, `${callIndent}  console.error('Remote sysroot not available, skipping download');`, `${callIndent}  return;`, `${callIndent}}`);
-            } else {
-              // Replace the line with null-checked version
-              lines[i] = nullCheckCode;
+            
+            // Find the end of the fetchUrl call (might span multiple lines)
+            let fetchUrlEnd = i;
+            for (let j = i; j < Math.min(i + 5, lines.length); j++) {
+              if (lines[j].includes(';') || (lines[j].includes(')') && !lines[j].includes('('))) {
+                fetchUrlEnd = j;
+                break;
+              }
             }
-            console.error(`✓ Patched getVSCodeSysroot to handle null returns from fetchUrl`);
-            break;
+            
+            // Check if already wrapped
+            if (!lines[Math.max(0, i - 1)].includes('// REMOTE_SYSROOT_ERROR_HANDLER')) {
+              const tryCatchWrapper = `${callIndent}// REMOTE_SYSROOT_ERROR_HANDLER: Wrap fetchUrl in try-catch for graceful failure
+${callIndent}try {
+${callIndent}  ${originalLine.trim()}
+${callIndent}  // Check for null return (remote sysroot not available)
+${callIndent}  ${lines[fetchUrlEnd].trim().startsWith('const') || lines[fetchUrlEnd].trim().startsWith('let') || lines[fetchUrlEnd].trim().startsWith('var') ? '' : 'const url = '}${lines.slice(i, fetchUrlEnd + 1).map(l => l.trim()).join(' ').replace(/^const url = |^let url = |^var url = /, '')};
+${callIndent}  if (url === null) {
+${callIndent}    console.error('Remote sysroot not available, skipping download');
+${callIndent}    return; // Skip remote sysroot download
+${callIndent}  }
+${callIndent}} catch (err) {
+${callIndent}  // If fetchUrl throws (asset not found), check if it's a remote sysroot and skip gracefully
+${callIndent}  if (err.message && err.message.includes('Could not find asset') && process.env.VSCODE_SYSROOT_PREFIX && process.env.VSCODE_SYSROOT_PREFIX.includes('-gcc-')) {
+${callIndent}    console.error('Warning: Remote sysroot not available, skipping. Client sysroot will be used.');
+${callIndent}    return; // Skip remote sysroot download
+${callIndent}  }
+${callIndent}  throw err; // Re-throw other errors
+${callIndent}}`;
+              
+              // Replace the fetchUrl call with wrapped version
+              lines.splice(i, fetchUrlEnd - i + 1, tryCatchWrapper);
+              console.error(`✓ Patched getVSCodeSysroot to handle errors from fetchUrl gracefully`);
+              break;
+            }
           }
         }
       }

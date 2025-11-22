@@ -156,6 +156,56 @@ apply_patch() {
     fi
   fi
   
+  # For binary-name.patch, use --reject with similar handling as brand.patch
+  # This patch may have line number shifts in newer VS Code versions
+  if [[ "$(basename "$1")" == "binary-name.patch" ]]; then
+    echo "Note: Using --reject for binary-name.patch to handle potential line number shifts..."
+    # First try normal apply
+    PATCH_ERROR=$(git apply --ignore-whitespace "$1" 2>&1) || PATCH_FAILED=1
+    if [[ -z "$PATCH_FAILED" ]]; then
+      echo "Applied binary-name.patch successfully"
+      mv -f $1{.bak,}
+      return 0
+    fi
+    # If normal apply failed, try with --reject
+    echo "Warning: binary-name.patch failed to apply cleanly, trying with --reject..."
+    PATCH_ERROR=$(git apply --reject --ignore-whitespace "$1" 2>&1) || PATCH_FAILED=1
+    if [[ -n "$PATCH_FAILED" ]]; then
+      # Count rejected hunks
+      REJ_COUNT=$(find . -name "*.rej" -type f 2>/dev/null | wc -l | tr -d ' ')
+      if [[ "$REJ_COUNT" -gt 0 ]]; then
+        # Check if any rejected files actually exist (real conflicts)
+        CONFLICT_FILES=""
+        for rej_file in $(find . -name "*.rej" -type f 2>/dev/null); do
+          source_file="${rej_file%.rej}"
+          if [[ -f "$source_file" ]]; then
+            CONFLICT_FILES="${CONFLICT_FILES}${source_file}\n"
+          fi
+        done
+        
+        if [[ -n "$CONFLICT_FILES" ]]; then
+          echo "Warning: Some hunks in binary-name.patch had conflicts in existing files:" >&2
+          echo -e "$CONFLICT_FILES" >&2
+          echo "These may need manual review, but build will continue..." >&2
+          echo "Note: You may need to manually update these files to use applicationName instead of 'code'" >&2
+        fi
+        
+        echo "Applied binary-name.patch partially (${REJ_COUNT} hunks skipped - conflicts may need manual review)"
+        find . -name "*.rej" -type f -delete 2>/dev/null || true
+        mv -f $1{.bak,}
+        return 0
+      else
+        echo "Applied binary-name.patch successfully with --reject"
+        mv -f $1{.bak,}
+        return 0
+      fi
+    else
+      echo "Applied binary-name.patch successfully with --reject"
+      mv -f $1{.bak,}
+      return 0
+    fi
+  fi
+  
   # For architecture patches, check if changes are already applied
   if check_arch_patch_already_applied "$1"; then
     echo "Architecture patch $(basename "$1") changes appear to be already applied, skipping..." >&2

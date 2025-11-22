@@ -708,89 +708,102 @@ const filePath = 'src/vs/workbench/contrib/cortexide/browser/cortexideCommandBar
 try {
   let content = fs.readFileSync(filePath, 'utf8');
   let modified = false;
-  const originalContent = content;
   
-  // Fix 1: Update type declaration to allow both return types
-  // Match the actual type declaration pattern more flexibly
-  // Look for: private mountVoidCommandBar: Promise<...>
-  const typeDeclarationRegex = /(private\s+mountVoidCommandBar:\s*Promise<)([^>]+)(>\s*\|\s*undefined;)/;
-  const typeMatch = content.match(typeDeclarationRegex);
+  // Debug: Show lines around the problematic areas
+  const lines = content.split('\n');
+  console.error('Line 35 area (type declaration):');
+  console.error(lines.slice(32, 40).map((l, i) => `${32 + i + 1}: ${l}`).join('\n'));
+  console.error('\nLine 572 area (function call):');
+  console.error(lines.slice(569, 575).map((l, i) => `${569 + i + 1}: ${l}`).join('\n'));
   
-  if (typeMatch) {
-    const currentType = typeMatch[2].trim();
-    // Check if it already has the void function union
-    if (!currentType.includes('| (() => void)') && !currentType.includes('(() => void)')) {
-      // Wrap the existing type and add void function union
-      const newType = `(${currentType}) | (() => void)`;
-      content = content.replace(typeDeclarationRegex, `$1${newType}$3`);
-      modified = true;
-      console.error('✓ Updated type declaration to include void function union');
-    }
-  } else {
-    // Try a simpler pattern - just find the Promise<...> part
-    const simpleTypeRegex = /(private\s+mountVoidCommandBar:\s*Promise<)([^>]+)(>)/;
-    const simpleMatch = content.match(simpleTypeRegex);
-    if (simpleMatch && !simpleMatch[2].includes('| (() => void)')) {
-      const currentType = simpleMatch[2].trim();
-      const newType = `(${currentType}) | (() => void)`;
-      content = content.replace(simpleTypeRegex, `$1${newType}$3`);
-      modified = true;
-      console.error('✓ Updated type declaration (simple pattern)');
-    }
+  // Fix 1: Update the type declaration - need to update BOTH the property declaration
+  // and any assignments to it. The error suggests there's a type mismatch in assignment.
+  
+  // First, update the property type declaration
+  const propertyTypeRegex = /(private\s+mountVoidCommandBar:\s*Promise<)([^>]+)(>\s*\|\s*undefined;?)/;
+  if (propertyTypeRegex.test(content)) {
+    content = content.replace(propertyTypeRegex, (match, p1, p2, p3) => {
+      const currentType = p2.trim();
+      if (!currentType.includes('| (() => void)') && !currentType.includes('(() => void)')) {
+        const newType = `(${currentType}) | (() => void)`;
+        modified = true;
+        console.error('✓ Updated property type declaration');
+        return p1 + newType + p3;
+      }
+      return match;
+    });
   }
   
-  // Fix 2: Add null check and await before calling mountVoidCommandBar
-  // Look for the function call around line 572
-  // Pattern: mountVoidCommandBar(rootElement, accessor, props);
-  // or: this.mountVoidCommandBar(rootElement, accessor, props);
+  // Also update any assignments to mountVoidCommandBar that have type annotations
+  // Look for: this.mountVoidCommandBar = ... Promise<...>
+  const assignmentTypeRegex = /(this\.mountVoidCommandBar\s*=\s*[^:]*:\s*Promise<)([^>]+)(>)/g;
+  content = content.replace(assignmentTypeRegex, (match, p1, p2, p3) => {
+    const currentType = p2.trim();
+    if (!currentType.includes('| (() => void)') && !currentType.includes('(() => void)')) {
+      const newType = `(${currentType}) | (() => void)`;
+      modified = true;
+      console.error('✓ Updated assignment type annotation');
+      return p1 + newType + p3;
+    }
+    return match;
+  });
   
-  // First, try to find the exact call pattern
-  const callPattern1 = /(\s+)(mountVoidCommandBar\s*\(rootElement,\s*accessor,\s*props\s*\)\s*;)/;
-  const callPattern2 = /(\s+)(this\.mountVoidCommandBar\s*\(rootElement,\s*accessor,\s*props\s*\)\s*;)/;
-  
-  if (callPattern1.test(content) || callPattern2.test(content)) {
-    // Check if there's already a null check
-    const hasNullCheck = content.includes('if (this.mountVoidCommandBar)') || 
-                         content.includes('if (mountVoidCommandBar)');
+  // Fix 2: Add null check and await before calling mountVoidCommandBar at line 572
+  // Look for the exact pattern around that line
+  const linesArray = content.split('\n');
+  for (let i = 0; i < linesArray.length; i++) {
+    const line = linesArray[i];
+    const lineNum = i + 1;
     
-    if (!hasNullCheck) {
-      // Replace the call with null check and await
-      if (callPattern2.test(content)) {
-        content = content.replace(
-          callPattern2,
-          '$1if (this.mountVoidCommandBar) {\n$1\t(await this.mountVoidCommandBar)(rootElement, accessor, props);\n$1}'
+    // Check if this is around line 572 and has the problematic call
+    if ((lineNum >= 570 && lineNum <= 575) && 
+        (line.includes('mountVoidCommandBar(rootElement') || 
+         line.includes('this.mountVoidCommandBar(rootElement'))) {
+      
+      // Check if already has null check
+      const hasNullCheck = (i > 0 && linesArray[i - 1].includes('if (this.mountVoidCommandBar)')) ||
+                           (i > 0 && linesArray[i - 1].includes('if (mountVoidCommandBar)'));
+      
+      if (!hasNullCheck) {
+        // Get indentation from current line
+        const indent = line.match(/^(\s*)/)[1];
+        const tab = indent.includes('\t') ? '\t' : '  ';
+        
+        // Replace the line with null check and await
+        if (line.includes('this.mountVoidCommandBar')) {
+          linesArray[i] = `${indent}if (this.mountVoidCommandBar) {\n${indent}${tab}(await this.mountVoidCommandBar)(rootElement, accessor, props);\n${indent}}`;
+        } else {
+          linesArray[i] = `${indent}if (this.mountVoidCommandBar) {\n${indent}${tab}(await this.mountVoidCommandBar)(rootElement, accessor, props);\n${indent}}`;
+        }
+        modified = true;
+        console.error(`✓ Added null check and await at line ${lineNum}`);
+        break;
+      } else if (!line.includes('await')) {
+        // Has null check but missing await
+        linesArray[i] = line.replace(
+          /(this\.mountVoidCommandBar|mountVoidCommandBar)\s*\(rootElement/,
+          '(await $1)(rootElement'
         );
         modified = true;
-        console.error('✓ Added null check and await for this.mountVoidCommandBar call');
-      } else if (callPattern1.test(content)) {
-        content = content.replace(
-          callPattern1,
-          '$1if (this.mountVoidCommandBar) {\n$1\t(await this.mountVoidCommandBar)(rootElement, accessor, props);\n$1}'
-        );
-        modified = true;
-        console.error('✓ Added null check and await for mountVoidCommandBar call');
-      }
-    } else {
-      // Has null check but might be missing await
-      if (content.includes('this.mountVoidCommandBar(rootElement') && 
-          !content.includes('await this.mountVoidCommandBar')) {
-        content = content.replace(
-          /(\s+if\s*\([^)]*mountVoidCommandBar[^)]*\)\s*\{[^}]*)(this\.mountVoidCommandBar\s*\(rootElement[^)]*\))/,
-          '$1(await $2)'
-        );
-        modified = true;
-        console.error('✓ Added await to existing null check');
+        console.error(`✓ Added await at line ${lineNum}`);
+        break;
       }
     }
   }
   
   if (modified) {
+    content = linesArray.join('\n');
     fs.writeFileSync(filePath, content, 'utf8');
     console.error('✓ Successfully fixed TypeScript errors in cortexideCommandBarService.ts');
   } else {
-    console.error('⚠ No changes made - file may already be fixed or patterns did not match');
-    console.error('File preview (first 100 lines):');
-    console.error(content.split('\n').slice(0, 100).join('\n'));
+    console.error('⚠ No changes made - checking if fixes are already applied...');
+    // Check current state
+    if (content.includes('| (() => void)')) {
+      console.error('✓ Type already includes void function union');
+    }
+    if (content.includes('if (this.mountVoidCommandBar)') && content.includes('await this.mountVoidCommandBar')) {
+      console.error('✓ Null check and await already present');
+    }
   }
 } catch (error) {
   console.error('Error fixing TypeScript file:', error.message);

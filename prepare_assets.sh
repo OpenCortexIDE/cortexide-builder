@@ -205,17 +205,75 @@ SIGNFIX
     fi
 
     echo "+ attach staple"
-    if ! xcrun stapler staple "${APP_BUNDLE}"; then
-      echo "Error: Failed to staple notarization ticket"
+    STAPLE_ATTEMPTS=0
+    MAX_STAPLE_ATTEMPTS=3
+    STAPLE_SUCCESS=false
+    
+    while [[ ${STAPLE_ATTEMPTS} -lt ${MAX_STAPLE_ATTEMPTS} ]]; do
+      if xcrun stapler staple "${APP_BUNDLE}" 2>&1; then
+        STAPLE_SUCCESS=true
+        break
+      else
+        STAPLE_ATTEMPTS=$((STAPLE_ATTEMPTS + 1))
+        if [[ ${STAPLE_ATTEMPTS} -lt ${MAX_STAPLE_ATTEMPTS} ]]; then
+          echo "Warning: Stapling attempt ${STAPLE_ATTEMPTS} failed, retrying in 5 seconds..." >&2
+          sleep 5
+        fi
+      fi
+    done
+    
+    if [[ "${STAPLE_SUCCESS}" != "true" ]]; then
+      echo "Error: Failed to staple notarization ticket after ${MAX_STAPLE_ATTEMPTS} attempts"
       exit 1
     fi
     
-    # Verify stapling succeeded
-    if ! xcrun stapler validate "${APP_BUNDLE}"; then
-      echo "Error: Stapling validation failed"
+    # Verify stapling succeeded - retry on network errors
+    echo "+ validating staple"
+    VALIDATE_ATTEMPTS=0
+    MAX_VALIDATE_ATTEMPTS=3
+    VALIDATE_SUCCESS=false
+    
+    while [[ ${VALIDATE_ATTEMPTS} -lt ${MAX_VALIDATE_ATTEMPTS} ]]; do
+      VALIDATE_OUTPUT=$(xcrun stapler validate "${APP_BUNDLE}" 2>&1)
+      VALIDATE_EXIT_CODE=$?
+      
+      if [[ ${VALIDATE_EXIT_CODE} -eq 0 ]]; then
+        VALIDATE_SUCCESS=true
+        break
+      else
+        # Check if it's a network error (Error 68 or network-related errors)
+        if echo "${VALIDATE_OUTPUT}" | grep -qiE "network connection|NSURLErrorDomain|Error 68|CloudKit|kCFErrorDomainCFNetwork"; then
+          VALIDATE_ATTEMPTS=$((VALIDATE_ATTEMPTS + 1))
+          if [[ ${VALIDATE_ATTEMPTS} -lt ${MAX_VALIDATE_ATTEMPTS} ]]; then
+            echo "Warning: Validation failed due to network error (attempt ${VALIDATE_ATTEMPTS}/${MAX_VALIDATE_ATTEMPTS}), retrying in 10 seconds..." >&2
+            echo "Error details: ${VALIDATE_OUTPUT}" >&2
+            sleep 10
+          else
+            echo "Warning: Validation failed after ${MAX_VALIDATE_ATTEMPTS} attempts due to network errors" >&2
+            echo "Notarization was successful, but validation could not complete due to network issues" >&2
+            echo "This is often a transient Apple CloudKit service issue" >&2
+            echo "The app should still work correctly since notarization succeeded" >&2
+            # Don't exit - notarization succeeded, validation failure is non-critical for network errors
+            VALIDATE_SUCCESS="network_error"
+            break
+          fi
+        else
+          # Non-network error - fail immediately
+          echo "Error: Stapling validation failed with non-network error" >&2
+          echo "Output: ${VALIDATE_OUTPUT}" >&2
+          exit 1
+        fi
+      fi
+    done
+    
+    if [[ "${VALIDATE_SUCCESS}" == "true" ]]; then
+      echo "✓ Stapling verified successfully"
+    elif [[ "${VALIDATE_SUCCESS}" == "network_error" ]]; then
+      echo "⚠ Stapling validation skipped due to network errors (notarization succeeded)" >&2
+    else
+      echo "Error: Stapling validation failed" >&2
       exit 1
     fi
-    echo "✓ Stapling verified successfully"
     
     # Final verification: check Gatekeeper assessment
     echo "+ final Gatekeeper verification"

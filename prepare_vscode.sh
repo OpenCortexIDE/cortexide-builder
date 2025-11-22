@@ -719,26 +719,75 @@ try {
   // Fix 1: Update the type declaration - need to update BOTH the property declaration
   // and any assignments to it. The error at line 35 suggests there's a type mismatch in assignment.
   
-  // First, update the property type declaration (with or without private)
-  const propertyTypeRegexes = [
-    /(private\s+mountVoidCommandBar:\s*Promise<)([^>]+)(>\s*\|\s*undefined;?)/,
-    /(mountVoidCommandBar:\s*Promise<)([^>]+)(>\s*\|\s*undefined;?)/
-  ];
+  // First, update the property type declaration (handle multi-line declarations)
+  // Look for: private mountVoidCommandBar: Promise<...> | undefined;
+  // The type might span multiple lines, so we need to find the start and end
   
-  propertyTypeRegexes.forEach((regex, idx) => {
-    if (regex.test(content)) {
-      content = content.replace(regex, (match, p1, p2, p3) => {
-        const currentType = p2.trim();
-        if (!currentType.includes('| (() => void)') && !currentType.includes('(() => void)')) {
-          const newType = `(${currentType}) | (() => void)`;
-          modified = true;
-          console.error(`✓ Updated property type declaration (pattern ${idx + 1})`);
-          return p1 + newType + p3;
-        }
-        return match;
-      });
+  // Find the property declaration line
+  let propDeclStart = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes('mountVoidCommandBar') && lines[i].includes('Promise<')) {
+      propDeclStart = i;
+      break;
     }
-  });
+  }
+  
+  if (propDeclStart >= 0) {
+    console.error(`Found property declaration at line ${propDeclStart + 1}`);
+    // Find where the type ends (look for > | undefined;)
+    let propDeclEnd = propDeclStart;
+    let foundClosing = false;
+    for (let i = propDeclStart; i < Math.min(propDeclStart + 10, lines.length); i++) {
+      if (lines[i].includes('>') && (lines[i].includes('undefined') || lines[i].includes(';'))) {
+        propDeclEnd = i;
+        foundClosing = true;
+        break;
+      }
+    }
+    
+    if (foundClosing) {
+      // Extract the full declaration
+      const declLines = [];
+      for (let i = propDeclStart; i <= propDeclEnd; i++) {
+        declLines.push(lines[i]);
+      }
+      const fullDecl = declLines.join('\n');
+      console.error(`Full declaration (lines ${propDeclStart + 1}-${propDeclEnd + 1}):`);
+      console.error(fullDecl);
+      
+      // Check if it already has the union type
+      if (!fullDecl.includes('| (() => void)') && !fullDecl.includes('(() => void)')) {
+        // Find the Promise<...> part and update it
+        // Pattern: Promise<...content...> where content might span lines
+        const updatedDecl = fullDecl.replace(
+          /(Promise<\s*)([^>]+)(\s*>)/s,
+          (match, p1, p2, p3) => {
+            const currentType = p2.trim();
+            // Only update if it's the mount function type (has rootElement, rerender, etc.)
+            if (currentType.includes('rootElement') || currentType.includes('rerender') || currentType.includes('dispose')) {
+              const newType = `(${currentType}) | (() => void)`;
+              modified = true;
+              console.error('✓ Updated property type declaration');
+              return p1 + newType + p3;
+            }
+            return match;
+          }
+        );
+        
+        if (updatedDecl !== fullDecl) {
+          // Split back into lines and update
+          const updatedLines = updatedDecl.split('\n');
+          for (let i = 0; i < updatedLines.length && (propDeclStart + i) < lines.length; i++) {
+            lines[propDeclStart + i] = updatedLines[i];
+          }
+          console.error(`  Before: ${fullDecl.replace(/\n/g, '\\n')}`);
+          console.error(`  After:  ${updatedDecl.replace(/\n/g, '\\n')}`);
+        }
+      } else {
+        console.error('✓ Property type already includes void function union');
+      }
+    }
+  }
   
   // Find and update assignments - look for patterns like:
   // this.mountVoidCommandBar = ... as Promise<...>
@@ -785,18 +834,25 @@ try {
     // If we found an assignment, check all lines from assignmentStart to line 35
     if (assignmentStart >= 0) {
       let assignmentLines = [];
-      for (let i = assignmentStart; i <= 34 && i < lines.length; i++) {
+      // Find where the assignment ends (look for semicolon or closing brace)
+      let assignmentEnd = 34;
+      for (let i = assignmentStart; i < Math.min(assignmentStart + 20, lines.length); i++) {
         assignmentLines.push(lines[i]);
+        if (lines[i].includes(';') || (lines[i].includes('}') && i > assignmentStart)) {
+          assignmentEnd = i;
+          break;
+        }
       }
       const assignmentText = assignmentLines.join('\n');
-      console.error(`Found assignment starting at line ${assignmentStart + 1}:`);
+      console.error(`Found assignment starting at line ${assignmentStart + 1}, ending at ${assignmentEnd + 1}:`);
       console.error(assignmentText);
       
       // Look for Promise<...> type in the assignment that doesn't include the union
+      // Use /s flag to match across newlines
       if (assignmentText.includes('Promise<') && !assignmentText.includes('| (() => void)')) {
-        // Update the assignment - need to handle multi-line
+        // Update the assignment - need to handle multi-line with /s flag
         const updatedAssignment = assignmentText.replace(
-          /(Promise<)([^>]+)(>)/g,
+          /(Promise<\s*)([^>]+)(\s*>)/s,
           (match, p1, p2, p3) => {
             const typeContent = p2.trim();
             // Only update if it's the mount function type pattern

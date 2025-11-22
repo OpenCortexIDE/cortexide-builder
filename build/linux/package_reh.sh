@@ -155,40 +155,32 @@ content = lines.join('\n');
 // Also patch fetchUrl to handle missing assets gracefully for remote sysroot
 // Some architectures (ppc64le, s390x) don't have -gcc-8.5.0 variants in releases
 if (!content.includes('// REMOTE_SYSROOT_FALLBACK')) {
-  // Find the if (!asset) block and patch it to add fallback logic
-  // The throw uses template literals, so we need to match that format
-  const ifNotAssetPattern = /(\s+)(if\s*\(\s*!asset\s*\)\s*\{[\s\S]*?throw\s+new\s+Error\([^)]*Could not find asset[^)]*\)[\s\S]*?\})/;
-  if (ifNotAssetPattern.test(content)) {
-    content = content.replace(ifNotAssetPattern, (match, indent, ifBlock) => {
-      // Replace the if (!asset) block with one that includes fallback logic
-      return `${indent}// REMOTE_SYSROOT_FALLBACK: If remote sysroot doesn't exist, try without gcc suffix or skip
-${indent}if (!asset) {
-${indent}  // Check if this is a remote sysroot with gcc suffix that might not exist
-${indent}  if (options && options.name && options.name.includes('-gcc-') && process.env.VSCODE_SYSROOT_PREFIX && process.env.VSCODE_SYSROOT_PREFIX.includes('-gcc-')) {
-${indent}    console.error(\`Warning: Remote sysroot \${options.name} not found, trying without gcc suffix...\`);
-${indent}    const fallbackName = options.name.replace(/-gcc-[^-]+\.tar\.gz$/, '.tar.gz');
-${indent}    if (fallbackName !== options.name) {
-${indent}      // Retry with fallback name
-${indent}      const fallbackAsset = assets.find(a => a.name === fallbackName);
-${indent}      if (fallbackAsset) {
-${indent}        return fallbackAsset.browser_download_url;
-${indent}      }
-${indent}    }
-${indent}    // If still not found, return null to skip remote sysroot (client sysroot will be used)
-${indent}    console.error(\`Warning: Remote sysroot not available for \${options.name}, skipping. Client sysroot will be used.\`);
-${indent}    return null;
-${indent}  }
-${indent}  // Original error for non-remote sysroot cases
-${indent}  throw new Error(\`Could not find asset in release of \${repository} @ \${actualVersion}\`);
-${indent}}`;
-    });
-    console.error('✓ Patched fetchUrl to handle missing remote sysroot assets gracefully');
-  } else {
-    // Fallback: try to patch just the throw statement
-    const throwPattern = /(\s+)(throw\s+new\s+Error\([^)]*Could not find asset[^)]*\))/;
-    if (throwPattern.test(content)) {
-      content = content.replace(throwPattern, (match, indent, throwStmt) => {
-        return `${indent}// REMOTE_SYSROOT_FALLBACK: If remote sysroot doesn't exist, try without gcc suffix or skip
+  // Use line-based approach for more reliable patching
+  const lines = content.split('\n');
+  let throwLineIndex = -1;
+  
+  // Find the throw statement line
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes('throw new Error') && lines[i].includes('Could not find asset')) {
+      throwLineIndex = i;
+      break;
+    }
+  }
+  
+  if (throwLineIndex >= 0) {
+    // Find the if (!asset) block start
+    let ifLineIndex = -1;
+    for (let i = throwLineIndex; i >= Math.max(0, throwLineIndex - 20); i--) {
+      if (lines[i].includes('if') && lines[i].includes('!asset')) {
+        ifLineIndex = i;
+        break;
+      }
+    }
+    
+    if (ifLineIndex >= 0) {
+      const indent = lines[throwLineIndex].match(/^(\s*)/)[1] || '                ';
+      // Insert fallback logic before the throw
+      const fallbackCode = `${indent}// REMOTE_SYSROOT_FALLBACK: If remote sysroot doesn't exist, try without gcc suffix or skip
 ${indent}if (!asset && options && options.name && options.name.includes('-gcc-') && process.env.VSCODE_SYSROOT_PREFIX && process.env.VSCODE_SYSROOT_PREFIX.includes('-gcc-')) {
 ${indent}  console.error(\`Warning: Remote sysroot \${options.name} not found, trying without gcc suffix...\`);
 ${indent}  const fallbackName = options.name.replace(/-gcc-[^-]+\.tar\.gz$/, '.tar.gz');
@@ -200,10 +192,30 @@ ${indent}    }
 ${indent}  }
 ${indent}  console.error(\`Warning: Remote sysroot not available for \${options.name}, skipping. Client sysroot will be used.\`);
 ${indent}  return null;
-${indent}}
-${indent}${throwStmt}`;
-      });
-      console.error('✓ Patched fetchUrl throw statement to handle missing remote sysroot assets gracefully');
+${indent}}`;
+      
+      lines.splice(throwLineIndex, 0, fallbackCode);
+      content = lines.join('\n');
+      console.error('✓ Patched fetchUrl to handle missing remote sysroot assets gracefully (line-based)');
+    } else {
+      // Fallback: just patch before the throw line
+      const indent = lines[throwLineIndex].match(/^(\s*)/)[1] || '                ';
+      const fallbackCode = `${indent}// REMOTE_SYSROOT_FALLBACK: If remote sysroot doesn't exist, try without gcc suffix or skip
+${indent}if (!asset && options && options.name && options.name.includes('-gcc-') && process.env.VSCODE_SYSROOT_PREFIX && process.env.VSCODE_SYSROOT_PREFIX.includes('-gcc-')) {
+${indent}  console.error(\`Warning: Remote sysroot \${options.name} not found, trying without gcc suffix...\`);
+${indent}  const fallbackName = options.name.replace(/-gcc-[^-]+\.tar\.gz$/, '.tar.gz');
+${indent}  if (fallbackName !== options.name) {
+${indent}    const fallbackAsset = assets.find(a => a.name === fallbackName);
+${indent}    if (fallbackAsset) {
+${indent}      return fallbackAsset.browser_download_url;
+${indent}    }
+${indent}  }
+${indent}  console.error(\`Warning: Remote sysroot not available for \${options.name}, skipping. Client sysroot will be used.\`);
+${indent}  return null;
+${indent}}`;
+      lines.splice(throwLineIndex, 0, fallbackCode);
+      content = lines.join('\n');
+      console.error('✓ Patched fetchUrl throw statement to handle missing remote sysroot assets gracefully (line-based fallback)');
     }
   }
 }

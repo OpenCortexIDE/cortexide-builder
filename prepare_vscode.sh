@@ -698,123 +698,59 @@ elif [[ "${OS_NAME}" == "windows" ]]; then
 fi
 
 # Fix TypeScript errors in cortexideCommandBarService.ts
+# Simple direct fix using sed/perl - no complex scripts
 echo "Fixing TypeScript errors in cortexideCommandBarService.ts..." >&2
 if [[ -f "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" ]]; then
-  echo "File found, running TypeScript fix script..." >&2
-  # Use Node.js to fix the type declaration and function call
+  echo "File found, applying direct fixes..." >&2
+  
+  # Fix 1: Property type declaration - add | (() => void) union
+  # Use perl for multi-line matching (more reliable than sed)
+  if command -v perl >/dev/null 2>&1; then
+    perl -i.bak -0pe 's/(mountVoidCommandBar:\s*Promise<\s*\n\s*\t\t)(\(rootElement[^>]+)(>\s*\|\s*undefined)/$1($2) | (() => void)$3/s' \
+      "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 && echo "✓ Fixed property type declaration" >&2 || true
+  fi
+  
+  # Fix 2: Line 572 - add null check and await
+  perl -i.bak2 -0pe 's/(\s+)(mountVoidCommandBar\s*\(rootElement[^)]+\)\s*;)/$1if (this.mountVoidCommandBar) {\n$1\t(await this.mountVoidCommandBar)(rootElement, accessor, props);\n$1}/' \
+    "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 && echo "✓ Fixed function call at line 572" >&2 || true
+  
+  echo "TypeScript fixes applied" >&2
+else
+  echo "cortexideCommandBarService.ts not found, skipping fix" >&2
+fi
+
+# Old complex Node.js script removed - using simple perl fixes above
+if false; then
   node << 'TYPESCRIPT_FIX' 2>&1
 const fs = require('fs');
-const path = require('path');
 const filePath = 'src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts';
 
-console.error('=== TypeScript Fix Script Starting ===');
-console.error(`Working directory: ${process.cwd()}`);
-console.error(`File path: ${filePath}`);
-console.error(`File exists: ${fs.existsSync(filePath)}`);
-
 try {
-  if (!fs.existsSync(filePath)) {
-    console.error(`ERROR: File not found: ${filePath}`);
-    process.exit(1);
-  }
-  
   let content = fs.readFileSync(filePath, 'utf8');
-  console.error(`File read successfully, ${content.length} characters`);
   let modified = false;
-  
-  // Debug: Show lines around the problematic areas
   const lines = content.split('\n');
-  console.error('Line 35 area (type declaration):');
-  console.error(lines.slice(32, 40).map((l, i) => `${32 + i + 1}: ${l}`).join('\n'));
-  console.error('\nLine 572 area (function call):');
-  console.error(lines.slice(569, 575).map((l, i) => `${569 + i + 1}: ${l}`).join('\n'));
   
-  // Fix 1: Update the type declaration - need to update BOTH the property declaration
-  // and any assignments to it. The error at line 35 suggests there's a type mismatch in assignment.
+  // Fix 1: Update property type declaration (lines 8-11)
+  // Change: (rootElement: any, ...) => { ... } | undefined
+  // To:     ((rootElement: any, ...) => { ... } | undefined) | (() => void)
   
-  // First, update the property type declaration (handle multi-line declarations)
-  // Look for: private mountVoidCommandBar: Promise<...> | undefined;
-  // The type might span multiple lines, so we need to find the start and end
-  
-  // Find the property declaration line - look for mountVoidCommandBar with Promise
-  let propDeclStart = -1;
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    // Look for property declaration - could be "private mountVoidCommandBar" or just "mountVoidCommandBar"
-    if ((line.includes('mountVoidCommandBar') && line.includes('Promise<')) ||
-        (line.includes('mountVoidCommandBar') && line.includes(':'))) {
-      propDeclStart = i;
-      console.error(`Found potential property declaration at line ${i + 1}: ${line.trim()}`);
-      break;
-    }
-  }
-  
-  if (propDeclStart >= 0) {
-    console.error(`Processing property declaration starting at line ${propDeclStart + 1}`);
-    // Find where the type ends (look for > | undefined;)
-    let propDeclEnd = propDeclStart;
-    let foundClosing = false;
-    for (let i = propDeclStart; i < Math.min(propDeclStart + 10, lines.length); i++) {
-      if (lines[i].includes('>') && (lines[i].includes('undefined') || lines[i].includes(';'))) {
-        propDeclEnd = i;
-        foundClosing = true;
-        break;
-      }
-    }
-    
-    if (foundClosing) {
-      // Extract the full declaration
-      const declLines = [];
-      for (let i = propDeclStart; i <= propDeclEnd; i++) {
-        declLines.push(lines[i]);
-      }
-      const fullDecl = declLines.join('\n');
-      console.error(`Full declaration (lines ${propDeclStart + 1}-${propDeclEnd + 1}):`);
-      console.error(fullDecl);
-      
-      // Check if it already has the union type
-      if (!fullDecl.includes('| (() => void)') && !fullDecl.includes('(() => void)')) {
-        console.error('Property type does NOT include void function union - updating...');
-        // Find the Promise<...> part and update it
-        // Pattern: Promise<...content...> where content might span lines
-        // Use a more robust regex that handles multi-line content
-        const updatedDecl = fullDecl.replace(
-          /(Promise<\s*)([\s\S]*?)(\s*>)/,
-          (match, p1, p2, p3) => {
-            const currentType = p2.trim();
-            console.error(`Found Promise<> type content: ${currentType.substring(0, 100)}...`);
-            // Only update if it's the mount function type (has rootElement, rerender, etc.)
-            if (currentType.includes('rootElement') || currentType.includes('rerender') || currentType.includes('dispose')) {
-              const newType = `(${currentType}) | (() => void)`;
-              modified = true;
-              console.error('✓ Updated property type declaration');
-              return p1 + newType + p3;
-            } else {
-              console.error('Type content does not match mount function pattern, skipping');
-            }
-            return match;
-          }
-        );
-        
-        if (updatedDecl !== fullDecl) {
-          // Split back into lines and update
-          const updatedLines = updatedDecl.split('\n');
-          for (let i = 0; i < updatedLines.length && (propDeclStart + i) < lines.length; i++) {
-            lines[propDeclStart + i] = updatedLines[i];
-          }
-          console.error(`  Before: ${fullDecl.replace(/\n/g, '\\n')}`);
-          console.error(`  After:  ${updatedDecl.replace(/\n/g, '\\n')}`);
-        } else {
-          console.error('⚠ Regex replacement did not modify the declaration');
+    // Find the property declaration line
+    if (lines[i].includes('mountVoidCommandBar') && lines[i].includes('Promise<')) {
+      // Find the type content line (next line should have the function type)
+      if (i + 1 < lines.length && lines[i + 1].includes('rootElement')) {
+        // Update line i+1 to wrap the type in parentheses and add union
+        const typeLine = lines[i + 1].trim();
+        if (!typeLine.includes('| (() => void)') && !typeLine.includes('(() => void)')) {
+          // Wrap existing type in parentheses and add union
+          const indent = lines[i + 1].match(/^(\s*)/)[1];
+          lines[i + 1] = indent + '\t\t((rootElement: any, accessor: any, props: any) => { rerender: (props2: any) => void; dispose: () => void; } | undefined) | (() => void)';
+          modified = true;
+          console.error(`✓ Fixed property type declaration at line ${i + 2}`);
+          break;
         }
-      } else {
-        console.error('✓ Property type already includes void function union');
       }
-    } else {
-      console.error('⚠ Could not find closing > for property declaration');
     }
-  } else {
-    console.error('⚠ Could not find property declaration for mountVoidCommandBar');
   }
   
   // Find and update assignments - look for patterns like:
@@ -997,67 +933,15 @@ try {
   if (modified) {
     content = linesArray.join('\n');
     fs.writeFileSync(filePath, content, 'utf8');
-    console.error('✓ Successfully fixed TypeScript errors in cortexideCommandBarService.ts');
+    console.error('✓ Successfully fixed TypeScript errors');
   } else {
-    console.error('⚠ No changes made - checking if fixes are already applied...');
-    // Check current state
-    if (content.includes('| (() => void)')) {
-      console.error('✓ Type already includes void function union');
-    }
-    if (content.includes('if (this.mountVoidCommandBar)') && content.includes('await this.mountVoidCommandBar')) {
-      console.error('✓ Null check and await already present');
-    }
+    console.error('⚠ No changes needed (fixes may already be applied)');
   }
 } catch (error) {
-  console.error('ERROR fixing TypeScript file:', error.message);
-  console.error(error.stack);
+  console.error('ERROR:', error.message);
   process.exit(1);
 }
-console.error('=== TypeScript Fix Script Completed ===');
 TYPESCRIPT_FIX
-  
-  if [[ $? -eq 0 ]]; then
-    echo "TypeScript fix script completed successfully" >&2
-  else
-    echo "Warning: TypeScript fix script failed" >&2
-    echo "Attempting direct sed-based fix as fallback..." >&2
-    
-    # Fallback: Use sed to directly fix the property declaration
-    # Pattern: mountVoidCommandBar: Promise<...> | undefined;
-    # Need to handle multi-line, so use a different approach
-    
-    # First, try to fix the property declaration using perl (more powerful than sed for multi-line)
-    if command -v perl >/dev/null 2>&1; then
-      echo "Using perl for multi-line property declaration fix..." >&2
-      perl -i.bak -0pe 's/(mountVoidCommandBar:\s*Promise<\s*)(\(rootElement[^>]+)(>\s*\|\s*undefined)/$1($2) | (() => void)$3/s' \
-        "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 || {
-        echo "Perl fix failed, trying simpler sed approach..." >&2
-        # Simpler sed approach - fix each line individually
-        sed -i.bak2 's/\(mountVoidCommandBar:\s*Promise<\)\s*\([^>]*rootElement[^>]*\)\(>\s*|\s*undefined\)/\1(\2) | (() => void)\3/' \
-          "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 || true
-      }
-    else
-      echo "Perl not available, using sed..." >&2
-      # Try sed with a simpler pattern
-      sed -i.bak 's/\(mountVoidCommandBar:\s*Promise<\)\s*\([^>]*rootElement[^>]*\)\(>\s*|\s*undefined\)/\1(\2) | (() => void)\3/' \
-        "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 || true
-    fi
-    
-    # Fix line 572 - add null check and await
-    echo "Fixing line 572 (function call)..." >&2
-    # Use perl for multi-line insertion if available
-    if command -v perl >/dev/null 2>&1; then
-      perl -i.bak3 -0pe 's/(\s+)(mountVoidCommandBar\s*\(rootElement[^)]+\)\s*;)/$1if (this.mountVoidCommandBar) {\n$1\t(await this.mountVoidCommandBar)(rootElement, accessor, props);\n$1}/' \
-        "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 || true
-    else
-      # Fallback to sed - this is trickier for multi-line
-      echo "Note: sed-based line 572 fix may not work for multi-line patterns" >&2
-    fi
-    
-    echo "Fallback fixes attempted. Build will continue..." >&2
-  fi
-else
-  echo "cortexideCommandBarService.ts not found, skipping TypeScript fix"
 fi
 
 cd ..

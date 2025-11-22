@@ -11,10 +11,16 @@
     </xsl:copy>
   </xsl:template>
 
-  <!-- CRITICAL FIX: Use @@EXE_NAME@@ instead of @@PRODUCT_NAME@@ for executable file search -->
-  <!-- The actual executable is named based on applicationName (e.g., "cortexide.exe"), -->
-  <!-- not PRODUCT_NAME (which may have spaces like "CortexIDE - Insiders") -->
-  <xsl:key name="vId1ToReplace" match="wi:Component[wi:File[contains(@Source,'@@EXE_NAME@@.exe') or contains(@Source,'@@PRODUCT_NAME@@.exe')]]" use="@Id"/>
+  <!-- CRITICAL FIX: Match the actual executable file in bin\ directory -->
+  <!-- heat.exe generates paths like $(var.BinaryDir)\bin\cortexide.exe -->
+  <!-- After sed replacement, @@EXE_NAME@@ becomes the actual name (e.g., "cortexide") -->
+  <!-- Match patterns: \bin\@@EXE_NAME@@.exe, bin\@@EXE_NAME@@.exe, or any .exe in bin\ that's not tunnel/server -->
+  <!-- Use multiple patterns to handle different path formats heat.exe might generate -->
+  <xsl:key name="vId1ToReplace" match="wi:Component[wi:File[
+    (contains(@Source,'\bin\@@EXE_NAME@@.exe') or contains(@Source,'bin\@@EXE_NAME@@.exe') or contains(@Source,'/bin/@@EXE_NAME@@.exe'))
+    or (contains(@Source,'\bin\@@PRODUCT_NAME@@.exe') or contains(@Source,'bin\@@PRODUCT_NAME@@.exe') or contains(@Source,'/bin/@@PRODUCT_NAME@@.exe'))
+    or ((contains(@Source,'\bin\') or contains(@Source,'bin\') or contains(@Source,'/bin/')) and contains(@Source,'.exe') and not(contains(@Source,'-tunnel')) and not(contains(@Source,'-server')) and not(contains(@Source,'\resources\')) and not(contains(@Source,'\tools\')) and not(contains(@Source,'\locales\')))
+  ]]" use="@Id"/>
   <xsl:template match="node()[key('vId1ToReplace', @Id)]">
     <xsl:copy>
       <xsl:attribute name="Id">@@EXE_FILE_ID@@</xsl:attribute>
@@ -22,7 +28,11 @@
       <xsl:apply-templates />
     </xsl:copy>
   </xsl:template>
-  <xsl:template match="wi:Component/wi:File[contains(@Source,'@@EXE_NAME@@.exe') or contains(@Source,'@@PRODUCT_NAME@@.exe')]">
+  <xsl:template match="wi:Component/wi:File[
+    (contains(@Source,'\bin\@@EXE_NAME@@.exe') or contains(@Source,'bin\@@EXE_NAME@@.exe') or contains(@Source,'/bin/@@EXE_NAME@@.exe'))
+    or (contains(@Source,'\bin\@@PRODUCT_NAME@@.exe') or contains(@Source,'bin\@@PRODUCT_NAME@@.exe') or contains(@Source,'/bin/@@PRODUCT_NAME@@.exe'))
+    or ((contains(@Source,'\bin\') or contains(@Source,'bin\') or contains(@Source,'/bin/')) and contains(@Source,'.exe') and not(contains(@Source,'-tunnel')) and not(contains(@Source,'-server')) and not(contains(@Source,'\resources\')) and not(contains(@Source,'\tools\')) and not(contains(@Source,'\locales\')))
+  ]">
      <xsl:copy>
         <xsl:attribute name="Id">@@EXE_FILE_ID@@</xsl:attribute>
         <xsl:copy-of select="@*[name()!='Id']"/>

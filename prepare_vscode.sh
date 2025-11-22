@@ -528,10 +528,6 @@ setpath_json() {
 # product.json
 cp product.json{,.bak}
 
-# CRITICAL: Override extensionsGallery to use Open VSX instead of Microsoft Marketplace
-# Microsoft prohibits usage of their marketplace by other products
-setpath_json "product" "extensionsGallery" '{"serviceUrl": "https://open-vsx.org/vscode/gallery", "itemUrl": "https://open-vsx.org/vscode/item"}'
-
 setpath "product" "checksumFailMoreInfoUrl" "https://cortexide.com"
 setpath "product" "documentationUrl" "https://cortexide.com"
 setpath "product" "introductoryVideosUrl" "https://cortexide.com"
@@ -595,8 +591,14 @@ else
   # CortexIDE product.json already has these AppIds set
 fi
 
+# Merge CortexIDE product.json (this may override some settings, so we re-apply critical overrides after)
 jsonTmp=$( jq -s '.[0] * .[1]' product.json ../product.json )
 echo "${jsonTmp}" > product.json && unset jsonTmp
+
+# CRITICAL: Override extensionsGallery AFTER merge to ensure Open VSX is used
+# CortexIDE product.json has Microsoft Marketplace URLs that must be overridden
+# Microsoft prohibits usage of their marketplace by other products
+setpath_json "product" "extensionsGallery" '{"serviceUrl": "https://open-vsx.org/vscode/gallery", "itemUrl": "https://open-vsx.org/vscode/item"}'
 
 cat product.json
 

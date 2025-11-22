@@ -1082,7 +1082,8 @@
       <Directory Id="ProgramMenuFolder">
         <Directory Id="$(var.AppCodeName)ProgramMenuFolder" Name="$(var.AppName)">
           <Component Id="StartMenuShortcut" Guid="*">
-            <Shortcut Id="$(var.AppCodeName)StartMenuShortcut" Advertise="no" Name="$(var.AppName)" Directory="$(var.AppCodeName)ProgramMenuFolder" Target="[APPLICATIONFOLDER]$(var.AppName).exe" WorkingDirectory="APPLICATIONFOLDER" />
+            <!-- CRITICAL FIX: Use ExeFileId instead of AppName.exe - AppName has spaces, executable doesn't -->
+            <Shortcut Id="$(var.AppCodeName)StartMenuShortcut" Advertise="no" Name="$(var.AppName)" Directory="$(var.AppCodeName)ProgramMenuFolder" Target="[#$(var.ExeFileId)]" WorkingDirectory="APPLICATIONFOLDER" />
             <RemoveFolder Id="$(var.AppCodeName)ProgramMenuFolder" On="uninstall" />
             <RegistryValue Root="HKCU" Key="Software\$(var.ProductManufacturerShort)\$(var.AppName)\Components" Name="StartMenuShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
           </Component>
@@ -1090,7 +1091,8 @@
       </Directory>
       <Directory Id="DesktopFolder">
         <Component Id="DesktopShortcut" Guid="*">
-          <Shortcut Id="$(var.AppCodeName)DesktopShortcut" Advertise="no" Name="$(var.AppName)" Directory="DesktopFolder" Target="[APPLICATIONFOLDER]$(var.AppName).exe" WorkingDirectory="APPLICATIONFOLDER" />
+          <!-- CRITICAL FIX: Use ExeFileId instead of AppName.exe - AppName has spaces, executable doesn't -->
+          <Shortcut Id="$(var.AppCodeName)DesktopShortcut" Advertise="no" Name="$(var.AppName)" Directory="DesktopFolder" Target="[#$(var.ExeFileId)]" WorkingDirectory="APPLICATIONFOLDER" />
           <RegistryValue Root="HKCU" Key="Software\$(var.ProductManufacturerShort)\$(var.AppName)\Components" Name="DesktopShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
         </Component>
       </Directory>

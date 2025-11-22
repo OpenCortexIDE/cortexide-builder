@@ -719,20 +719,26 @@ try {
   // Fix 1: Update the type declaration - need to update BOTH the property declaration
   // and any assignments to it. The error at line 35 suggests there's a type mismatch in assignment.
   
-  // First, update the property type declaration
-  const propertyTypeRegex = /(private\s+mountVoidCommandBar:\s*Promise<)([^>]+)(>\s*\|\s*undefined;?)/;
-  if (propertyTypeRegex.test(content)) {
-    content = content.replace(propertyTypeRegex, (match, p1, p2, p3) => {
-      const currentType = p2.trim();
-      if (!currentType.includes('| (() => void)') && !currentType.includes('(() => void)')) {
-        const newType = `(${currentType}) | (() => void)`;
-        modified = true;
-        console.error('✓ Updated property type declaration');
-        return p1 + newType + p3;
-      }
-      return match;
-    });
-  }
+  // First, update the property type declaration (with or without private)
+  const propertyTypeRegexes = [
+    /(private\s+mountVoidCommandBar:\s*Promise<)([^>]+)(>\s*\|\s*undefined;?)/,
+    /(mountVoidCommandBar:\s*Promise<)([^>]+)(>\s*\|\s*undefined;?)/
+  ];
+  
+  propertyTypeRegexes.forEach((regex, idx) => {
+    if (regex.test(content)) {
+      content = content.replace(regex, (match, p1, p2, p3) => {
+        const currentType = p2.trim();
+        if (!currentType.includes('| (() => void)') && !currentType.includes('(() => void)')) {
+          const newType = `(${currentType}) | (() => void)`;
+          modified = true;
+          console.error(`✓ Updated property type declaration (pattern ${idx + 1})`);
+          return p1 + newType + p3;
+        }
+        return match;
+      });
+    }
+  });
   
   // Find and update assignments - look for patterns like:
   // this.mountVoidCommandBar = ... as Promise<...>
@@ -762,46 +768,69 @@ try {
   
   // Also check line 35 specifically - the error is at line 35, so there might be an assignment there
   // The error suggests the property type was updated but an assignment still has the old type
+  // Need to check multi-line assignments too
   if (lines.length >= 35) {
     const line35 = lines[34]; // 0-indexed
     console.error(`Line 35 content: ${line35}`);
     
-    // Look for any Promise<...> type on this line that doesn't include the union
-    if (line35.includes('Promise<') && !line35.includes('| (() => void)')) {
-      // Update any Promise<...> types on this line
-      const updatedLine = line35.replace(
-        /(Promise<)([^>]+)(>)/g,
-        (match, p1, p2, p3) => {
-          const typeContent = p2.trim();
-          // Skip if it's a complex nested type that already includes the union somewhere
-          if (!typeContent.includes('| (() => void)') && !typeContent.includes('(() => void)')) {
-            // Check if this is the mount function type pattern
-            if (typeContent.includes('rootElement') || typeContent.includes('rerender')) {
-              return p1 + '(' + typeContent + ') | (() => void)' + p3;
-            }
-          }
-          return match;
-        }
-      );
-      if (updatedLine !== line35) {
-        lines[34] = updatedLine;
-        modified = true;
-        console.error('✓ Fixed type at line 35');
-        console.error(`  Before: ${line35.trim()}`);
-        console.error(`  After:  ${updatedLine.trim()}`);
+    // Check if this is part of a multi-line assignment (check previous lines too)
+    let assignmentStart = -1;
+    for (let i = 33; i >= 0; i--) {
+      if (lines[i].includes('this.mountVoidCommandBar') && lines[i].includes('=')) {
+        assignmentStart = i;
+        break;
       }
     }
     
-    // Also check if line 35 is an assignment that needs the type updated
-    // Look for: this.mountVoidCommandBar = ... as Promise<...>
-    if (line35.includes('this.mountVoidCommandBar') && line35.includes('=')) {
-      // Check if there's a type assertion that needs updating
-      if (line35.includes('as Promise<') && !line35.includes('| (() => void)')) {
-        const updatedLine = line35.replace(
-          /(as\s+Promise<)([^>]+)(>)/g,
+    // If we found an assignment, check all lines from assignmentStart to line 35
+    if (assignmentStart >= 0) {
+      let assignmentLines = [];
+      for (let i = assignmentStart; i <= 34 && i < lines.length; i++) {
+        assignmentLines.push(lines[i]);
+      }
+      const assignmentText = assignmentLines.join('\n');
+      console.error(`Found assignment starting at line ${assignmentStart + 1}:`);
+      console.error(assignmentText);
+      
+      // Look for Promise<...> type in the assignment that doesn't include the union
+      if (assignmentText.includes('Promise<') && !assignmentText.includes('| (() => void)')) {
+        // Update the assignment - need to handle multi-line
+        const updatedAssignment = assignmentText.replace(
+          /(Promise<)([^>]+)(>)/g,
           (match, p1, p2, p3) => {
             const typeContent = p2.trim();
-            if (!typeContent.includes('| (() => void)')) {
+            // Only update if it's the mount function type pattern
+            if (!typeContent.includes('| (() => void)') && 
+                !typeContent.includes('(() => void)') &&
+                (typeContent.includes('rootElement') || typeContent.includes('rerender') || typeContent.includes('dispose'))) {
+              return p1 + '(' + typeContent + ') | (() => void)' + p3;
+            }
+            return match;
+          }
+        );
+        
+        if (updatedAssignment !== assignmentText) {
+          // Split back into lines and update
+          const updatedLines = updatedAssignment.split('\n');
+          for (let i = 0; i < updatedLines.length && (assignmentStart + i) < lines.length; i++) {
+            lines[assignmentStart + i] = updatedLines[i];
+          }
+          modified = true;
+          console.error('✓ Fixed type in multi-line assignment at line 35');
+          console.error(`  Before: ${assignmentText.replace(/\n/g, '\\n')}`);
+          console.error(`  After:  ${updatedAssignment.replace(/\n/g, '\\n')}`);
+        }
+      }
+    } else {
+      // Single line assignment check
+      if (line35.includes('Promise<') && !line35.includes('| (() => void)')) {
+        const updatedLine = line35.replace(
+          /(Promise<)([^>]+)(>)/g,
+          (match, p1, p2, p3) => {
+            const typeContent = p2.trim();
+            if (!typeContent.includes('| (() => void)') && 
+                !typeContent.includes('(() => void)') &&
+                (typeContent.includes('rootElement') || typeContent.includes('rerender') || typeContent.includes('dispose'))) {
               return p1 + '(' + typeContent + ') | (() => void)' + p3;
             }
             return match;
@@ -810,7 +839,9 @@ try {
         if (updatedLine !== line35) {
           lines[34] = updatedLine;
           modified = true;
-          console.error('✓ Fixed type assertion at line 35');
+          console.error('✓ Fixed type at line 35');
+          console.error(`  Before: ${line35.trim()}`);
+          console.error(`  After:  ${updatedLine.trim()}`);
         }
       }
     }
@@ -818,43 +849,63 @@ try {
   
   // Fix 2: Add null check and await before calling mountVoidCommandBar at line 572
   // Look for the exact pattern around that line
+  // First update content with lines array if we modified it above
+  if (modified) {
+    content = lines.join('\n');
+  }
+  
   const linesArray = content.split('\n');
   for (let i = 0; i < linesArray.length; i++) {
     const line = linesArray[i];
     const lineNum = i + 1;
     
     // Check if this is around line 572 and has the problematic call
+    // Look for various patterns: mountVoidCommandBar(, this.mountVoidCommandBar(, or just the function name
     if ((lineNum >= 570 && lineNum <= 575) && 
-        (line.includes('mountVoidCommandBar(rootElement') || 
-         line.includes('this.mountVoidCommandBar(rootElement'))) {
+        (line.includes('mountVoidCommandBar(') || 
+         line.includes('mountVoidCommandBar(rootElement'))) {
       
-      // Check if already has null check
+      console.error(`Found problematic call at line ${lineNum}: ${line.trim()}`);
+      
+      // Check if already has null check (check previous 2 lines)
       const hasNullCheck = (i > 0 && linesArray[i - 1].includes('if (this.mountVoidCommandBar)')) ||
-                           (i > 0 && linesArray[i - 1].includes('if (mountVoidCommandBar)'));
+                           (i > 0 && linesArray[i - 1].includes('if (mountVoidCommandBar)')) ||
+                           (i > 1 && linesArray[i - 2].includes('if (this.mountVoidCommandBar)')) ||
+                           (i > 1 && linesArray[i - 2].includes('if (mountVoidCommandBar)'));
       
       if (!hasNullCheck) {
         // Get indentation from current line
-        const indent = line.match(/^(\s*)/)[1];
+        const indentMatch = line.match(/^(\s*)/);
+        const indent = indentMatch ? indentMatch[1] : '';
         const tab = indent.includes('\t') ? '\t' : '  ';
         
-        // Replace the line with null check and await
-        if (line.includes('this.mountVoidCommandBar')) {
-          linesArray[i] = `${indent}if (this.mountVoidCommandBar) {\n${indent}${tab}(await this.mountVoidCommandBar)(rootElement, accessor, props);\n${indent}}`;
-        } else {
-          linesArray[i] = `${indent}if (this.mountVoidCommandBar) {\n${indent}${tab}(await this.mountVoidCommandBar)(rootElement, accessor, props);\n${indent}}`;
+        // Extract the function call - handle both this.mountVoidCommandBar and mountVoidCommandBar
+        let funcCall = line.trim();
+        if (funcCall.startsWith('mountVoidCommandBar(') || funcCall.startsWith('this.mountVoidCommandBar(')) {
+          // Extract arguments - look for rootElement, accessor, props
+          const argsMatch = line.match(/mountVoidCommandBar\s*\(([^)]+)\)/);
+          const args = argsMatch ? argsMatch[1] : 'rootElement, accessor, props';
+          
+          // Replace the line with null check and await
+          linesArray[i] = `${indent}if (this.mountVoidCommandBar) {\n${indent}${tab}(await this.mountVoidCommandBar)(${args});\n${indent}}`;
+          modified = true;
+          console.error(`✓ Added null check and await at line ${lineNum}`);
+          console.error(`  Before: ${line.trim()}`);
+          console.error(`  After:  ${linesArray[i].replace(/\n/g, '\\n')}`);
+          break;
         }
-        modified = true;
-        console.error(`✓ Added null check and await at line ${lineNum}`);
-        break;
       } else if (!line.includes('await')) {
         // Has null check but missing await
-        linesArray[i] = line.replace(
-          /(this\.mountVoidCommandBar|mountVoidCommandBar)\s*\(rootElement/,
-          '(await $1)(rootElement'
+        const updatedLine = line.replace(
+          /(this\.mountVoidCommandBar|mountVoidCommandBar)\s*\(/,
+          '(await this.mountVoidCommandBar)('
         );
-        modified = true;
-        console.error(`✓ Added await at line ${lineNum}`);
-        break;
+        if (updatedLine !== line) {
+          linesArray[i] = updatedLine;
+          modified = true;
+          console.error(`✓ Added await at line ${lineNum}`);
+          break;
+        }
       }
     }
   }

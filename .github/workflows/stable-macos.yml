@@ -41,6 +41,7 @@ env:
 
   ASSETS_REPOSITORY: ${{ github.repository_owner }}/cortexide-binaries
   BINARY_NAME: cortexide
+  GITHUB_BRANCH: ${{ github.ref }}
   GH_REPO_PATH: ${{ github.repository_owner }}/cortexide-binaries
   ORG_NAME: ${{ github.repository_owner }}
   OS_NAME: osx

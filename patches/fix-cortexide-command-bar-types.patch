@@ -1,0 +1,22 @@
+diff --git a/src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts b/src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts
+--- a/src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts
++++ b/src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts
+@@ -29,8 +29,8 @@ export class CortexIDECommandBarService extends Disposable implements ICortexIDE
+ 	private readonly _onDidChangeCommandBar = this._register(new Emitter<void>());
+ 
+ 	private mountVoidCommandBar: Promise<
+-		(rootElement: any, accessor: any, props: any) => { rerender: (props2: any) => void; dispose: () => void; } | undefined
++		((rootElement: any, accessor: any, props: any) => { rerender: (props2: any) => void; dispose: () => void; } | undefined) | (() => void)
+ 	> | undefined;
+ 
+ 	constructor(
+@@ -566,7 +566,9 @@ export class CortexIDECommandBarService extends Disposable implements ICortexIDE
+ 			return;
+ 		}
+ 
+-		mountVoidCommandBar(rootElement, accessor, props);
++		if (this.mountVoidCommandBar) {
++			(await this.mountVoidCommandBar)(rootElement, accessor, props);
++		}
+ 	}
+ }

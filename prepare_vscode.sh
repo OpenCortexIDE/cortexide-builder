@@ -697,4 +697,85 @@ elif [[ "${OS_NAME}" == "windows" ]]; then
   sed -i 's|Microsoft Corporation|CortexIDE|' build/win32/code.iss
 fi
 
+# Fix TypeScript errors in cortexideCommandBarService.ts
+echo "Fixing TypeScript errors in cortexideCommandBarService.ts..."
+if [[ -f "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" ]]; then
+  # Fix 1: Update type declaration to allow both mount function and void function
+  if grep -q "private mountVoidCommandBar: Promise<" "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>/dev/null; then
+    # Use Node.js to fix the type declaration
+    node << 'TYPESCRIPT_FIX' || echo "Warning: Failed to fix TypeScript errors in cortexideCommandBarService.ts" >&2
+const fs = require('fs');
+const filePath = 'src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts';
+
+try {
+  let content = fs.readFileSync(filePath, 'utf8');
+  let modified = false;
+  
+  // Fix 1: Update type declaration to allow both return types
+  // Look for the type declaration and update it
+  const typePattern = /(private\s+mountVoidCommandBar:\s*Promise<)\s*\(\(rootElement:\s*any,\s*accessor:\s*any,\s*props:\s*any\)\s*=>\s*\{\s*rerender:\s*\(props2:\s*any\)\s*=>\s*void;\s*dispose:\s*\(\)\s*=>\s*void;\s*\}\s*\|\s*undefined\)/;
+  if (typePattern.test(content)) {
+    // Already has the correct type, check if it needs the void function union
+    if (!content.includes('| (() => void)')) {
+      content = content.replace(
+        /(private\s+mountVoidCommandBar:\s*Promise<)\s*\(\(rootElement:\s*any,\s*accessor:\s*any,\s*props:\s*any\)\s*=>\s*\{\s*rerender:\s*\(props2:\s*any\)\s*=>\s*void;\s*dispose:\s*\(\)\s*=>\s*void;\s*\}\s*\|\s*undefined\)/,
+        '$1((rootElement: any, accessor: any, props: any) => { rerender: (props2: any) => void; dispose: () => void; } | undefined) | (() => void)'
+      );
+      modified = true;
+    }
+  } else {
+    // Try a more flexible pattern
+    const flexiblePattern = /(private\s+mountVoidCommandBar:\s*Promise<[^>]+>)/;
+    if (flexiblePattern.test(content) && !content.includes('| (() => void)')) {
+      content = content.replace(
+        /(private\s+mountVoidCommandBar:\s*Promise<)([^>]+)(>)/,
+        (match, p1, p2, p3) => {
+          if (!p2.includes('| (() => void)')) {
+            return p1 + '(' + p2 + ') | (() => void)' + p3;
+          }
+          return match;
+        }
+      );
+      modified = true;
+    }
+  }
+  
+  // Fix 2: Add null check before calling mountVoidCommandBar
+  // Look for direct calls to mountVoidCommandBar without null check
+  if (content.includes('mountVoidCommandBar(rootElement, accessor, props)') && 
+      !content.includes('if (this.mountVoidCommandBar)') &&
+      !content.includes('if (mountVoidCommandBar)')) {
+    content = content.replace(
+      /(\s+)(mountVoidCommandBar\(rootElement,\s*accessor,\s*props\);)/,
+      '$1if (this.mountVoidCommandBar) {\n$1\t(await this.mountVoidCommandBar)(rootElement, accessor, props);\n$1}'
+    );
+    modified = true;
+  }
+  
+  // Also check for this.mountVoidCommandBar calls without await
+  if (content.includes('this.mountVoidCommandBar(rootElement, accessor, props)') && 
+      !content.includes('await this.mountVoidCommandBar')) {
+    content = content.replace(
+      /(\s+)(this\.mountVoidCommandBar\(rootElement,\s*accessor,\s*props\);)/,
+      '$1if (this.mountVoidCommandBar) {\n$1\t(await this.mountVoidCommandBar)(rootElement, accessor, props);\n$1}'
+    );
+    modified = true;
+  }
+  
+  if (modified) {
+    fs.writeFileSync(filePath, content, 'utf8');
+    console.error('✓ Fixed TypeScript errors in cortexideCommandBarService.ts');
+  } else {
+    console.error('No changes needed in cortexideCommandBarService.ts');
+  }
+} catch (error) {
+  console.error('Error fixing TypeScript file:', error.message);
+  process.exit(1);
+}
+TYPESCRIPT_FIX
+  else
+    echo "cortexideCommandBarService.ts not found, skipping TypeScript fix"
+  fi
+fi
+
 cd ..

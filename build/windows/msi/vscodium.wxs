@@ -1048,29 +1048,33 @@
           <Component Id="AddFileTypeAssociation$(var.AppCodeName)SourceFile" Guid="*">
             <RegistryValue Root="HKCR" Key="$(var.AppCodeName)SourceFile" Value="$(var.AppName)" Type="string" Action="write" />
             <RegistryValue Root="HKCR" Key="$(var.AppCodeName)SourceFile\DefaultIcon" Value="[#DEFAULT.ICO]" Type="string" Action="write" />
-            <RegistryValue Root="HKCR" Key="$(var.AppCodeName)SourceFile\shell\open\command" Value="&quot;[APPLICATIONFOLDER]$(var.AppName).exe&quot; &quot;%1&quot;" Type="string" Action="write" />
+            <!-- CRITICAL FIX: Use correct path to executable in bin\ subdirectory -->
+            <RegistryValue Root="HKCR" Key="$(var.AppCodeName)SourceFile\shell\open\command" Value="&quot;[APPLICATIONFOLDER]bin\$(var.ExeName).exe&quot; &quot;%1&quot;" Type="string" Action="write" />
           </Component>
           <Component Id="AddFileTypeAssociationApplications$(var.AppCodeName)" Guid="*">
             <RegistryValue Root="HKCR" Key="Applications\$(var.AppName).exe\DefaultIcon" Value="[#DEFAULT.ICO]" Type="string" Action="write" />
-            <RegistryValue Root="HKCR" Key="Applications\$(var.AppName).exe\shell\open\command" Value="&quot;[APPLICATIONFOLDER]$(var.AppName).exe&quot; &quot;%1&quot;" Type="string" Action="write" />
+            <!-- CRITICAL FIX: Use correct path to executable in bin\ subdirectory -->
+            <RegistryValue Root="HKCR" Key="Applications\$(var.AppName).exe\shell\open\command" Value="&quot;[APPLICATIONFOLDER]bin\$(var.ExeName).exe&quot; &quot;%1&quot;" Type="string" Action="write" />
           </Component>
 
           <Component Id="AddContextMenuFiles" Guid="*">
             <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\*\shell\$(var.AppCodeName)" Value="Open with $(var.AppName)" Type="string" Action="write" />
-            <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\*\shell\$(var.AppCodeName)" Name="Icon" Value="[APPLICATIONFOLDER]$(var.AppName).exe" Type="string" Action="write" />
-            <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\*\shell\$(var.AppCodeName)\command" Value="&quot;[APPLICATIONFOLDER]$(var.AppName).exe&quot; &quot;%1&quot;" Type="string" Action="write" />
+            <!-- CRITICAL FIX: Use correct path to executable in bin\ subdirectory -->
+            <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\*\shell\$(var.AppCodeName)" Name="Icon" Value="[APPLICATIONFOLDER]bin\$(var.ExeName).exe" Type="string" Action="write" />
+            <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\*\shell\$(var.AppCodeName)\command" Value="&quot;[APPLICATIONFOLDER]bin\$(var.ExeName).exe&quot; &quot;%1&quot;" Type="string" Action="write" />
           </Component>
 
           <Component Id="AddContextMenuFolders" Guid="*">
             <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\directory\shell\$(var.AppCodeName)" Value="Open with $(var.AppName)" Type="string" Action="write" />
-            <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\directory\shell\$(var.AppCodeName)" Name="Icon" Value="[APPLICATIONFOLDER]$(var.AppName).exe" Type="string" Action="write" />
-            <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\directory\shell\$(var.AppCodeName)\command" Value="&quot;[APPLICATIONFOLDER]$(var.AppName).exe&quot; &quot;%V&quot;" Type="string" Action="write" />
+            <!-- CRITICAL FIX: Use correct path to executable in bin\ subdirectory -->
+            <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\directory\shell\$(var.AppCodeName)" Name="Icon" Value="[APPLICATIONFOLDER]bin\$(var.ExeName).exe" Type="string" Action="write" />
+            <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\directory\shell\$(var.AppCodeName)\command" Value="&quot;[APPLICATIONFOLDER]bin\$(var.ExeName).exe&quot; &quot;%V&quot;" Type="string" Action="write" />
             <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\directory\background\shell\$(var.AppCodeName)" Value="Open with $(var.AppName)" Type="string" Action="write" />
-            <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\directory\background\shell\$(var.AppCodeName)" Name="Icon" Value="[APPLICATIONFOLDER]$(var.AppName).exe" Type="string" Action="write" />
-            <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\directory\background\shell\$(var.AppCodeName)\command" Value="&quot;[APPLICATIONFOLDER]$(var.AppName).exe&quot; &quot;%V&quot;" Type="string" Action="write" />
+            <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\directory\background\shell\$(var.AppCodeName)" Name="Icon" Value="[APPLICATIONFOLDER]bin\$(var.ExeName).exe" Type="string" Action="write" />
+            <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\directory\background\shell\$(var.AppCodeName)\command" Value="&quot;[APPLICATIONFOLDER]bin\$(var.ExeName).exe&quot; &quot;%V&quot;" Type="string" Action="write" />
             <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\Drive\shell\$(var.AppCodeName)" Value="Open with $(var.AppName)" Type="string" Action="write" />
-            <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\Drive\shell\$(var.AppCodeName)" Name="Icon" Value="[APPLICATIONFOLDER]$(var.AppName).exe" Type="string" Action="write" />
-            <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\Drive\shell\$(var.AppCodeName)\command" Value="&quot;[APPLICATIONFOLDER]$(var.AppName).exe&quot; &quot;%V&quot;" Type="string" Action="write" />
+            <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\Drive\shell\$(var.AppCodeName)" Name="Icon" Value="[APPLICATIONFOLDER]bin\$(var.ExeName).exe" Type="string" Action="write" />
+            <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\Drive\shell\$(var.AppCodeName)\command" Value="&quot;[APPLICATIONFOLDER]bin\$(var.ExeName).exe&quot; &quot;%V&quot;" Type="string" Action="write" />
           </Component>
 
           <Component Id="AddToEnvironmentPath" Guid="{A75E4C99-6713-45B9-8EC2-B9391592984C}">

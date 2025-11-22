@@ -112,14 +112,14 @@ transformMsiVersion() {
 	local version="${1%-insider}"
 	local parts
 	IFS='.' read -r -a parts <<< "${version}"
-	
+
 	# MSI requires exactly 4 parts, each 0-65534
 	# Handle versions with more than 4 parts by combining the extra parts
 	local major="${parts[0]:-0}"
 	local minor="${parts[1]:-0}"
 	local patch="${parts[2]:-0}"
 	local build="${parts[3]:-0}"
-	
+
 	# If there are more than 4 parts, combine them into the build number
 	if [[ ${#parts[@]} -gt 4 ]]; then
 		# Combine parts[3] and parts[4] (e.g., "0.2" becomes "2" or handle as needed)
@@ -137,19 +137,19 @@ transformMsiVersion() {
 			fi
 		fi
 	fi
-	
+
 	# Ensure each part is within valid range (0-65534)
 	major=$((10#${major}))
 	minor=$((10#${minor}))
 	patch=$((10#${patch}))
 	build=$((10#${build}))
-	
+
 	# Clamp values to valid range
 	[[ ${major} -gt 65534 ]] && major=65534
 	[[ ${minor} -gt 65534 ]] && minor=65534
 	[[ ${patch} -gt 65534 ]] && patch=65534
 	[[ ${build} -gt 65534 ]] && build=65534
-	
+
 	echo "${major}.${minor}.${patch}.${build}"
 }
 
@@ -202,7 +202,7 @@ BuildSetupTranslationTransform() {
 if [[ -z "${RELEASE_VERSION}" ]]; then
   echo "Error: RELEASE_VERSION is not set. Cannot build MSI installer." >&2
   echo "Attempting to read version from built package..." >&2
-  
+
   # Try to read from the built package's package.json
   if [[ -f "${BINARY_DIR}\\resources\\app\\package.json" ]]; then
     FALLBACK_VERSION=$( node -p "require('${BINARY_DIR}/resources/app/package.json').version" 2>/dev/null || echo "" )
@@ -269,7 +269,7 @@ if ! grep -qi "File.*Id.*${EXE_FILE_ID}" "Files-${OUTPUT_BASE_FILENAME}.wxs" 2>/
   echo "This may cause unresolved reference errors. Continuing anyway..." >&2
 fi
 
-"${WIX}bin\\candle.exe" -arch "${PLATFORM}" vscodium.wxs "Files-${OUTPUT_BASE_FILENAME}.wxs" -ext WixUIExtension -ext WixUtilExtension -ext WixNetFxExtension -dManufacturerName="${MANUFACTURER_NAME}" -dAppCodeName="${PRODUCT_CODE}" -dAppName="${PRODUCT_NAME}" -dProductVersion="${MSI_VERSION}" -dProductId="${PRODUCT_ID}" -dBinaryDir="${BINARY_DIR}" -dIconDir="${ICON_DIR}" -dLicenseDir="${LICENSE_DIR}" -dSetupResourcesDir="${SETUP_RESOURCES_DIR}" -dCulture="${CULTURE}" -dExeFileId="${EXE_FILE_ID}"
+"${WIX}bin\\candle.exe" -arch "${PLATFORM}" vscodium.wxs "Files-${OUTPUT_BASE_FILENAME}.wxs" -ext WixUIExtension -ext WixUtilExtension -ext WixNetFxExtension -dManufacturerName="${MANUFACTURER_NAME}" -dAppCodeName="${PRODUCT_CODE}" -dAppName="${PRODUCT_NAME}" -dProductVersion="${MSI_VERSION}" -dProductId="${PRODUCT_ID}" -dBinaryDir="${BINARY_DIR}" -dIconDir="${ICON_DIR}" -dLicenseDir="${LICENSE_DIR}" -dSetupResourcesDir="${SETUP_RESOURCES_DIR}" -dCulture="${CULTURE}" -dExeFileId="${EXE_FILE_ID}" -dExeName="${EXE_NAME}"
 "${WIX}bin\\light.exe" vscodium.wixobj "Files-${OUTPUT_BASE_FILENAME}.wixobj" -ext WixUIExtension -ext WixUtilExtension -ext WixNetFxExtension -spdb -cc "${TEMP}\\vscodium-cab-cache\\${PLATFORM}" -out "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.msi" -loc "i18n\\vscodium.${CULTURE}.wxl" -cultures:"${CULTURE}" -sice:ICE60 -sice:ICE69
 
 BuildSetupTranslationTransform de-de 1031

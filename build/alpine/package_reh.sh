@@ -121,18 +121,34 @@ for (let i = 0; i < lines.length; i++) {
 }
 
 // Find the execSync line (should be around line 171, but search from function start)
+// Look for the specific execSync call that extracts node from Docker
 if (functionStartLine >= 0) {
-  for (let i = functionStartLine; i < Math.min(functionStartLine + 50, lines.length); i++) {
-    // Look for execSync with docker run or cat which node
-    if (lines[i].includes('execSync') && (lines[i].includes('docker') || lines[i].includes('maxBuffer') || lines[i].includes('cp.execSync') || lines[i].includes('which node'))) {
+  for (let i = functionStartLine; i < Math.min(functionStartLine + 80, lines.length); i++) {
+    // Look for execSync with docker run and which node - this is the one we need to replace
+    const line = lines[i];
+    if (line.includes('execSync') && line.includes('docker run') && (line.includes('which node') || line.includes('cat'))) {
+      execSyncLine = i;
+      break;
+    }
+    // Also check if it's the const contents = cp.execSync line
+    if (line.includes('const contents') && line.includes('execSync') && line.includes('docker')) {
       execSyncLine = i;
       break;
     }
   }
-  // If not found, look for any execSync in the function
+  // If not found, look for any execSync with maxBuffer in the function
   if (execSyncLine === -1) {
-    for (let i = functionStartLine; i < Math.min(functionStartLine + 50, lines.length); i++) {
-      if (lines[i].includes('execSync')) {
+    for (let i = functionStartLine; i < Math.min(functionStartLine + 80, lines.length); i++) {
+      if (lines[i].includes('execSync') && lines[i].includes('maxBuffer')) {
+        execSyncLine = i;
+        break;
+      }
+    }
+  }
+  // Last resort: any execSync in the function
+  if (execSyncLine === -1) {
+    for (let i = functionStartLine; i < Math.min(functionStartLine + 80, lines.length); i++) {
+      if (lines[i].includes('execSync') && lines[i].includes('cp.')) {
         execSyncLine = i;
         break;
       }

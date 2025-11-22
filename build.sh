@@ -1500,6 +1500,18 @@ EOFPATCH2
     fi
     
     echo "✓ Critical files verified in app bundle: ${APP_BUNDLE}"
+    echo ""
+    echo "Note: If you encounter a blank screen after installation, run:"
+    echo "  ./fix_macos_blank_screen.sh"
+    echo "  See docs/troubleshooting.md for more help"
+    echo ""
+    echo "IMPORTANT: If the app launches but no window appears (processes run but window is missing),"
+    echo "  this may indicate a window creation issue in the main process. Check:"
+    echo "  - Window bounds are valid (not 0x0 or off-screen)"
+    echo "  - Window.show() or window.showInactive() is being called"
+    echo "  - Window is not being created with show: false"
+    echo "  This may require a code fix in the cortexide source repository."
+    echo ""
 
     if ! . ../build_cli.sh; then
       echo "Error: CLI build failed for macOS. Check for:" >&2

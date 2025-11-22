@@ -12,6 +12,7 @@
   - [App can't be opened because Apple cannot check it for malicious software](#macos-unidentified-developer)
   - ["VSCodium.app" is damaged and can't be opened. You should move it to the Bin](#macos-quarantine)
   - [App installs but doesn't open on Intel Mac](#macos-intel-not-opening)
+  - [Blank screen after installation](#macos-blank-screen)
 
 
 ## <a id="linux"></a>Linux
@@ -147,3 +148,82 @@ If the app installs successfully but doesn't open on Intel Mac (x64), try the fo
     ```bash
     softwareupdate --install-rosetta
     ```
+
+#### <a id="macos-blank-screen"></a>*Blank screen after installation*
+
+If the app launches but shows a blank/white screen, try the following solutions in order:
+
+1. **Clear GPU cache** (most common fix):
+   ```bash
+   rm -rf ~/Library/Application\ Support/CortexIDE/GPUCache
+   rm -rf ~/Library/Application\ Support/CortexIDE/Code\ Cache
+   ```
+   Then restart the app.
+
+2. **Verify critical files exist in the app bundle**:
+   ```bash
+   ls -la /Applications/CortexIDE.app/Contents/Resources/app/out/vs/code/electron-browser/workbench/workbench.html
+   ls -la /Applications/CortexIDE.app/Contents/Resources/app/out/main.js
+   ```
+   If these files are missing, the build may have failed. Rebuild the application.
+
+3. **Check Console logs for errors**:
+   - Open Console.app (Applications → Utilities → Console)
+   - Filter for "CortexIDE" or "Electron"
+   - Look for rendering errors, GPU errors, or file not found errors
+
+4. **Try launching with hardware acceleration disabled** (temporary workaround):
+   ```bash
+   /Applications/CortexIDE.app/Contents/MacOS/CortexIDE --disable-gpu
+   ```
+   If this works, you can make it permanent by editing the app's Info.plist or creating a launch script.
+
+5. **Clear all application data** (will reset your settings):
+   ```bash
+   rm -rf ~/Library/Application\ Support/CortexIDE
+   rm -rf ~/Library/Caches/CortexIDE
+   ```
+   **Warning**: This will delete all your settings, extensions, and workspace data.
+
+6. **Check for Electron/Chromium rendering issues**:
+   ```bash
+   /Applications/CortexIDE.app/Contents/MacOS/CortexIDE --disable-gpu-sandbox
+   ```
+   Or try:
+   ```bash
+   /Applications/CortexIDE.app/Contents/MacOS/CortexIDE --disable-software-rasterizer
+   ```
+
+7. **Verify the app bundle is complete**:
+   ```bash
+   # Check if the app bundle structure is correct
+   ls -R /Applications/CortexIDE.app/Contents/Resources/app/out | head -20
+   ```
+   You should see directories like `vs`, `main.js`, etc.
+
+8. **Check macOS version compatibility**:
+   - Ensure your macOS version is compatible with the Electron version used
+   - Some older macOS versions may have rendering issues
+
+9. **If using a custom build**, verify the build completed successfully:
+   - Check build logs for any errors during the `minify-vscode` step
+   - Ensure `workbench.html` was generated and copied to the app bundle
+   - Rebuild if necessary
+
+10. **Check for conflicting software**:
+    - Some security software or screen recording apps can interfere with Electron rendering
+    - Temporarily disable them to test
+
+11. **Window not being created (processes running but no window)**:
+    - This indicates the window creation code in the main process may be failing
+    - Check if window bounds are invalid (0x0 or off-screen)
+    - Verify the main process is calling `window.show()` or `window.showInactive()`
+    - Check if the window is being created but immediately hidden
+    - This may require a patch to the cortexide source code to ensure window visibility
+    - Try resetting window state:
+      ```bash
+      defaults delete com.cortexide.code 2>/dev/null || true
+      rm -rf ~/Library/Application\ Support/CortexIDE/User/workspaceStorage
+      ```
+
+If none of these solutions work, check the build logs and ensure the build completed successfully, particularly the minification and packaging steps. If the window is not being created at all (processes run but no window appears), this may require a code fix in the cortexide source repository to ensure the Electron BrowserWindow is properly shown on macOS.

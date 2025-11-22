@@ -151,6 +151,35 @@ const caseCode = `${indent}case '${arch}':\n` +
 
 lines.splice(insertIndex, 0, caseCode);
 content = lines.join('\n');
+
+// Also patch fetchUrl to handle missing assets gracefully for remote sysroot
+// Some architectures (ppc64le, s390x) don't have -gcc-8.5.0 variants in releases
+if (!content.includes('// REMOTE_SYSROOT_FALLBACK')) {
+  // Find where the error is thrown and add fallback logic before it
+  const errorThrowPattern = /(throw\s+new\s+Error\([^)]*Could not find asset[^)]*\))/;
+  if (errorThrowPattern.test(content)) {
+    content = content.replace(errorThrowPattern, (match) => {
+      return `// REMOTE_SYSROOT_FALLBACK: If remote sysroot doesn't exist, try without gcc suffix or skip
+        if (expectedName && expectedName.includes('-gcc-') && process.env.VSCODE_SYSROOT_PREFIX && process.env.VSCODE_SYSROOT_PREFIX.includes('-gcc-')) {
+          console.error(\`Warning: Remote sysroot \${expectedName} not found, trying without gcc suffix...\`);
+          const fallbackName = expectedName.replace(/-gcc-[^-]+\.tar\.gz$/, '.tar.gz');
+          if (fallbackName !== expectedName) {
+            // Retry with fallback name
+            const fallbackAsset = assets.find(a => a.name === fallbackName);
+            if (fallbackAsset) {
+              return fallbackAsset.browser_download_url;
+            }
+          }
+          // If still not found, return null to skip remote sysroot (client sysroot will be used)
+          console.error(\`Warning: Remote sysroot not available for \${expectedName}, skipping. Client sysroot will be used.\`);
+          return null;
+        }
+        ${match}`;
+    });
+    console.error('✓ Patched fetchUrl to handle missing remote sysroot assets gracefully');
+  }
+}
+
 fs.writeFileSync(filePath, content, 'utf8');
 console.error(`✓ Successfully added ${arch} mapping to install-sysroot.js`);
 SYSROOTFIX
@@ -838,15 +867,40 @@ if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
     }
   }
   
+  // Strategy 4: Patch fetchUrls directly to use correct version
+  if (!patched) {
+    const fetchUrlsPattern = new RegExp(`(fetchUrls\\s*=\\s*\\[[^\\]]*['"]/v\\\\\\$\\\\{nodeVersion\\\\}/node-v\\\\\\$\\\\{nodeVersion\\\\}-[^}]+-${arch}[^}]+['"][^\\]]*\\])`, 'g');
+    if (fetchUrlsPattern.test(content)) {
+      content = content.replace(fetchUrlsPattern, (match) => {
+        patched = true;
+        // Replace v${nodeVersion} with the actual version
+        return match.replace(/\\\$\\{nodeVersion\\}/g, nodeVersion);
+      });
+      if (patched) {
+        console.error(`✓ Patched fetchUrls to use ${nodeVersion} for ${arch}`);
+      }
+    }
+  }
+  
+  // Strategy 5: Patch the nodejs function to override nodeVersion parameter at the very start
+  if (!patched) {
+    // Find function nodejs(platform, arch) and add version override as first line
+    const nodejsFunctionPattern = /(function\s+nodejs\s*\([^)]*\)\s*\{)/;
+    if (nodejsFunctionPattern.test(content)) {
+      content = content.replace(nodejsFunctionPattern, (match) => {
+        patched = true;
+        return `${match}\n\t// NODE_VERSION_FIX: Override for ${arch}\n\tif (arch === '${arch}' && process.env.NODE_VERSION) {\n\t\tnodeVersion = process.env.NODE_VERSION;\n\t}`;
+      });
+      if (patched) {
+        console.error(`✓ Patched nodejs function to override version for ${arch}`);
+      }
+    }
+  }
+  
   if (patched) {
     console.error(`✓ Patched Node.js version to use ${nodeVersion} for ${arch}`);
   } else {
     console.error(`⚠ Could not find nodeVersion definition to patch for ${arch}`);
-    // Last resort: try to patch the fetchUrls call directly
-    const fetchUrlsPattern = new RegExp(`(/v\\$\\{nodeVersion\\}/node-v\\$\\{nodeVersion\\}-[^}]+-${arch}[^}]+)`, 'g');
-    if (fetchUrlsPattern.test(content)) {
-      console.error(`Found fetchUrls pattern for ${arch}, but nodeVersion override needed at function level`);
-    }
   }
 }
 

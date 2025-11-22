@@ -154,10 +154,11 @@ if (match || execSyncLine >= 0) {
     const line = lines[execSyncLine];
     const indent = line.match(/^\s*/)[0];
     
-    // Replace the line with file-based approach
+    // Replace the line with file-based approach using shell redirection
     lines[execSyncLine] = `${indent}// DOCKER_BUFFER_FIX: Use file output instead of execSync to avoid ENOBUFS
 ${indent}const tmpFile = path.join(os.tmpdir(), \`node-\${nodeVersion || 'unknown'}-\${arch || 'unknown'}-\${Date.now()}\`);
 ${indent}try {
+${indent}	// Use shell redirection to write directly to file, avoiding ENOBUFS
 ${indent}	cp.execSync(\`docker run --rm \${dockerPlatform || ''} \${imageName || 'node'}:\${nodeVersion || 'unknown'}-alpine /bin/sh -c 'cat \\\`which node\\\`' > \${tmpFile}\`, { stdio: 'inherit' });
 ${indent}	const contents = fs.readFileSync(tmpFile);
 ${indent}	fs.unlinkSync(tmpFile);
@@ -186,6 +187,7 @@ ${indent}}`;
           return `${indent}// DOCKER_BUFFER_FIX: Use file output instead of execSync to avoid ENOBUFS
 ${indent}const tmpFile = path.join(os.tmpdir(), \`node-\${nodeVersion || 'unknown'}-\${arch || 'unknown'}-\${Date.now()}\`);
 ${indent}try {
+${indent}	// Use shell redirection to write directly to file, avoiding ENOBUFS
 ${indent}	cp.execSync(\`docker run --rm \${dockerPlatform || ''} \${imageName || 'node'}:\${nodeVersion || 'unknown'}-alpine /bin/sh -c 'cat \\\`which node\\\`' > \${tmpFile}\`, { stdio: 'inherit' });
 ${indent}	const contents = fs.readFileSync(tmpFile);
 ${indent}	fs.unlinkSync(tmpFile);

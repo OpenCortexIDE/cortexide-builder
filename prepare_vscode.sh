@@ -703,10 +703,22 @@ if [[ -f "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.
   # Use Node.js to fix the type declaration and function call
   node << 'TYPESCRIPT_FIX' 2>&1
 const fs = require('fs');
+const path = require('path');
 const filePath = 'src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts';
 
+console.error('=== TypeScript Fix Script Starting ===');
+console.error(`Working directory: ${process.cwd()}`);
+console.error(`File path: ${filePath}`);
+console.error(`File exists: ${fs.existsSync(filePath)}`);
+
 try {
+  if (!fs.existsSync(filePath)) {
+    console.error(`ERROR: File not found: ${filePath}`);
+    process.exit(1);
+  }
+  
   let content = fs.readFileSync(filePath, 'utf8');
+  console.error(`File read successfully, ${content.length} characters`);
   let modified = false;
   
   // Debug: Show lines around the problematic areas
@@ -723,17 +735,21 @@ try {
   // Look for: private mountVoidCommandBar: Promise<...> | undefined;
   // The type might span multiple lines, so we need to find the start and end
   
-  // Find the property declaration line
+  // Find the property declaration line - look for mountVoidCommandBar with Promise
   let propDeclStart = -1;
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes('mountVoidCommandBar') && lines[i].includes('Promise<')) {
+    const line = lines[i];
+    // Look for property declaration - could be "private mountVoidCommandBar" or just "mountVoidCommandBar"
+    if ((line.includes('mountVoidCommandBar') && line.includes('Promise<')) ||
+        (line.includes('mountVoidCommandBar') && line.includes(':'))) {
       propDeclStart = i;
+      console.error(`Found potential property declaration at line ${i + 1}: ${line.trim()}`);
       break;
     }
   }
   
   if (propDeclStart >= 0) {
-    console.error(`Found property declaration at line ${propDeclStart + 1}`);
+    console.error(`Processing property declaration starting at line ${propDeclStart + 1}`);
     // Find where the type ends (look for > | undefined;)
     let propDeclEnd = propDeclStart;
     let foundClosing = false;
@@ -757,18 +773,23 @@ try {
       
       // Check if it already has the union type
       if (!fullDecl.includes('| (() => void)') && !fullDecl.includes('(() => void)')) {
+        console.error('Property type does NOT include void function union - updating...');
         // Find the Promise<...> part and update it
         // Pattern: Promise<...content...> where content might span lines
+        // Use a more robust regex that handles multi-line content
         const updatedDecl = fullDecl.replace(
-          /(Promise<\s*)([^>]+)(\s*>)/s,
+          /(Promise<\s*)([\s\S]*?)(\s*>)/,
           (match, p1, p2, p3) => {
             const currentType = p2.trim();
+            console.error(`Found Promise<> type content: ${currentType.substring(0, 100)}...`);
             // Only update if it's the mount function type (has rootElement, rerender, etc.)
             if (currentType.includes('rootElement') || currentType.includes('rerender') || currentType.includes('dispose')) {
               const newType = `(${currentType}) | (() => void)`;
               modified = true;
               console.error('✓ Updated property type declaration');
               return p1 + newType + p3;
+            } else {
+              console.error('Type content does not match mount function pattern, skipping');
             }
             return match;
           }
@@ -782,11 +803,17 @@ try {
           }
           console.error(`  Before: ${fullDecl.replace(/\n/g, '\\n')}`);
           console.error(`  After:  ${updatedDecl.replace(/\n/g, '\\n')}`);
+        } else {
+          console.error('⚠ Regex replacement did not modify the declaration');
         }
       } else {
         console.error('✓ Property type already includes void function union');
       }
+    } else {
+      console.error('⚠ Could not find closing > for property declaration');
     }
+  } else {
+    console.error('⚠ Could not find property declaration for mountVoidCommandBar');
   }
   
   // Find and update assignments - look for patterns like:
@@ -981,10 +1008,11 @@ try {
     }
   }
 } catch (error) {
-  console.error('Error fixing TypeScript file:', error.message);
+  console.error('ERROR fixing TypeScript file:', error.message);
   console.error(error.stack);
   process.exit(1);
 }
+console.error('=== TypeScript Fix Script Completed ===');
 TYPESCRIPT_FIX
   if [[ $? -ne 0 ]]; then
     echo "Warning: Failed to fix TypeScript errors in cortexideCommandBarService.ts" >&2

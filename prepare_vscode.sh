@@ -700,29 +700,73 @@ fi
 # Fix TypeScript errors in cortexideCommandBarService.ts
 # Direct fix using perl - match exact patterns from the patch
 echo "Fixing TypeScript errors in cortexideCommandBarService.ts..." >&2
-if [[ -f "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" ]]; then
-  echo "File found, applying direct fixes..." >&2
+TS_FILE="src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts"
+if [[ -f "${TS_FILE}" ]]; then
+  echo "File found at: ${TS_FILE}" >&2
+  echo "File size: $(wc -l < "${TS_FILE}") lines" >&2
+  
+  # Check current state before fixing
+  if grep -q "| (() => void)" "${TS_FILE}" 2>/dev/null; then
+    echo "⚠ Property type already includes void function union - checking if fix is needed..." >&2
+  fi
+  if grep -q "if (this.mountVoidCommandBar)" "${TS_FILE}" 2>/dev/null; then
+    echo "⚠ Null check already present - checking if fix is needed..." >&2
+  fi
   
   # Fix 1: Property type declaration (line 9) - wrap in parentheses and add union
   # Change: (rootElement: any, ...) => { ... } | undefined
   # To:     ((rootElement: any, ...) => { ... } | undefined) | (() => void)
-  perl -i.bak -0pe 's/(\t\t)\(rootElement: any, accessor: any, props: any\) => \{ rerender: \(props2: any\) => void; dispose: \(\) => void; \} \| undefined/$1((rootElement: any, accessor: any, props: any) => { rerender: (props2: any) => void; dispose: () => void; } | undefined) | (() => void)/s' \
-    "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 && echo "✓ Fixed property type declaration" >&2 || echo "⚠ Property type fix may have failed or already applied" >&2
+  if perl -i.bak -0pe 's/(\t\t)\(rootElement: any, accessor: any, props: any\) => \{ rerender: \(props2: any\) => void; dispose: \(\) => void; \} \| undefined/$1((rootElement: any, accessor: any, props: any) => { rerender: (props2: any) => void; dispose: () => void; } | undefined) | (() => void)/s' "${TS_FILE}" 2>&1; then
+    if grep -q "| (() => void)" "${TS_FILE}" 2>/dev/null; then
+      echo "✓ Fixed property type declaration" >&2
+    else
+      echo "⚠ Property type fix ran but union not found - may already be applied or pattern didn't match" >&2
+    fi
+  else
+    echo "⚠ Property type fix failed - checking if already applied..." >&2
+    if grep -q "| (() => void)" "${TS_FILE}" 2>/dev/null; then
+      echo "✓ Property type already has union - no fix needed" >&2
+    else
+      echo "✗ Property type fix failed and union not found!" >&2
+      echo "  Showing lines 8-11 for debugging:" >&2
+      sed -n '8,11p' "${TS_FILE}" >&2 || true
+    fi
+  fi
   
   # Fix 2: Any assignments that create Promise<...> types - update them too
   # Look for patterns like: = ... as Promise<...> and update the type
-  perl -i.bak2 -0pe 's/(as\s+Promise<)\s*\(rootElement: any, accessor: any, props: any\) => \{ rerender: \(props2: any\) => void; dispose: \(\) => void; \} \| undefined(\s*>)/$1((rootElement: any, accessor: any, props: any) => { rerender: (props2: any) => void; dispose: () => void; } | undefined) | (() => void)$2/s' \
-    "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 && echo "✓ Fixed assignment types" >&2 || echo "⚠ Assignment type fix may have failed or not needed" >&2
+  if perl -i.bak2 -0pe 's/(as\s+Promise<)\s*\(rootElement: any, accessor: any, props: any\) => \{ rerender: \(props2: any\) => void; dispose: \(\) => void; \} \| undefined(\s*>)/$1((rootElement: any, accessor: any, props: any) => { rerender: (props2: any) => void; dispose: () => void; } | undefined) | (() => void)$2/s' "${TS_FILE}" 2>&1; then
+    echo "✓ Fixed assignment types (if any were found)" >&2
+  else
+    echo "⚠ Assignment type fix - no matches found (this is OK if no assignments with type assertions exist)" >&2
+  fi
   
   # Fix 3: Line 572 - add null check and await
   # Change: mountVoidCommandBar(rootElement, accessor, props);
   # To:     if (this.mountVoidCommandBar) { (await this.mountVoidCommandBar)(rootElement, accessor, props); }
-  perl -i.bak3 -0pe 's/(\t+)mountVoidCommandBar\(rootElement, accessor, props\);/$1if (this.mountVoidCommandBar) {\n$1\t(await this.mountVoidCommandBar)(rootElement, accessor, props);\n$1}/' \
-    "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" 2>&1 && echo "✓ Fixed function call at line 572" >&2 || echo "⚠ Function call fix may have failed or already applied" >&2
+  if perl -i.bak3 -0pe 's/(\t+)mountVoidCommandBar\(rootElement, accessor, props\);/$1if (this.mountVoidCommandBar) {\n$1\t(await this.mountVoidCommandBar)(rootElement, accessor, props);\n$1}/' "${TS_FILE}" 2>&1; then
+    if grep -q "if (this.mountVoidCommandBar)" "${TS_FILE}" 2>/dev/null; then
+      echo "✓ Fixed function call at line 572" >&2
+    else
+      echo "⚠ Function call fix ran but null check not found - may already be applied or pattern didn't match" >&2
+    fi
+  else
+    echo "⚠ Function call fix failed - checking if already applied..." >&2
+    if grep -q "if (this.mountVoidCommandBar)" "${TS_FILE}" 2>/dev/null; then
+      echo "✓ Null check already present - no fix needed" >&2
+    else
+      echo "✗ Function call fix failed and null check not found!" >&2
+      echo "  Showing lines 570-575 for debugging:" >&2
+      sed -n '570,575p' "${TS_FILE}" >&2 || true
+    fi
+  fi
   
-  echo "TypeScript fixes applied" >&2
+  echo "TypeScript fixes completed" >&2
 else
-  echo "cortexideCommandBarService.ts not found, skipping fix" >&2
+  echo "✗ cortexideCommandBarService.ts not found at ${TS_FILE}, skipping fix" >&2
+  echo "  Current directory: $(pwd)" >&2
+  echo "  Looking for file..." >&2
+  find . -name "cortexideCommandBarService.ts" -type f 2>/dev/null | head -3 >&2 || echo "  File not found anywhere" >&2
 fi
 
 # Old complex Node.js script removed - using simple perl fixes above

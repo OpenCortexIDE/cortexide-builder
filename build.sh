@@ -1435,7 +1435,15 @@ EOFPATCH2
     echo "Verifying critical files in macOS app bundle..."
     # Get the actual app bundle name from product.json (nameShort), not APP_NAME
     # The app bundle is named after nameShort (e.g., "CortexIDE.app" or "CortexIDE - Insiders.app")
-    APP_BUNDLE_NAME=$( node -p "require('./product.json').nameShort" )
+    if [[ ! -f "product.json" ]]; then
+      echo "ERROR: product.json not found! Cannot determine app bundle name." >&2
+      exit 1
+    fi
+    APP_BUNDLE_NAME=$( node -p "require('./product.json').nameShort || 'CortexIDE'" )
+    if [[ -z "${APP_BUNDLE_NAME}" || "${APP_BUNDLE_NAME}" == "null" || "${APP_BUNDLE_NAME}" == "undefined" ]]; then
+      echo "WARNING: nameShort not found in product.json, using APP_NAME as fallback" >&2
+      APP_BUNDLE_NAME="${APP_NAME:-CortexIDE}"
+    fi
     APP_BUNDLE="../VSCode-darwin-${VSCODE_ARCH}/${APP_BUNDLE_NAME}.app"
     
     # Verify the app bundle exists
@@ -1480,7 +1488,7 @@ EOFPATCH2
       else
         echo "  workbench.html is also missing from out-build!" >&2
         echo "  The minify-vscode task may have failed silently." >&2
-        exit 1
+      exit 1
       fi
     fi
     

@@ -701,10 +701,7 @@ fi
 echo "Fixing TypeScript errors in cortexideCommandBarService.ts..." >&2
 if [[ -f "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" ]]; then
   # Use Node.js to fix the type declaration and function call
-  if ! node << 'TYPESCRIPT_FIX' 2>&1; then
-    echo "Warning: Failed to fix TypeScript errors in cortexideCommandBarService.ts" >&2
-    echo "This may cause compilation errors, but build will continue..." >&2
-  fi
+  node << 'TYPESCRIPT_FIX' 2>&1
 const fs = require('fs');
 const filePath = 'src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts';
 
@@ -882,6 +879,10 @@ try {
   process.exit(1);
 }
 TYPESCRIPT_FIX
+  if [[ $? -ne 0 ]]; then
+    echo "Warning: Failed to fix TypeScript errors in cortexideCommandBarService.ts" >&2
+    echo "This may cause compilation errors, but build will continue..." >&2
+  fi
 else
   echo "cortexideCommandBarService.ts not found, skipping TypeScript fix"
 fi

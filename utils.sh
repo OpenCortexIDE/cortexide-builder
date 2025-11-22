@@ -28,7 +28,7 @@ apply_patch() {
   is_non_critical_patch() {
     local patch_name=$(basename "$1")
     local patch_path="$1"
-    local non_critical="policies.patch report-issue.patch fix-node-gyp-env-paths.patch disable-signature-verification.patch merge-user-product.patch remove-mangle.patch terminal-suggest.patch version-1-update.patch cli.patch"
+    local non_critical="policies.patch report-issue.patch fix-node-gyp-env-paths.patch disable-signature-verification.patch merge-user-product.patch remove-mangle.patch terminal-suggest.patch version-1-update.patch cli.patch fix-cortexide-command-bar-types.patch"
     # OS-specific patches in subdirectories are also non-critical (they may be outdated)
     if echo "$patch_path" | grep -q "/osx/\|/linux/\|/windows/"; then
       return 0

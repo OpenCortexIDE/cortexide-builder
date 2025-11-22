@@ -3,32 +3,46 @@
 
 set -e
 
-if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-	echo "It's a PR"
+# Sensible defaults so downstream jobs always receive explicit values
+SHOULD_BUILD="no"
+SHOULD_DEPLOY="no"
 
-  export SHOULD_BUILD="yes"
-	export SHOULD_DEPLOY="no"
-elif [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-	echo "It's a Push"
+case "${GITHUB_EVENT_NAME}" in
+  pull_request)
+    echo "It's a PR"
+    SHOULD_BUILD="yes"
+    SHOULD_DEPLOY="no"
+    ;;
+  push)
+    echo "It's a Push"
+    SHOULD_BUILD="yes"
+    SHOULD_DEPLOY="no"
+    ;;
+  workflow_dispatch)
+    if [[ "${GENERATE_ASSETS}" == "true" ]]; then
+      echo "Manual dispatch to generate assets"
+      SHOULD_BUILD="yes"
+      SHOULD_DEPLOY="no"
+    else
+      echo "Manual dispatch for release"
+      SHOULD_BUILD="yes"
+      SHOULD_DEPLOY="yes"
+    fi
+    ;;
+  repository_dispatch)
+    echo "Repository dispatch trigger"
+    SHOULD_BUILD="yes"
+    SHOULD_DEPLOY="yes"
+    ;;
+  *)
+    echo "It's a Cron or other scheduled trigger"
+    SHOULD_BUILD="yes"
+    SHOULD_DEPLOY="yes"
+    ;;
+esac
 
-	export SHOULD_BUILD="yes"
-	export SHOULD_DEPLOY="no"
-elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-  if [[ "${GENERATE_ASSETS}" == "true" ]]; then
-    echo "It will generate the assets"
-
-    export SHOULD_BUILD="yes"
-    export SHOULD_DEPLOY="no"
-  else
-  	echo "It's a Dispatch"
-
-    export SHOULD_DEPLOY="yes"
-  fi
-else
-	echo "It's a Cron"
-
-	export SHOULD_DEPLOY="yes"
-fi
+export SHOULD_BUILD
+export SHOULD_DEPLOY
 
 if [[ "${GITHUB_ENV}" ]]; then
   echo "GITHUB_BRANCH=${GITHUB_BRANCH}" >> "${GITHUB_ENV}"

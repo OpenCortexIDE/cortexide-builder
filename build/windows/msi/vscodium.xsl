@@ -14,12 +14,10 @@
   <!-- CRITICAL FIX: Match the actual executable file in bin\ directory -->
   <!-- heat.exe generates paths like $(var.BinaryDir)\bin\cortexide.exe -->
   <!-- After sed replacement, @@EXE_NAME@@ becomes the actual name (e.g., "cortexide") -->
-  <!-- Match patterns: \bin\@@EXE_NAME@@.exe, bin\@@EXE_NAME@@.exe, or any .exe in bin\ that's not tunnel/server -->
-  <!-- Use multiple patterns to handle different path formats heat.exe might generate -->
+  <!-- Match any .exe file in bin\ directory that matches the executable name -->
+  <!-- Use a simple pattern: contains both "bin" and "@@EXE_NAME@@.exe" -->
   <xsl:key name="vId1ToReplace" match="wi:Component[wi:File[
-    (contains(@Source,'\bin\@@EXE_NAME@@.exe') or contains(@Source,'bin\@@EXE_NAME@@.exe') or contains(@Source,'/bin/@@EXE_NAME@@.exe'))
-    or (contains(@Source,'\bin\@@PRODUCT_NAME@@.exe') or contains(@Source,'bin\@@PRODUCT_NAME@@.exe') or contains(@Source,'/bin/@@PRODUCT_NAME@@.exe'))
-    or ((contains(@Source,'\bin\') or contains(@Source,'bin\') or contains(@Source,'/bin/')) and contains(@Source,'.exe') and not(contains(@Source,'-tunnel')) and not(contains(@Source,'-server')) and not(contains(@Source,'\resources\')) and not(contains(@Source,'\tools\')) and not(contains(@Source,'\locales\')))
+    (contains(@Source,'bin') and contains(@Source,'@@EXE_NAME@@.exe') and not(contains(@Source,'-tunnel')) and not(contains(@Source,'-server')))
   ]]" use="@Id"/>
   <xsl:template match="node()[key('vId1ToReplace', @Id)]">
     <xsl:copy>
@@ -29,9 +27,7 @@
     </xsl:copy>
   </xsl:template>
   <xsl:template match="wi:Component/wi:File[
-    (contains(@Source,'\bin\@@EXE_NAME@@.exe') or contains(@Source,'bin\@@EXE_NAME@@.exe') or contains(@Source,'/bin/@@EXE_NAME@@.exe'))
-    or (contains(@Source,'\bin\@@PRODUCT_NAME@@.exe') or contains(@Source,'bin\@@PRODUCT_NAME@@.exe') or contains(@Source,'/bin/@@PRODUCT_NAME@@.exe'))
-    or ((contains(@Source,'\bin\') or contains(@Source,'bin\') or contains(@Source,'/bin/')) and contains(@Source,'.exe') and not(contains(@Source,'-tunnel')) and not(contains(@Source,'-server')) and not(contains(@Source,'\resources\')) and not(contains(@Source,'\tools\')) and not(contains(@Source,'\locales\')))
+    (contains(@Source,'bin') and contains(@Source,'@@EXE_NAME@@.exe') and not(contains(@Source,'-tunnel')) and not(contains(@Source,'-server')))
   ]">
      <xsl:copy>
         <xsl:attribute name="Id">@@EXE_FILE_ID@@</xsl:attribute>

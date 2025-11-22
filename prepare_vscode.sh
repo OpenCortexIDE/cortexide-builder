@@ -698,10 +698,13 @@ elif [[ "${OS_NAME}" == "windows" ]]; then
 fi
 
 # Fix TypeScript errors in cortexideCommandBarService.ts
-echo "Fixing TypeScript errors in cortexideCommandBarService.ts..."
+echo "Fixing TypeScript errors in cortexideCommandBarService.ts..." >&2
 if [[ -f "src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts" ]]; then
   # Use Node.js to fix the type declaration and function call
-  node << 'TYPESCRIPT_FIX' || echo "Warning: Failed to fix TypeScript errors in cortexideCommandBarService.ts" >&2
+  node << 'TYPESCRIPT_FIX' 2>&1 || {
+    echo "Warning: Failed to fix TypeScript errors in cortexideCommandBarService.ts" >&2
+    echo "This may cause compilation errors, but build will continue..." >&2
+  }
 const fs = require('fs');
 const filePath = 'src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.ts';
 
@@ -761,16 +764,24 @@ try {
   });
   
   // Also check line 35 specifically - the error is at line 35, so there might be an assignment there
+  // The error suggests the property type was updated but an assignment still has the old type
   if (lines.length >= 35) {
     const line35 = lines[34]; // 0-indexed
     console.error(`Line 35 content: ${line35}`);
-    if (line35.includes('mountVoidCommandBar') && line35.includes('Promise<') && !line35.includes('| (() => void)')) {
-      // This is likely an assignment at line 35
+    
+    // Look for any Promise<...> type on this line that doesn't include the union
+    if (line35.includes('Promise<') && !line35.includes('| (() => void)')) {
+      // Update any Promise<...> types on this line
       const updatedLine = line35.replace(
-        /(Promise<)([^>]+)(>)/,
+        /(Promise<)([^>]+)(>)/g,
         (match, p1, p2, p3) => {
-          if (!p2.includes('| (() => void)')) {
-            return p1 + '(' + p2.trim() + ') | (() => void)' + p3;
+          const typeContent = p2.trim();
+          // Skip if it's a complex nested type that already includes the union somewhere
+          if (!typeContent.includes('| (() => void)') && !typeContent.includes('(() => void)')) {
+            // Check if this is the mount function type pattern
+            if (typeContent.includes('rootElement') || typeContent.includes('rerender')) {
+              return p1 + '(' + typeContent + ') | (() => void)' + p3;
+            }
           }
           return match;
         }
@@ -779,6 +790,31 @@ try {
         lines[34] = updatedLine;
         modified = true;
         console.error('✓ Fixed type at line 35');
+        console.error(`  Before: ${line35.trim()}`);
+        console.error(`  After:  ${updatedLine.trim()}`);
+      }
+    }
+    
+    // Also check if line 35 is an assignment that needs the type updated
+    // Look for: this.mountVoidCommandBar = ... as Promise<...>
+    if (line35.includes('this.mountVoidCommandBar') && line35.includes('=')) {
+      // Check if there's a type assertion that needs updating
+      if (line35.includes('as Promise<') && !line35.includes('| (() => void)')) {
+        const updatedLine = line35.replace(
+          /(as\s+Promise<)([^>]+)(>)/g,
+          (match, p1, p2, p3) => {
+            const typeContent = p2.trim();
+            if (!typeContent.includes('| (() => void)')) {
+              return p1 + '(' + typeContent + ') | (() => void)' + p3;
+            }
+            return match;
+          }
+        );
+        if (updatedLine !== line35) {
+          lines[34] = updatedLine;
+          modified = true;
+          console.error('✓ Fixed type assertion at line 35');
+        }
       }
     }
   }

@@ -76,9 +76,70 @@ if [[ -d "../patches/${OS_NAME}/" ]]; then
       # but we disable set -e to be absolutely sure we don't exit
       apply_patch "${file}" || {
         echo "Warning: OS patch $(basename "${file}") failed, but continuing build..." >&2
+        # For window visibility fix, ALWAYS try script-based approach as fallback
+        # This ensures the fix is applied even if the patch fails
+        if [[ "$(basename "${file}")" == "fix-window-visibility.patch" ]]; then
+          echo "CRITICAL: Window visibility patch failed. Applying script-based fix..." >&2
+          if [[ -f "../patches/${OS_NAME}/apply-window-visibility-fix.sh" ]]; then
+            chmod +x "../patches/${OS_NAME}/apply-window-visibility-fix.sh"
+            if "../patches/${OS_NAME}/apply-window-visibility-fix.sh" "src/vs/code/electron-main/window.ts"; then
+              echo "✓ Window visibility fix applied via script fallback" >&2
+            else
+              echo "ERROR: Script-based window visibility fix also failed!" >&2
+              echo "  This is a critical fix for macOS blank screen. Build may produce broken app." >&2
+            fi
+          else
+            echo "ERROR: Window visibility fix script not found!" >&2
+          fi
+        fi
       }
     fi
   done
+  
+  # CRITICAL: For macOS, ALWAYS ensure window visibility fix is applied
+  # This is a critical fix for blank screen - must be applied regardless of patch status
+  if [[ "${OS_NAME}" == "osx" ]]; then
+    # Try new file path first (current codebase structure)
+    WINDOW_FILE_NEW="src/vs/platform/windows/electron-main/windowImpl.ts"
+    # Fallback to old file path (legacy codebase structure)
+    WINDOW_FILE_OLD="src/vs/code/electron-main/window.ts"
+    
+    WINDOW_FILE=""
+    if [[ -f "${WINDOW_FILE_NEW}" ]]; then
+      WINDOW_FILE="${WINDOW_FILE_NEW}"
+    elif [[ -f "${WINDOW_FILE_OLD}" ]]; then
+      WINDOW_FILE="${WINDOW_FILE_OLD}"
+    fi
+    
+    if [[ -n "${WINDOW_FILE}" ]]; then
+      if ! grep -q "Fix for macOS blank screen" "${WINDOW_FILE}"; then
+        echo "CRITICAL: Window visibility fix not found. Applying via script (this MUST succeed)..." >&2
+        if [[ -f "../patches/${OS_NAME}/apply-window-visibility-fix.sh" ]]; then
+          chmod +x "../patches/${OS_NAME}/apply-window-visibility-fix.sh"
+          if "../patches/${OS_NAME}/apply-window-visibility-fix.sh" "${WINDOW_FILE}"; then
+            echo "✓ Window visibility fix applied successfully via script"
+          else
+            echo "ERROR: CRITICAL FAILURE - Window visibility fix could not be applied!" >&2
+            echo "  This will cause blank screen on macOS. Build should not continue." >&2
+            echo "  File: ${WINDOW_FILE}" >&2
+            echo "  Please check the file structure and fix manually." >&2
+            # Don't exit - let build continue but warn loudly
+          fi
+        else
+          echo "ERROR: Window visibility fix script not found at:" >&2
+          echo "  ../patches/${OS_NAME}/apply-window-visibility-fix.sh" >&2
+        fi
+      else
+        echo "✓ Window visibility fix verified in ${WINDOW_FILE}"
+      fi
+    else
+      echo "WARNING: window.ts not found at either:" >&2
+      echo "  ${WINDOW_FILE_NEW}" >&2
+      echo "  ${WINDOW_FILE_OLD}" >&2
+      echo "  Cannot apply window visibility fix. This may cause blank screen on macOS." >&2
+    fi
+  fi
+  
   # Re-enable set -e after OS patches
   set -e
 fi
@@ -193,11 +254,11 @@ const postInstallPath = path.join(cwd, 'node_modules/node-pty/scripts/post-insta
 
 if (fs.existsSync(postInstallPath)) {
   let content = fs.readFileSync(postInstallPath, 'utf8');
-  
+
   if (content.includes('nodeGypCmd')) {
     process.exit(0);
   }
-  
+
   const fixCode = `// Try to use local node-gyp first to respect package.json overrides
 let nodeGypCmd = 'npx node-gyp';
 const localNodeGyp = path.join(__dirname, '../../node-gyp/bin/node-gyp.js');
@@ -206,17 +267,17 @@ if (fs.existsSync(localNodeGyp)) {
 }
 
 `;
-  
+
   content = content.replace(
     /console\.log\(`\\x1b\[32m> Generating compile_commands\.json\.\.\.\\x1b\[0m`\);/,
     fixCode + 'console.log(`\\x1b[32m> Generating compile_commands.json...\\x1b[0m`);'
   );
-  
+
   content = content.replace(
     /execSync\('npx node-gyp configure -- -f compile_commands_json'\);/,
     'execSync(`${nodeGypCmd} configure -- -f compile_commands_json`);'
   );
-  
+
   fs.writeFileSync(postInstallPath, content, 'utf8');
   console.log('Fixed node-pty post-install script');
 }
@@ -239,7 +300,7 @@ fi
 for i in {1..5}; do # try 5 times
   # Fix the script before attempting install (in case it exists from previous attempt)
   fix_node_pty_postinstall
-  
+
   # Try npm install with ignore-scripts for node-pty, then run postinstall manually
   # Actually, we can't selectively ignore scripts, so we'll need to handle failures
   if [[ "${CI_BUILD}" != "no" && "${OS_NAME}" == "osx" ]]; then
@@ -294,7 +355,7 @@ for i in {1..5}; do # try 5 times
     exit 1
   fi
   echo "Npm install failed (attempt $i/5), trying again in $(( 15 * (i + 1))) seconds..."
-  
+
   # Fix the script after failure (it may have been partially installed)
   fix_node_pty_postinstall
 
@@ -357,7 +418,7 @@ if [[ -f "node_modules/@vscode/gulp-electron/src/download.js" ]]; then
       echo "Patching @vscode/gulp-electron to use dynamic imports for ALL ESM modules..." >&2
       # Create a backup
       cp "node_modules/@vscode/gulp-electron/src/download.js" "node_modules/@vscode/gulp-electron/src/download.js.bak" 2>/dev/null || true
-      
+
       # Comprehensive patch script that handles ALL ESM modules
       cat > /tmp/fix-esm-modules.js << 'EOF'
 const fs = require('fs');
@@ -417,14 +478,14 @@ const asyncFunctions = [
 asyncFunctions.forEach(funcInfo => {
   if (funcInfo.pattern.test(content)) {
     const callCode = `  await ensureESMModules();\n`;
-    
+
     // Check if this specific function already has the call
     const funcMatch = content.match(funcInfo.pattern);
     if (funcMatch) {
       const funcStart = funcMatch.index;
       const funcBodyStart = funcStart + funcMatch[0].length;
       const next50Chars = content.substring(funcBodyStart, funcBodyStart + 50);
-      
+
       // Only add if not already present in this function
       if (!next50Chars.includes('ensureESMModules()')) {
         content = content.replace(
@@ -439,7 +500,7 @@ asyncFunctions.forEach(funcInfo => {
 fs.writeFileSync(filePath, content, 'utf8');
 console.log('Successfully patched @vscode/gulp-electron for ESM compatibility');
 EOF
-      
+
       # Run the comprehensive patch script
       node /tmp/fix-esm-modules.js "node_modules/@vscode/gulp-electron/src/download.js" 2>&1 || {
         echo "Error: Failed to patch @vscode/gulp-electron. Restoring backup..." >&2
@@ -704,21 +765,21 @@ TS_FILE="src/vs/workbench/contrib/cortexide/browser/cortexideCommandBarService.t
 if [[ -f "${TS_FILE}" ]]; then
   echo "File found at: ${TS_FILE}" >&2
   echo "File size: $(wc -l < "${TS_FILE}") lines" >&2
-  
+
   # Check which code structure we have
   HAS_OLD_STRUCTURE=false
   HAS_NEW_STRUCTURE=false
-  
+
   if grep -q "private mountVoidCommandBar: Promise<" "${TS_FILE}" 2>/dev/null; then
     HAS_OLD_STRUCTURE=true
     echo "Detected OLD code structure (class property)" >&2
   fi
-  
+
   if grep -q "mountVoidCommandBarPromise" "${TS_FILE}" 2>/dev/null || grep -q "getMountVoidCommandBar" "${TS_FILE}" 2>/dev/null; then
     HAS_NEW_STRUCTURE=true
     echo "Detected NEW code structure (module-level variable)" >&2
   fi
-  
+
   if [[ "${HAS_NEW_STRUCTURE}" == "true" ]]; then
     echo "✓ Code uses new structure - no fixes needed (already has proper handling)" >&2
     # New structure already has proper null checks and async handling via getMountVoidCommandBar()
@@ -728,7 +789,7 @@ if [[ -f "${TS_FILE}" ]]; then
     fi
   elif [[ "${HAS_OLD_STRUCTURE}" == "true" ]]; then
     echo "Applying fixes for OLD code structure..." >&2
-    
+
     # Fix 1: Property type declaration (line 9) - wrap in parentheses and add union
     if ! grep -q "| (() => void)" "${TS_FILE}" 2>/dev/null; then
       if perl -i.bak -0pe 's/(\t\t)\(rootElement: any, accessor: any, props: any\) => \{ rerender: \(props2: any\) => void; dispose: \(\) => void; \} \| undefined/$1((rootElement: any, accessor: any, props: any) => { rerender: (props2: any) => void; dispose: () => void; } | undefined) | (() => void)/s' "${TS_FILE}" 2>&1; then
@@ -743,10 +804,10 @@ if [[ -f "${TS_FILE}" ]]; then
     else
       echo "✓ Property type already has union" >&2
     fi
-    
+
     # Fix 2: Any assignments that create Promise<...> types
     perl -i.bak2 -0pe 's/(as\s+Promise<)\s*\(rootElement: any, accessor: any, props: any\) => \{ rerender: \(props2: any\) => void; dispose: \(\) => void; \} \| undefined(\s*>)/$1((rootElement: any, accessor: any, props: any) => { rerender: (props2: any) => void; dispose: () => void; } | undefined) | (() => void)$2/s' "${TS_FILE}" 2>&1 && echo "✓ Fixed assignment types (if any)" >&2 || true
-    
+
     # Fix 3: Line 572 - add null check and await
     if ! grep -q "if (this.mountVoidCommandBar)" "${TS_FILE}" 2>/dev/null; then
       if perl -i.bak3 -0pe 's/(\t+)mountVoidCommandBar\(rootElement, accessor, props\);/$1if (this.mountVoidCommandBar) {\n$1\t(await this.mountVoidCommandBar)(rootElement, accessor, props);\n$1}/' "${TS_FILE}" 2>&1; then
@@ -771,7 +832,7 @@ if [[ -f "${TS_FILE}" ]]; then
     echo "  Searching for mountVoidCommandBar references:" >&2
     grep -n "mountVoidCommandBar" "${TS_FILE}" 2>/dev/null | head -5 >&2 || true
   fi
-  
+
   echo "TypeScript fixes completed" >&2
 else
   echo "✗ cortexideCommandBarService.ts not found at ${TS_FILE}, skipping fix" >&2
@@ -789,11 +850,11 @@ try {
   let content = fs.readFileSync(filePath, 'utf8');
   let modified = false;
   const lines = content.split('\n');
-  
+
   // Fix 1: Update property type declaration (lines 8-11)
   // Change: (rootElement: any, ...) => { ... } | undefined
   // To:     ((rootElement: any, ...) => { ... } | undefined) | (() => void)
-  
+
   for (let i = 0; i < lines.length; i++) {
     // Find the property declaration line
     if (lines[i].includes('mountVoidCommandBar') && lines[i].includes('Promise<')) {
@@ -812,7 +873,7 @@ try {
       }
     }
   }
-  
+
   // Find and update assignments - look for patterns like:
   // this.mountVoidCommandBar = ... as Promise<...>
   // this.mountVoidCommandBar = Promise.resolve(...) as Promise<...>
@@ -825,7 +886,7 @@ try {
     // Pattern 3: Direct assignment to Promise.resolve/Promise.reject with type
     /(this\.mountVoidCommandBar\s*=\s*Promise\.(resolve|reject)\([^)]*\)\s*as\s+Promise<)([^>]+)(>)/g,
   ];
-  
+
   assignmentPatterns.forEach((pattern, idx) => {
     content = content.replace(pattern, (match, p1, p2, p3) => {
       const currentType = p2.trim();
@@ -838,14 +899,14 @@ try {
       return match;
     });
   });
-  
+
   // Also check line 35 specifically - the error is at line 35, so there might be an assignment there
   // The error suggests the property type was updated but an assignment still has the old type
   // Need to check multi-line assignments too
   if (lines.length >= 35) {
     const line35 = lines[34]; // 0-indexed
     console.error(`Line 35 content: ${line35}`);
-    
+
     // Check if this is part of a multi-line assignment (check previous lines too)
     let assignmentStart = -1;
     for (let i = 33; i >= 0; i--) {
@@ -854,7 +915,7 @@ try {
         break;
       }
     }
-    
+
     // If we found an assignment, check all lines from assignmentStart to line 35
     if (assignmentStart >= 0) {
       let assignmentLines = [];
@@ -870,7 +931,7 @@ try {
       const assignmentText = assignmentLines.join('\n');
       console.error(`Found assignment starting at line ${assignmentStart + 1}, ending at ${assignmentEnd + 1}:`);
       console.error(assignmentText);
-      
+
       // Look for Promise<...> type in the assignment that doesn't include the union
       // Use /s flag to match across newlines
       if (assignmentText.includes('Promise<') && !assignmentText.includes('| (() => void)')) {
@@ -880,7 +941,7 @@ try {
           (match, p1, p2, p3) => {
             const typeContent = p2.trim();
             // Only update if it's the mount function type pattern
-            if (!typeContent.includes('| (() => void)') && 
+            if (!typeContent.includes('| (() => void)') &&
                 !typeContent.includes('(() => void)') &&
                 (typeContent.includes('rootElement') || typeContent.includes('rerender') || typeContent.includes('dispose'))) {
               return p1 + '(' + typeContent + ') | (() => void)' + p3;
@@ -888,7 +949,7 @@ try {
             return match;
           }
         );
-        
+
         if (updatedAssignment !== assignmentText) {
           // Split back into lines and update
           const updatedLines = updatedAssignment.split('\n');
@@ -908,7 +969,7 @@ try {
           /(Promise<)([^>]+)(>)/g,
           (match, p1, p2, p3) => {
             const typeContent = p2.trim();
-            if (!typeContent.includes('| (() => void)') && 
+            if (!typeContent.includes('| (() => void)') &&
                 !typeContent.includes('(() => void)') &&
                 (typeContent.includes('rootElement') || typeContent.includes('rerender') || typeContent.includes('dispose'))) {
               return p1 + '(' + typeContent + ') | (() => void)' + p3;
@@ -926,46 +987,46 @@ try {
       }
     }
   }
-  
+
   // Fix 2: Add null check and await before calling mountVoidCommandBar at line 572
   // Look for the exact pattern around that line
   // First update content with lines array if we modified it above
   if (modified) {
     content = lines.join('\n');
   }
-  
+
   const linesArray = content.split('\n');
   for (let i = 0; i < linesArray.length; i++) {
     const line = linesArray[i];
     const lineNum = i + 1;
-    
+
     // Check if this is around line 572 and has the problematic call
     // Look for various patterns: mountVoidCommandBar(, this.mountVoidCommandBar(, or just the function name
-    if ((lineNum >= 570 && lineNum <= 575) && 
-        (line.includes('mountVoidCommandBar(') || 
+    if ((lineNum >= 570 && lineNum <= 575) &&
+        (line.includes('mountVoidCommandBar(') ||
          line.includes('mountVoidCommandBar(rootElement'))) {
-      
+
       console.error(`Found problematic call at line ${lineNum}: ${line.trim()}`);
-      
+
       // Check if already has null check (check previous 2 lines)
       const hasNullCheck = (i > 0 && linesArray[i - 1].includes('if (this.mountVoidCommandBar)')) ||
                            (i > 0 && linesArray[i - 1].includes('if (mountVoidCommandBar)')) ||
                            (i > 1 && linesArray[i - 2].includes('if (this.mountVoidCommandBar)')) ||
                            (i > 1 && linesArray[i - 2].includes('if (mountVoidCommandBar)'));
-      
+
       if (!hasNullCheck) {
         // Get indentation from current line
         const indentMatch = line.match(/^(\s*)/);
         const indent = indentMatch ? indentMatch[1] : '';
         const tab = indent.includes('\t') ? '\t' : '  ';
-        
+
         // Extract the function call - handle both this.mountVoidCommandBar and mountVoidCommandBar
         let funcCall = line.trim();
         if (funcCall.startsWith('mountVoidCommandBar(') || funcCall.startsWith('this.mountVoidCommandBar(')) {
           // Extract arguments - look for rootElement, accessor, props
           const argsMatch = line.match(/mountVoidCommandBar\s*\(([^)]+)\)/);
           const args = argsMatch ? argsMatch[1] : 'rootElement, accessor, props';
-          
+
           // Replace the line with null check and await
           linesArray[i] = `${indent}if (this.mountVoidCommandBar) {\n${indent}${tab}(await this.mountVoidCommandBar)(${args});\n${indent}}`;
           modified = true;
@@ -989,7 +1050,7 @@ try {
       }
     }
   }
-  
+
   if (modified) {
     content = linesArray.join('\n');
     fs.writeFileSync(filePath, content, 'utf8');

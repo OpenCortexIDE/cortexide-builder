@@ -1,30 +1,31 @@
-diff --git a/src/vs/code/electron-main/window.ts b/src/vs/code/electron-main/window.ts
---- a/src/vs/code/electron-main/window.ts
-+++ b/src/vs/code/electron-main/window.ts
+diff --git a/src/vs/platform/windows/electron-main/windowImpl.ts b/src/vs/platform/windows/electron-main/windowImpl.ts
+--- a/src/vs/platform/windows/electron-main/windowImpl.ts
++++ b/src/vs/platform/windows/electron-main/windowImpl.ts
 @@ -XXX,XX +XXX,XX @@
- 			this.win.webContents.send('vscode:windowConfiguration', configuration);
- 		}
+ 		// Load URL
+ 		this._win.loadURL(FileAccess.asBrowserUri(`vs/code/electron-browser/workbench/workbench${this.environmentMainService.isBuilt ? '' : '-dev'}.html`).toString(true));
  
 +		// Fix for macOS blank screen: Ensure window is visible and has valid bounds
-+		if (isMacintosh && this.win) {
++		if (isMacintosh && this._win) {
 +			// Force window to be shown if it's not visible
-+			if (!this.win.isVisible()) {
-+				this.win.showInactive();
++			if (!this._win.isVisible()) {
++				this._win.showInactive();
 +			}
 +			// Ensure window is not minimized
-+			if (this.win.isMinimized()) {
-+				this.win.restore();
++			if (this._win.isMinimized()) {
++				this._win.restore();
 +			}
 +			// Validate and fix window bounds if invalid (0x0 or off-screen)
-+			const bounds = this.win.getBounds();
++			const bounds = this._win.getBounds();
 +			if (bounds && (bounds.width === 0 || bounds.height === 0)) {
 +				// Reset to default size if invalid
-+				this.win.setSize(1024, 768);
-+				this.win.center();
++				this._win.setSize(1024, 768);
++				this._win.center();
 +			}
 +			// Ensure window is focused to prevent blank screen
-+			this.win.focus();
++			this._win.focus();
 +		}
 +
- 		return this.win;
- 	}
+ 		// Remember that we did load
+ 		const wasLoaded = this.wasLoaded;
+ 		this.wasLoaded = true;

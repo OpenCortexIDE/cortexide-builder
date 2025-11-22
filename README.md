@@ -14,5 +14,12 @@ The  `.patch` files from VSCodium get rid of telemetry in CortexIDE (the core pu
 
 - If you want to build and compile CortexIDE yourself, you just need to fork this repo and run the GitHub Workflows. If you want to handle auto updates too, just search for caps-sensitive "CortexIDE" and "cortexide" and replace them with your own repo.
 
+## Troubleshooting
+
+If you encounter issues after building and installing CortexIDE:
+
+- **macOS blank screen**: Run `./fix_macos_blank_screen.sh` to diagnose and fix GPU cache issues
+- See [docs/troubleshooting.md](docs/troubleshooting.md) for detailed troubleshooting steps
+
 ## Rebasing
 - We often need to rebase `cortexide` and `cortexide-builder` onto `vscode` and `vscodium` to keep our build pipeline working when deprecations happen, but this is pretty easy. All the changes we made in `cortexide/` are commented with the caps-sensitive word "CortexIDE" (except our images, which need to be done manually), so rebasing just involves copying the `vscode/` repo and searching "CortexIDE" to re-make all our changes. The same exact thing holds for copying the `vscodium/` repo onto this repo and searching "CortexIDE" and "cortexide" to keep our changes. Just make sure the vscode and vscodium versions align.

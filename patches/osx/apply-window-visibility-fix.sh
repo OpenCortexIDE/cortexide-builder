@@ -177,37 +177,9 @@ PYTHON_SCRIPT
   fi
 fi
 
-# Strategy 2: Use perl with flexible pattern matching
-if [[ "${INSERTION_PATTERN}" == "this\._win\.loadURL" ]]; then
-  # New structure: Insert after loadURL
-  if perl -i.bak -0pe "
-    if (/(this\._win\.loadURL\([^)]+\);\s*)(\n\s*\/\/ Remember that we did load)/s) {
-      \$_ = \$` . \$1 . \"\n${FIX_CODE}\" . \$2 . \$';
-    } elsif (/(this\._win\.loadURL\([^)]+\);)(\s*\n)/s) {
-      \$_ = \$` . \$1 . \"\n${FIX_CODE}\" . \$2 . \$';
-    }
-  " "${WINDOW_TS_FILE}" 2>/dev/null; then
-    if grep -q "Fix for macOS blank screen" "${WINDOW_TS_FILE}"; then
-      echo "✓ Window visibility fix applied successfully (perl strategy - new structure)"
-      rm -f "${WINDOW_TS_FILE}.bak"
-      exit 0
-    fi
-  fi
-else
-  # Old structure: Insert before return this.win
-  if perl -i.bak -0pe "
-    if (/(this\.win\.webContents\.send\(['\"]vscode:windowConfiguration['\"],\s*configuration\);\s*\}\s*)(\n\s*return\s+this\.win;)/s) {
-      \$_ = \$` . \$1 . \"\n${FIX_CODE}\" . \$2 . \$';
-    }
-  " "${WINDOW_TS_FILE}" 2>/dev/null; then
-    if grep -q "Fix for macOS blank screen" "${WINDOW_TS_FILE}"; then
-      echo "✓ Window visibility fix applied successfully (perl strategy - old structure)"
-      rm -f "${WINDOW_TS_FILE}.bak"
-      exit 0
-    fi
-  fi
-fi
-
+# Strategy 2: Use perl with flexible pattern matching (skip - use Python or sed instead)
+# Perl has escaping issues with backticks in bash, so we skip this strategy
+# Python (Strategy 1) and sed (Strategy 3) are more reliable
 # Strategy 3: Use sed as final fallback
 if [[ "${INSERTION_PATTERN}" == "this\._win\.loadURL" ]]; then
   # New structure: Insert after loadURL line

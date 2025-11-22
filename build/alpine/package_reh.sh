@@ -183,11 +183,36 @@ if (match || execSyncLine >= 0) {
     // Replace the entire execSync block with file-based approach using spawn
     // For ARM64, we need to handle cross-platform with --platform flag
     // Find the full execSync statement (might span multiple lines)
+    // Find the end of the execSync statement (might span multiple lines)
+    // Look for the semicolon that ends the statement
     let execSyncEnd = execSyncLine;
-    for (let i = execSyncLine; i < Math.min(execSyncLine + 5, lines.length); i++) {
-      if (lines[i].includes(';') || (lines[i].includes(')') && !lines[i].includes('('))) {
+    let parenCount = 0;
+    let foundOpenParen = false;
+    
+    for (let i = execSyncLine; i < Math.min(execSyncLine + 10, lines.length); i++) {
+      const line = lines[i];
+      // Count parentheses to find the end of the execSync call
+      if (line.includes('(')) {
+        foundOpenParen = true;
+        parenCount += (line.match(/\(/g) || []).length;
+      }
+      if (line.includes(')')) {
+        parenCount -= (line.match(/\)/g) || []).length;
+      }
+      // Found the semicolon that ends the statement
+      if (line.includes(';') && foundOpenParen && parenCount <= 0) {
         execSyncEnd = i;
         break;
+      }
+    }
+    
+    // If we didn't find the end, just use the next line with semicolon
+    if (execSyncEnd === execSyncLine) {
+      for (let i = execSyncLine; i < Math.min(execSyncLine + 5, lines.length); i++) {
+        if (lines[i].includes(';')) {
+          execSyncEnd = i;
+          break;
+        }
       }
     }
     

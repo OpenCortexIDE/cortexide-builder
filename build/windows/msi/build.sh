@@ -38,7 +38,43 @@ fi
 # Convert EXE_NAME to uppercase for WiX file ID (e.g., "cortexide.exe" -> "CORTEXIDE.EXE")
 EXE_FILE_ID="$( echo "${EXE_NAME}.exe" | tr '[:lower:]' '[:upper:]' )"
 
-PRODUCT_ID=$( powershell.exe -command "[guid]::NewGuid().ToString().ToUpper()" )
+# CRITICAL: Validate WIX toolset is available
+if [[ -z "${WIX}" ]]; then
+  echo "Error: WIX environment variable is not set" >&2
+  echo "WIX should point to the WiX Toolset installation directory (e.g., C:\\Program Files (x86)\\WiX Toolset v3.11\\)" >&2
+  echo "Please set WIX before running this script" >&2
+  exit 1
+fi
+
+# Validate WIX directory exists and contains required tools
+if [[ ! -d "${WIX}" ]]; then
+  echo "Error: WIX directory does not exist: ${WIX}" >&2
+  exit 1
+fi
+
+# Check for required WiX tools
+for tool in heat.exe candle.exe light.exe; do
+  if [[ ! -f "${WIX}bin\\${tool}" ]]; then
+    echo "Error: Required WiX tool not found: ${WIX}bin\\${tool}" >&2
+    echo "Please verify your WiX Toolset installation" >&2
+    exit 1
+  fi
+done
+echo "✓ WiX Toolset found at: ${WIX}" >&2
+
+# Validate PowerShell is available
+if ! command -v powershell.exe >/dev/null 2>&1; then
+  echo "Error: powershell.exe not found in PATH" >&2
+  echo "PowerShell is required to generate Product ID" >&2
+  exit 1
+fi
+
+PRODUCT_ID=$( powershell.exe -command "[guid]::NewGuid().ToString().ToUpper()" 2>&1 )
+if [[ $? -ne 0 ]]; then
+  echo "Error: Failed to generate Product ID using PowerShell" >&2
+  echo "PowerShell output: ${PRODUCT_ID}" >&2
+  exit 1
+fi
 PRODUCT_ID="${PRODUCT_ID%%[[:cntrl:]]}"
 
 CULTURE="en-us"
@@ -127,7 +163,14 @@ BuildSetupTranslationTransform() {
 
 	"${WIX}bin\\light.exe" vscodium.wixobj "Files-${OUTPUT_BASE_FILENAME}.wixobj" -ext WixUIExtension -ext WixUtilExtension -ext WixNetFxExtension -spdb -cc "${TEMP}\\vscodium-cab-cache\\${PLATFORM}" -reusecab -out "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.${CULTURE}.msi" -loc "i18n\\vscodium.${CULTURE}.wxl" -cultures:"${CULTURE}" -sice:ICE60 -sice:ICE69
 
-	cscript "${PROGRAM_FILES_86}\\Windows Kits\\${WIN_SDK_MAJOR_VERSION}\\bin\\${WIN_SDK_FULL_VERSION}\\${PLATFORM}\\WiLangId.vbs" "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.${CULTURE}.msi" Product "${LANGID}"
+	WILANGID_VBS="${PROGRAM_FILES_86}\\Windows Kits\\${WIN_SDK_MAJOR_VERSION}\\bin\\${WIN_SDK_FULL_VERSION}\\${PLATFORM}\\WiLangId.vbs"
+	if [[ -f "${WILANGID_VBS}" ]]; then
+		cscript "${WILANGID_VBS}" "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.${CULTURE}.msi" Product "${LANGID}" 2>&1 || {
+			echo "Warning: Failed to set language ID for ${CULTURE} using WiLangId.vbs" >&2
+		}
+	else
+		echo "Warning: WiLangId.vbs not found at ${WILANGID_VBS}, skipping language ID setting for ${CULTURE}" >&2
+	fi
 
 	"${PROGRAM_FILES_86}\\Windows Kits\\${WIN_SDK_MAJOR_VERSION}\\bin\\${WIN_SDK_FULL_VERSION}\\x86\\msitran" -g "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.msi" "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.${CULTURE}.msi" "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.${CULTURE}.mst"
 
@@ -225,7 +268,18 @@ BuildSetupTranslationTransform zh-cn 2052
 BuildSetupTranslationTransform zh-tw 1028
 
 # Add all supported languages to MSI Package attribute
-cscript "${PROGRAM_FILES_86}\\Windows Kits\\${WIN_SDK_MAJOR_VERSION}\\bin\\${WIN_SDK_FULL_VERSION}\\${PLATFORM}\\WiLangId.vbs" "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.msi" Package "${LANGIDS}"
+# Add all supported languages to MSI Package attribute
+# Validate Windows SDK path exists before using cscript
+WILANGID_VBS="${PROGRAM_FILES_86}\\Windows Kits\\${WIN_SDK_MAJOR_VERSION}\\bin\\${WIN_SDK_FULL_VERSION}\\${PLATFORM}\\WiLangId.vbs"
+if [[ -f "${WILANGID_VBS}" ]]; then
+	cscript "${WILANGID_VBS}" "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.msi" Package "${LANGIDS}" 2>&1 || {
+		echo "Warning: Failed to set language IDs using WiLangId.vbs" >&2
+		echo "This is non-critical - MSI will still work, but language support may be limited" >&2
+	}
+else
+	echo "Warning: WiLangId.vbs not found at ${WILANGID_VBS}" >&2
+	echo "Skipping language ID setting - MSI will still work, but language support may be limited" >&2
+fi
 
 # Remove files we do not need any longer.
 rm -rf "${TEMP}\\vscodium-cab-cache"

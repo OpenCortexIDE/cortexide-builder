@@ -123,9 +123,19 @@ for (let i = 0; i < lines.length; i++) {
 // Find the execSync line (should be around line 171, but search from function start)
 if (functionStartLine >= 0) {
   for (let i = functionStartLine; i < Math.min(functionStartLine + 50, lines.length); i++) {
-    if (lines[i].includes('execSync') && (lines[i].includes('maxBuffer') || lines[i].includes('cp.execSync'))) {
+    // Look for execSync with docker run or cat which node
+    if (lines[i].includes('execSync') && (lines[i].includes('docker') || lines[i].includes('maxBuffer') || lines[i].includes('cp.execSync') || lines[i].includes('which node'))) {
       execSyncLine = i;
       break;
+    }
+  }
+  // If not found, look for any execSync in the function
+  if (execSyncLine === -1) {
+    for (let i = functionStartLine; i < Math.min(functionStartLine + 50, lines.length); i++) {
+      if (lines[i].includes('execSync')) {
+        execSyncLine = i;
+        break;
+      }
     }
   }
 }
@@ -154,16 +164,27 @@ if (match || execSyncLine >= 0) {
     const line = lines[execSyncLine];
     const indent = line.match(/^\s*/)[0];
     
-    // Replace the line with file-based approach using spawn instead of execSync
-    // For ARM64 on AMD64 host, we need to handle cross-platform differently
-    lines[execSyncLine] = `${indent}// DOCKER_BUFFER_FIX: Use file output instead of execSync to avoid ENOBUFS
+    // Replace the entire execSync block with file-based approach using spawn
+    // For ARM64, we need to handle cross-platform with --platform flag
+    // Find the full execSync statement (might span multiple lines)
+    let execSyncEnd = execSyncLine;
+    for (let i = execSyncLine; i < Math.min(execSyncLine + 5, lines.length); i++) {
+      if (lines[i].includes(';') || lines[i].includes(')')) {
+        execSyncEnd = i;
+        break;
+      }
+    }
+    
+    // Replace the execSync line(s) with our fix
+    const replacement = `${indent}// DOCKER_BUFFER_FIX: Use file output instead of execSync to avoid ENOBUFS
 ${indent}const tmpFile = path.join(os.tmpdir(), \`node-\${nodeVersion || 'unknown'}-\${arch || 'unknown'}-\${Date.now()}\`);
 ${indent}try {
 ${indent}	// Use spawn with file redirection to avoid ENOBUFS
 ${indent}	const { spawnSync } = require('child_process');
-${indent}	const dockerCmd = arch === 'arm64' && process.platform === 'linux' ? 
-${indent}		\`docker run --rm --platform linux/arm64 \${imageName || 'arm64v8/node'}:\${nodeVersion || 'unknown'}-alpine /bin/sh -c 'cat \\\`which node\\\`'\` :
-${indent}		\`docker run --rm \${dockerPlatform || ''} \${imageName || 'node'}:\${nodeVersion || 'unknown'}-alpine /bin/sh -c 'cat \\\`which node\\\`'\`;
+${indent}	// For ARM64 on non-ARM64 host, use --platform flag
+${indent}	const platformFlag = (arch === 'arm64' && process.platform !== 'darwin') ? '--platform linux/arm64 ' : '';
+${indent}	const imagePrefix = (arch === 'arm64' && !dockerPlatform) ? 'arm64v8/' : '';
+${indent}	const dockerCmd = \`docker run --rm \${platformFlag}\${dockerPlatform || ''}\${imagePrefix}\${imageName || 'node'}:\${nodeVersion || 'unknown'}-alpine /bin/sh -c 'cat \\\`which node\\\`'\`;
 ${indent}	const result = spawnSync('sh', ['-c', \`\${dockerCmd} > \${tmpFile}\`], { stdio: 'inherit' });
 ${indent}	if (result.error || result.status !== 0) {
 ${indent}		throw result.error || new Error(\`Docker command failed with status \${result.status}\`);
@@ -177,6 +198,9 @@ ${indent}		fs.unlinkSync(tmpFile);
 ${indent}	}
 ${indent}	throw err;
 ${indent}}`;
+    
+    // Replace the execSync line(s)
+    lines.splice(execSyncLine, execSyncEnd - execSyncLine + 1, replacement);
     content = lines.join('\n');
     replaced = true;
     console.error(`✓ Replaced execSync at line ${execSyncLine + 1} with file-based approach`);

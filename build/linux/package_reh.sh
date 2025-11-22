@@ -155,31 +155,27 @@ content = lines.join('\n');
 // Also patch fetchUrl to handle missing assets gracefully for remote sysroot
 // Some architectures (ppc64le, s390x) don't have -gcc-8.5.0 variants in releases
 if (!content.includes('// REMOTE_SYSROOT_FALLBACK')) {
-  // Find where the error is thrown - it's in the fetchUrl function where asset is not found
-  // The asset variable is available, and we can check its name
-  const errorThrowPattern = /(if\s*\(\s*!asset\s*\)\s*\{[\s\S]*?throw\s+new\s+Error\([^)]*Could not find asset[^)]*\))/;
+  // Find where the error is thrown - it's right before the throw statement
+  // We need to patch the throw to check for fallback first
+  const errorThrowPattern = /(\s+)(throw\s+new\s+Error\([^)]*Could not find asset[^)]*\))/;
   if (errorThrowPattern.test(content)) {
-    content = content.replace(errorThrowPattern, (match) => {
-      // Patch the if (!asset) block to add fallback logic
-      return match.replace(
-        /(if\s*\(\s*!asset\s*\)\s*\{)/,
-        `// REMOTE_SYSROOT_FALLBACK: If remote sysroot doesn't exist, try without gcc suffix or skip
-        if (!asset && options.name && options.name.includes('-gcc-') && process.env.VSCODE_SYSROOT_PREFIX && process.env.VSCODE_SYSROOT_PREFIX.includes('-gcc-')) {
-          console.error(\`Warning: Remote sysroot \${options.name} not found, trying without gcc suffix...\`);
-          const fallbackName = options.name.replace(/-gcc-[^-]+\.tar\.gz$/, '.tar.gz');
-          if (fallbackName !== options.name) {
-            // Retry with fallback name
-            const fallbackAsset = assets.find(a => a.name === fallbackName);
-            if (fallbackAsset) {
-              return fallbackAsset.browser_download_url;
-            }
-          }
-          // If still not found, return null to skip remote sysroot (client sysroot will be used)
-          console.error(\`Warning: Remote sysroot not available for \${options.name}, skipping. Client sysroot will be used.\`);
-          return null;
-        }
-        $1`
-      );
+    content = content.replace(errorThrowPattern, (match, indent, throwStmt) => {
+      return `${indent}// REMOTE_SYSROOT_FALLBACK: If remote sysroot doesn't exist, try without gcc suffix or skip
+${indent}if (!asset && options && options.name && options.name.includes('-gcc-') && process.env.VSCODE_SYSROOT_PREFIX && process.env.VSCODE_SYSROOT_PREFIX.includes('-gcc-')) {
+${indent}  console.error(\`Warning: Remote sysroot \${options.name} not found, trying without gcc suffix...\`);
+${indent}  const fallbackName = options.name.replace(/-gcc-[^-]+\.tar\.gz$/, '.tar.gz');
+${indent}  if (fallbackName !== options.name) {
+${indent}    // Retry with fallback name
+${indent}    const fallbackAsset = assets.find(a => a.name === fallbackName);
+${indent}    if (fallbackAsset) {
+${indent}      return fallbackAsset.browser_download_url;
+${indent}    }
+${indent}  }
+${indent}  // If still not found, return null to skip remote sysroot (client sysroot will be used)
+${indent}  console.error(\`Warning: Remote sysroot not available for \${options.name}, skipping. Client sysroot will be used.\`);
+${indent}  return null;
+${indent}}
+${indent}${throwStmt}`;
     });
     console.error('✓ Patched fetchUrl to handle missing remote sysroot assets gracefully');
   }
@@ -902,18 +898,49 @@ if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
     }
   }
   
-  // Strategy 6: Patch the actual URL construction in fetchUrls calls
+  // Strategy 6: Patch the actual URL construction in fetchUrls calls - be more aggressive
   if (!patched) {
-    // Find fetchUrls calls with nodeVersion and replace them
-    const fetchUrlsCallPattern = new RegExp(`(fetchUrls\\([^)]*['"]/v\\\\\\$\\\\{nodeVersion\\\\}/node-v\\\\\\$\\\\{nodeVersion\\\\}-[^}]+-${arch}[^}]+['"][^)]*\\))`, 'g');
-    if (fetchUrlsCallPattern.test(content)) {
-      content = content.replace(fetchUrlsCallPattern, (match) => {
+    // Find fetchUrls calls with nodeVersion and replace them - try multiple patterns
+    const patterns = [
+      new RegExp(`(fetchUrls\\([^)]*['"]/v\\\\\\$\\\\{nodeVersion\\\\}/node-v\\\\\\$\\\\{nodeVersion\\\\}-[^}]+-${arch}[^}]+['"][^)]*\\))`, 'g'),
+      new RegExp(`(fetchUrls\\([^)]*['"]/dist/v\\\\\\$\\\\{nodeVersion\\\\}/node-v\\\\\\$\\\\{nodeVersion\\\\}-[^}]+-${arch}[^}]+['"][^)]*\\))`, 'g'),
+      new RegExp(`(['"]/v\\\\\\$\\\\{nodeVersion\\\\}/node-v\\\\\\$\\\\{nodeVersion\\\\}-[^}]+-${arch}[^}]+['"])`, 'g')
+    ];
+    
+    for (const pattern of patterns) {
+      if (pattern.test(content)) {
+        content = content.replace(pattern, (match) => {
+          patched = true;
+          // Replace all occurrences of ${nodeVersion} with the actual version
+          return match.replace(/\\\$\\{nodeVersion\\}/g, nodeVersion);
+        });
+        if (patched) {
+          console.error(`✓ Patched fetchUrls/URL pattern to use ${nodeVersion} for ${arch}`);
+          break;
+        }
+      }
+    }
+  }
+  
+  // Strategy 7: Patch at the very beginning of nodejs function to override nodeVersion immediately
+  if (!patched) {
+    // Find the function and add version override as the very first statement
+    const nodejsFuncStart = /(function\s+nodejs\s*\([^)]*platform[^)]*arch[^)]*\)\s*\{)/;
+    if (nodejsFuncStart.test(content)) {
+      content = content.replace(nodejsFuncStart, (match) => {
         patched = true;
-        // Replace all occurrences of ${nodeVersion} with the actual version
-        return match.replace(/\\\$\\{nodeVersion\\}/g, nodeVersion);
+        return `${match}
+\t// NODE_VERSION_FIX_${arch}: Override nodeVersion immediately for ${arch}
+\tif (arch === '${arch}' && process.env.NODE_VERSION) {
+\t\tconst envNodeVersion = process.env.NODE_VERSION;
+\t\tif (typeof nodeVersion === 'undefined') {
+\t\t\tnodeVersion = require('../package.json').version;
+\t\t}
+\t\tnodeVersion = envNodeVersion;
+\t}`;
       });
       if (patched) {
-        console.error(`✓ Patched fetchUrls calls to use ${nodeVersion} for ${arch}`);
+        console.error(`✓ Patched nodejs function start to override version for ${arch}`);
       }
     }
   }

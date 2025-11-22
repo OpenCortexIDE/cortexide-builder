@@ -172,11 +172,27 @@ BuildSetupTranslationTransform() {
 		echo "Warning: WiLangId.vbs not found at ${WILANGID_VBS}, skipping language ID setting for ${CULTURE}" >&2
 	fi
 
-	"${PROGRAM_FILES_86}\\Windows Kits\\${WIN_SDK_MAJOR_VERSION}\\bin\\${WIN_SDK_FULL_VERSION}\\x86\\msitran" -g "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.msi" "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.${CULTURE}.msi" "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.${CULTURE}.mst"
+	# Windows SDK tools are optional - check before using
+	MSITRAN="${PROGRAM_FILES_86}\\Windows Kits\\${WIN_SDK_MAJOR_VERSION}\\bin\\${WIN_SDK_FULL_VERSION}\\x86\\msitran"
+	if [[ -f "${MSITRAN}" ]]; then
+		"${MSITRAN}" -g "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.msi" "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.${CULTURE}.msi" "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.${CULTURE}.mst" 2>&1 || {
+			echo "Warning: Failed to create transform using msitran for ${CULTURE}" >&2
+		}
+	else
+		echo "Warning: msitran not found at ${MSITRAN}, skipping transform creation for ${CULTURE}" >&2
+	fi
 
-	cscript "${PROGRAM_FILES_86}\\Windows Kits\\${WIN_SDK_MAJOR_VERSION}\\bin\\${WIN_SDK_FULL_VERSION}\\${PLATFORM}\\wisubstg.vbs" "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.msi" "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.${CULTURE}.mst" "${LANGID}"
-
-	cscript "${PROGRAM_FILES_86}\\Windows Kits\\${WIN_SDK_MAJOR_VERSION}\\bin\\${WIN_SDK_FULL_VERSION}\\${PLATFORM}\\wisubstg.vbs" "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.msi"
+	WISUBSTG_VBS="${PROGRAM_FILES_86}\\Windows Kits\\${WIN_SDK_MAJOR_VERSION}\\bin\\${WIN_SDK_FULL_VERSION}\\${PLATFORM}\\wisubstg.vbs"
+	if [[ -f "${WISUBSTG_VBS}" ]]; then
+		cscript "${WISUBSTG_VBS}" "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.msi" "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.${CULTURE}.mst" "${LANGID}" 2>&1 || {
+			echo "Warning: Failed to add transform using wisubstg.vbs for ${CULTURE}" >&2
+		}
+		cscript "${WISUBSTG_VBS}" "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.msi" 2>&1 || {
+			echo "Warning: Failed to finalize transforms using wisubstg.vbs" >&2
+		}
+	else
+		echo "Warning: wisubstg.vbs not found at ${WISUBSTG_VBS}, skipping transform operations for ${CULTURE}" >&2
+	fi
 
 	rm -f "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.${CULTURE}.msi"
 	rm -f "${SETUP_RELEASE_DIR}\\${OUTPUT_BASE_FILENAME}.${CULTURE}.mst"

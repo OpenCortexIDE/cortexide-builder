@@ -1433,31 +1433,65 @@ EOFPATCH2
 
     # CRITICAL: Verify workbench.html exists in the built app to prevent blank screen
     echo "Verifying critical files in macOS app bundle..."
-    APP_BUNDLE="../VSCode-darwin-${VSCODE_ARCH}/${APP_NAME}.app"
+    # Get the actual app bundle name from product.json (nameShort), not APP_NAME
+    # The app bundle is named after nameShort (e.g., "CortexIDE.app" or "CortexIDE - Insiders.app")
+    APP_BUNDLE_NAME=$( node -p "require('./product.json').nameShort" )
+    APP_BUNDLE="../VSCode-darwin-${VSCODE_ARCH}/${APP_BUNDLE_NAME}.app"
+    
+    # Verify the app bundle exists
+    if [[ ! -d "${APP_BUNDLE}" ]]; then
+      echo "ERROR: App bundle not found at expected location!" >&2
+      echo "  Expected: ${APP_BUNDLE}" >&2
+      echo "  Looking for alternative locations..." >&2
+      # Try to find the actual app bundle
+      if [[ -d "../VSCode-darwin-${VSCODE_ARCH}" ]]; then
+        FOUND_BUNDLE=$( find "../VSCode-darwin-${VSCODE_ARCH}" -name "*.app" -type d | head -1 )
+        if [[ -n "${FOUND_BUNDLE}" ]]; then
+          echo "  Found app bundle at: ${FOUND_BUNDLE}" >&2
+          APP_BUNDLE="${FOUND_BUNDLE}"
+        else
+          echo "  No .app bundle found in VSCode-darwin-${VSCODE_ARCH}!" >&2
+          exit 1
+        fi
+      else
+        echo "  VSCode-darwin-${VSCODE_ARCH} directory not found!" >&2
+        exit 1
+      fi
+    fi
+    
     WORKBENCH_HTML="${APP_BUNDLE}/Contents/Resources/app/out/vs/code/electron-browser/workbench/workbench.html"
     MAIN_JS="${APP_BUNDLE}/Contents/Resources/app/out/main.js"
     
     if [[ ! -f "${WORKBENCH_HTML}" ]]; then
       echo "ERROR: workbench.html is missing from app bundle!" >&2
       echo "  Expected at: ${WORKBENCH_HTML}" >&2
+      echo "  App bundle: ${APP_BUNDLE}" >&2
       echo "  This will cause a blank screen. Checking if file exists in out-build..." >&2
       if [[ -f "out-build/vs/code/electron-browser/workbench/workbench.html" ]]; then
         echo "  workbench.html exists in out-build but wasn't copied to app bundle!" >&2
         echo "  This indicates a packaging issue in gulpfile.vscode.js" >&2
+        echo "  Attempting to manually copy workbench.html..." >&2
+        mkdir -p "$(dirname "${WORKBENCH_HTML}")"
+        cp "out-build/vs/code/electron-browser/workbench/workbench.html" "${WORKBENCH_HTML}" || {
+          echo "  Failed to copy workbench.html!" >&2
+          exit 1
+        }
+        echo "  ✓ Manually copied workbench.html to app bundle" >&2
       else
         echo "  workbench.html is also missing from out-build!" >&2
         echo "  The minify-vscode task may have failed silently." >&2
+        exit 1
       fi
-      exit 1
     fi
     
     if [[ ! -f "${MAIN_JS}" ]]; then
       echo "ERROR: main.js is missing from app bundle!" >&2
       echo "  Expected at: ${MAIN_JS}" >&2
+      echo "  App bundle: ${APP_BUNDLE}" >&2
       exit 1
     fi
     
-    echo "✓ Critical files verified in app bundle"
+    echo "✓ Critical files verified in app bundle: ${APP_BUNDLE}"
 
     if ! . ../build_cli.sh; then
       echo "Error: CLI build failed for macOS. Check for:" >&2

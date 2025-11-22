@@ -265,22 +265,54 @@ const archChecksums = checksums[arch];
 let added = false;
 
 for (const checksum of archChecksums) {
-  const filename = checksum.split(/\s+/)[1];
+  const parts = checksum.split(/\s+/);
+  const checksumHash = parts[0];
+  const filename = parts.slice(1).join(' ');
   
-  // Check if checksum already exists (check for filename)
-  if (!content.includes(filename)) {
+  // Check if checksum already exists - check for both the full line and just the filename
+  // install-sysroot.js looks for lines matching: <hash>  <filename>
+  const checksumPattern = new RegExp(`^${checksumHash.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+${filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'm');
+  const filenamePattern = new RegExp(`\\s+${filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'm');
+  
+  if (!checksumPattern.test(content) && !filenamePattern.test(content)) {
     // Add checksum at the end of the file
     content = content.trim() + '\n' + checksum + '\n';
     added = true;
     console.error(`✓ Added checksum for ${filename}`);
+  } else {
+    console.error(`✓ Checksum for ${filename} already exists`);
   }
 }
 
 if (added) {
   fs.writeFileSync(filePath, content, 'utf8');
   console.error(`✓ Successfully added checksums for ${arch}`);
+  
+  // Verify the checksums were actually written
+  const verifyContent = fs.readFileSync(filePath, 'utf8');
+  for (const checksum of archChecksums) {
+    const filename = checksum.split(/\s+/).slice(1).join(' ');
+    if (!verifyContent.includes(filename)) {
+      console.error(`✗ WARNING: Checksum for ${filename} was not found after write!`);
+      process.exit(1);
+    } else {
+      console.error(`✓ Verified checksum for ${filename} exists in file`);
+    }
+  }
 } else {
   console.error(`All checksums for ${arch} already exist`);
+  
+  // Verify they actually exist
+  for (const checksum of archChecksums) {
+    const filename = checksum.split(/\s+/).slice(1).join(' ');
+    if (!content.includes(filename)) {
+      console.error(`✗ WARNING: Checksum for ${filename} should exist but was not found!`);
+      // Force add it
+      content = content.trim() + '\n' + checksum + '\n';
+      fs.writeFileSync(filePath, content, 'utf8');
+      console.error(`✓ Force-added missing checksum for ${filename}`);
+    }
+  }
 }
 CHECKSUMFIX
     echo "Warning: Failed to add checksum for ${VSCODE_ARCH}, continuing anyway..." >&2

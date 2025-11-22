@@ -199,6 +199,47 @@ ${indent}}`;
     lines.splice(throwLineIndex, 0, fallbackCode);
     content = lines.join('\n');
     console.error(`✓ Patched fetchUrl at line ${throwLineIndex + 1} to handle missing remote sysroot assets gracefully`);
+    
+    // Also patch getVSCodeSysroot to handle null returns from fetchUrl
+    // Find where getVSCodeSysroot calls fetchUrl and add null check
+    let getVSCodeSysrootStart = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes('async function getVSCodeSysroot') || lines[i].includes('function getVSCodeSysroot')) {
+        getVSCodeSysrootStart = i;
+        break;
+      }
+    }
+    
+    if (getVSCodeSysrootStart >= 0) {
+      // Find where fetchUrl is called in getVSCodeSysroot
+      for (let i = getVSCodeSysrootStart; i < Math.min(getVSCodeSysrootStart + 100, lines.length); i++) {
+        if (lines[i].includes('fetchUrl') && lines[i].includes('await')) {
+          // Check if there's already a null check
+          if (!lines[i + 1] || !lines[i + 1].includes('if') || !lines[i + 1].includes('null')) {
+            const callIndent = lines[i].match(/^(\s*)/)[1] || '            ';
+            const nullCheckCode = `${callIndent}// Handle null return from fetchUrl (remote sysroot not available)
+${callIndent}const url = await fetchUrl(options);
+${callIndent}if (url === null) {
+${callIndent}  console.error('Remote sysroot not available, skipping download');
+${callIndent}  return; // Skip remote sysroot download
+${callIndent}}`;
+            // Replace the fetchUrl call line with null-checked version
+            const originalLine = lines[i];
+            if (originalLine.includes('const url') || originalLine.includes('let url') || originalLine.includes('var url')) {
+              // Already has variable assignment, just add null check after
+              lines.splice(i + 1, 0, `${callIndent}if (url === null) {`, `${callIndent}  console.error('Remote sysroot not available, skipping download');`, `${callIndent}  return;`, `${callIndent}}`);
+            } else {
+              // Replace the line with null-checked version
+              lines[i] = nullCheckCode;
+            }
+            console.error(`✓ Patched getVSCodeSysroot to handle null returns from fetchUrl`);
+            break;
+          }
+        }
+      }
+    }
+    
+    content = lines.join('\n');
   } else {
     console.error('⚠ Could not find throw statement to patch for remote sysroot fallback');
   }

@@ -717,7 +717,7 @@ try {
   console.error(lines.slice(569, 575).map((l, i) => `${569 + i + 1}: ${l}`).join('\n'));
   
   // Fix 1: Update the type declaration - need to update BOTH the property declaration
-  // and any assignments to it. The error suggests there's a type mismatch in assignment.
+  // and any assignments to it. The error at line 35 suggests there's a type mismatch in assignment.
   
   // First, update the property type declaration
   const propertyTypeRegex = /(private\s+mountVoidCommandBar:\s*Promise<)([^>]+)(>\s*\|\s*undefined;?)/;
@@ -734,19 +734,54 @@ try {
     });
   }
   
-  // Also update any assignments to mountVoidCommandBar that have type annotations
-  // Look for: this.mountVoidCommandBar = ... Promise<...>
-  const assignmentTypeRegex = /(this\.mountVoidCommandBar\s*=\s*[^:]*:\s*Promise<)([^>]+)(>)/g;
-  content = content.replace(assignmentTypeRegex, (match, p1, p2, p3) => {
-    const currentType = p2.trim();
-    if (!currentType.includes('| (() => void)') && !currentType.includes('(() => void)')) {
-      const newType = `(${currentType}) | (() => void)`;
-      modified = true;
-      console.error('✓ Updated assignment type annotation');
-      return p1 + newType + p3;
-    }
-    return match;
+  // Find and update assignments - look for patterns like:
+  // this.mountVoidCommandBar = ... as Promise<...>
+  // this.mountVoidCommandBar = Promise.resolve(...) as Promise<...>
+  // Or any assignment with a type assertion or annotation
+  const assignmentPatterns = [
+    // Pattern 1: Assignment with type assertion: = ... as Promise<...>
+    /(this\.mountVoidCommandBar\s*=\s*[^=]*as\s+Promise<)([^>]+)(>)/g,
+    // Pattern 2: Assignment with type annotation: = (): Promise<...> => ...
+    /(this\.mountVoidCommandBar\s*=\s*\([^)]*\)\s*:\s*Promise<)([^>]+)(>\s*=>)/g,
+    // Pattern 3: Direct assignment to Promise.resolve/Promise.reject with type
+    /(this\.mountVoidCommandBar\s*=\s*Promise\.(resolve|reject)\([^)]*\)\s*as\s+Promise<)([^>]+)(>)/g,
+  ];
+  
+  assignmentPatterns.forEach((pattern, idx) => {
+    content = content.replace(pattern, (match, p1, p2, p3) => {
+      const currentType = p2.trim();
+      if (!currentType.includes('| (() => void)') && !currentType.includes('(() => void)')) {
+        const newType = `(${currentType}) | (() => void)`;
+        modified = true;
+        console.error(`✓ Updated assignment type (pattern ${idx + 1})`);
+        return p1 + newType + p3;
+      }
+      return match;
+    });
   });
+  
+  // Also check line 35 specifically - the error is at line 35, so there might be an assignment there
+  if (lines.length >= 35) {
+    const line35 = lines[34]; // 0-indexed
+    console.error(`Line 35 content: ${line35}`);
+    if (line35.includes('mountVoidCommandBar') && line35.includes('Promise<') && !line35.includes('| (() => void)')) {
+      // This is likely an assignment at line 35
+      const updatedLine = line35.replace(
+        /(Promise<)([^>]+)(>)/,
+        (match, p1, p2, p3) => {
+          if (!p2.includes('| (() => void)')) {
+            return p1 + '(' + p2.trim() + ') | (() => void)' + p3;
+          }
+          return match;
+        }
+      );
+      if (updatedLine !== line35) {
+        lines[34] = updatedLine;
+        modified = true;
+        console.error('✓ Fixed type at line 35');
+      }
+    }
+  }
   
   // Fix 2: Add null check and await before calling mountVoidCommandBar at line 572
   // Look for the exact pattern around that line

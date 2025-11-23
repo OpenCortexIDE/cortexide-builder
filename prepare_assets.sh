@@ -469,9 +469,38 @@ try {
   }
   
   if (modified) {
-    content = lines.join('\n');
+    // Preserve original line endings (CRLF for Windows files)
+    const originalContent = fs.readFileSync(filePath, 'utf8');
+    const hasCRLF = originalContent.includes('\r\n');
+    const lineEnding = hasCRLF ? '\r\n' : '\n';
+    
+    content = lines.join(lineEnding);
+    // Ensure file ends with newline (Inno Setup can be sensitive to this)
+    if (!content.endsWith(lineEnding)) {
+      content += lineEnding;
+    }
     fs.writeFileSync(filePath, content, 'utf8');
     console.error('✓ Successfully patched code.iss to handle missing AppX file');
+    
+    // Validate the file has proper structure - check for common issues
+    const runSectionMatch = content.match(/\[Run\][\s\S]*?(?=\[|$)/m);
+    if (runSectionMatch) {
+      const runSection = runSectionMatch[0];
+      // Check for unclosed quotes in [Run] section
+      const quoteCount = (runSection.match(/"/g) || []).length;
+      if (quoteCount % 2 !== 0) {
+        console.error('⚠ WARNING: Odd number of quotes in [Run] section - this may cause parsing errors!');
+        console.error('  This could indicate a quote escaping issue in the PowerShell commands.');
+      }
+      // Check for very long lines (Inno Setup has limits)
+      const longLines = runSection.split(/\r?\n/).filter(line => line.length > 1000);
+      if (longLines.length > 0) {
+        console.error(`⚠ WARNING: Found ${longLines.length} very long lines in [Run] section (may cause issues)`);
+        longLines.forEach((line, idx) => {
+          console.error(`  Line ${idx + 1}: ${line.substring(0, 100)}... (${line.length} chars)`);
+        });
+      }
+    }
   } else if (!appxExists) {
     console.error('⚠ Warning: AppX file not found but no references were patched. The build may fail.');
   }

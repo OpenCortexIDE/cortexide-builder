@@ -317,21 +317,29 @@ try {
       if (lines[i].includes('Source:') && lines[i].includes('.appx')) {
         // Comment out the line or make it conditional
         const indent = lines[i].match(/^\s*/)[0];
+        const originalLine = lines[i].substring(indent.length);
         // InnoSetup supports conditional compilation with #if FileExists()
         // But simpler: just comment it out if file doesn't exist
         if (!lines[i].trim().startsWith(';')) {
-          lines[i] = `${indent}; PATCHED: AppX file not found, commented out\n${indent};${lines[i].substring(indent.length)}`;
+          // Split into two lines properly - add comment line, then commented original
+          lines[i] = `${indent}; PATCHED: AppX file not found, commented out`;
+          lines.splice(i + 1, 0, `${indent};${originalLine}`);
+          i++; // Adjust index since we inserted a line
           modified = true;
-          console.error(`✓ Commented out AppX reference at line ${i + 1}`);
+          console.error(`✓ Commented out AppX reference at line ${i}`);
         }
       }
       // Also check for AppxPackage definitions
       if (lines[i].includes('AppxPackage') && lines[i].includes('.appx')) {
         const indent = lines[i].match(/^\s*/)[0];
+        const originalLine = lines[i].substring(indent.length);
         if (!lines[i].trim().startsWith(';')) {
-          lines[i] = `${indent}; PATCHED: AppX package not found, commented out\n${indent};${lines[i].substring(indent.length)}`;
+          // Split into two lines properly - add comment line, then commented original
+          lines[i] = `${indent}; PATCHED: AppX package not found, commented out`;
+          lines.splice(i + 1, 0, `${indent};${originalLine}`);
+          i++; // Adjust index since we inserted a line
           modified = true;
-          console.error(`✓ Commented out AppX package definition at line ${i + 1}`);
+          console.error(`✓ Commented out AppX package definition at line ${i}`);
         }
       }
     }

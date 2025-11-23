@@ -113,13 +113,20 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   fi
   echo "Webpack config pre-conversion complete." >&2
 
-  export NODE_OPTIONS="--max-old-space-size=8192"
+  export NODE_OPTIONS="--max-old-space-size=12288"
 
   # Skip monaco-compile-check as it's failing due to searchUrl property
   # Skip valid-layers-check as well since it might depend on monaco
   # Void commented these out
   # npm run monaco-compile-check
   # npm run valid-layers-check
+
+  # Clean React build output directory before building (matches local workflow)
+  echo "Cleaning React build output directory..." >&2
+  if [[ -d "src/vs/workbench/contrib/cortexide/browser/react/out" ]]; then
+    rm -rf "src/vs/workbench/contrib/cortexide/browser/react/out"
+    echo "✓ Removed stale React build output" >&2
+  fi
 
   echo "Building React components..."
   # Verify cross-spawn is available before running buildreact

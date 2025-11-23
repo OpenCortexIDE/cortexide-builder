@@ -9,11 +9,8 @@ export VSCODE_CLI_APP_NAME="$( echo "${APP_NAME}" | awk '{print tolower($0)}' )"
 export VSCODE_CLI_BINARY_NAME="$( node -p "require(\"../product.json\").serverApplicationName" )"
 export VSCODE_CLI_UPDATE_ENDPOINT="https://raw.githubusercontent.com/OpenCortexIDE/cortexide-versions/refs/heads/main"
 
-if [[ "${VSCODE_QUALITY}" == "insider" ]]; then
-  export VSCODE_CLI_DOWNLOAD_ENDPOINT="https://github.com/OpenCortexIDE/cortexide-insiders/releases"
-else
-  export VSCODE_CLI_DOWNLOAD_ENDPOINT="https://github.com/OpenCortexIDE/cortexide/releases"
-fi
+# Both stable and insider use the same binaries repository
+export VSCODE_CLI_DOWNLOAD_ENDPOINT="https://github.com/OpenCortexIDE/cortexide-binaries/releases"
 
 TUNNEL_APPLICATION_NAME="$( node -p "require(\"../product.json\").tunnelApplicationName" )"
 NAME_SHORT="$( node -p "require(\"../product.json\").nameShort" )"

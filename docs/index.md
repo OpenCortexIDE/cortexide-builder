@@ -44,9 +44,9 @@ __Please note that some extensions send telemetry data to Microsoft as well. We 
 
 ### <a id="replacement-online-services"></a>Replacements to Microsoft Online Services
 
-When searching the `@tag:usesOnlineServices` filter, note that while the "Update: Mode" setting description still says "The updates are fetched from a Microsoft online service", CortexIDE's build script [sets the `updateUrl` field](https://github.com/cortexide/cortexide/blob/master/prepare_vscode.sh#L36) in `product.json` to that of CortexIDE's own small [update server](https://github.com/cortexide/versions), so enabling that setting won't actually result in any calls to Microsoft servers.
+When searching the `@tag:usesOnlineServices` filter, note that while the "Update: Mode" setting description still says "The updates are fetched from a Microsoft online service", CortexIDE's build script [sets the `updateUrl` field](https://github.com/opencortexide/cortexide-builder/blob/main/prepare_vscode.sh#L36) in `product.json` to that of CortexIDE's own small [update server](https://github.com/OpenCortexIDE/cortexide-versions), so enabling that setting won't actually result in any calls to Microsoft servers.
 
-Likewise, while the descriptions for "Extensions: Auto Check Updates" and "Extensions: Auto Update" include the same phrase, CortexIDE [replaces](https://github.com/cortexide/cortexide/blob/master/prepare_vscode.sh#L42) the Visual Studio Marketplace with Open VSX, so these settings won't call Microsoft, either.
+Likewise, while the descriptions for "Extensions: Auto Check Updates" and "Extensions: Auto Update" include the same phrase, CortexIDE [replaces](https://github.com/opencortexide/cortexide-builder/blob/main/prepare_vscode.sh#L42) the Visual Studio Marketplace with Open VSX, so these settings won't call Microsoft, either.
 
 ## <a id="extensions-marketplace"></a>Extensions + Marketplace
 

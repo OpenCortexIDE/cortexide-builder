@@ -82,15 +82,35 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   # CRITICAL: Pre-convert ALL .js webpack config files to .mjs BEFORE any build
   # This ensures Node.js treats them as ES modules from the start
   echo "Pre-converting extension webpack config files to .mjs..." >&2
+  CONVERTED_COUNT=0
+  FAILED_COUNT=0
   find extensions -type f \( -name "extension.webpack.config.js" -o -name "extension-browser.webpack.config.js" \) 2>/dev/null | while read -r jsfile; do
     if [[ -f "$jsfile" ]]; then
       mjsfile="${jsfile%.js}.mjs"
       # Only copy if .mjs doesn't exist or .js is newer
       if [[ ! -f "$mjsfile" ]] || [[ "$jsfile" -nt "$mjsfile" ]]; then
-        cp "$jsfile" "$mjsfile" 2>/dev/null && echo "Converted: $jsfile -> $mjsfile" >&2 || echo "Warning: Failed to convert $jsfile" >&2
+        if cp "$jsfile" "$mjsfile" 2>/dev/null; then
+          echo "Converted: $jsfile -> $mjsfile" >&2
+          CONVERTED_COUNT=$((CONVERTED_COUNT + 1))
+        else
+          echo "Warning: Failed to convert $jsfile" >&2
+          FAILED_COUNT=$((FAILED_COUNT + 1))
+        fi
       fi
     fi
   done
+  
+  # Verify at least some conversions succeeded (if any .js files were found)
+  JS_FILE_COUNT=$(find extensions -type f \( -name "extension.webpack.config.js" -o -name "extension-browser.webpack.config.js" \) 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "${JS_FILE_COUNT}" -gt 0 ]]; then
+    MJS_FILE_COUNT=$(find extensions -type f \( -name "extension.webpack.config.mjs" -o -name "extension-browser.webpack.config.mjs" \) 2>/dev/null | wc -l | tr -d ' ')
+    if [[ "${MJS_FILE_COUNT}" -lt "${JS_FILE_COUNT}" ]]; then
+      echo "Warning: Only ${MJS_FILE_COUNT} of ${JS_FILE_COUNT} webpack config files have .mjs versions" >&2
+      echo "  Some extensions may fail to build if they require ES module webpack configs" >&2
+    else
+      echo "✓ Verified: All ${JS_FILE_COUNT} webpack config files have .mjs versions"
+    fi
+  fi
   echo "Webpack config pre-conversion complete." >&2
 
   export NODE_OPTIONS="--max-old-space-size=8192"

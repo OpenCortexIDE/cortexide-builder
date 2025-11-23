@@ -7,7 +7,7 @@ cd cli
 export CARGO_NET_GIT_FETCH_WITH_CLI="true"
 export VSCODE_CLI_APP_NAME="$( echo "${APP_NAME}" | awk '{print tolower($0)}' )"
 export VSCODE_CLI_BINARY_NAME="$( node -p "require(\"../product.json\").serverApplicationName" )"
-export VSCODE_CLI_UPDATE_ENDPOINT="https://raw.githubusercontent.com/OpenCortexIDE/versions/refs/heads/main"
+export VSCODE_CLI_UPDATE_ENDPOINT="https://raw.githubusercontent.com/OpenCortexIDE/cortexide-versions/refs/heads/main"
 
 if [[ "${VSCODE_QUALITY}" == "insider" ]]; then
   export VSCODE_CLI_DOWNLOAD_ENDPOINT="https://github.com/OpenCortexIDE/cortexide-insiders/releases"

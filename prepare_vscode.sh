@@ -16,6 +16,35 @@ set -e
 # CortexIDE - keep our license...
 # cp -f LICENSE vscode/LICENSE.txt
 
+# Verify critical icons exist (icons should be handled by separate scripts)
+if [[ "${VSCODE_QUALITY}" == "insider" ]]; then
+  ICON_SRC_DIR="../src/insider"
+else
+  ICON_SRC_DIR="../src/stable"
+fi
+
+if [[ -d "${ICON_SRC_DIR}" ]]; then
+  MISSING_ICONS=0
+  # Check for critical platform icons
+  if [[ "${OS_NAME}" == "osx" ]] && [[ ! -f "${ICON_SRC_DIR}/resources/darwin/code.icns" ]]; then
+    echo "Warning: macOS icon (code.icns) not found in ${ICON_SRC_DIR}/resources/darwin/" >&2
+    MISSING_ICONS=1
+  elif [[ "${OS_NAME}" == "windows" ]] && [[ ! -f "${ICON_SRC_DIR}/resources/win32/code.ico" ]]; then
+    echo "Warning: Windows icon (code.ico) not found in ${ICON_SRC_DIR}/resources/win32/" >&2
+    MISSING_ICONS=1
+  elif [[ "${OS_NAME}" == "linux" ]] && [[ ! -f "${ICON_SRC_DIR}/resources/linux/code.png" ]] && [[ ! -f "${ICON_SRC_DIR}/resources/linux/code.svg" ]]; then
+    echo "Warning: Linux icon (code.png or code.svg) not found in ${ICON_SRC_DIR}/resources/linux/" >&2
+    MISSING_ICONS=1
+  fi
+  
+  if [[ "${MISSING_ICONS}" -eq 1 ]]; then
+    echo "Warning: Some critical icons are missing. The app may have default/generic icons." >&2
+    echo "  Icons should be handled by scripts/update-all-assets.sh or similar." >&2
+  else
+    echo "✓ Critical icons verified"
+  fi
+fi
+
 cd vscode || { echo "'vscode' dir not found"; exit 1; }
 
 echo "Updating settings..."
@@ -142,6 +171,15 @@ if [[ -d "../patches/${OS_NAME}/" ]]; then
         fi
       else
         echo "✓ Window visibility fix verified in ${WINDOW_FILE}"
+        # Double-check the fix is actually present (not just a comment)
+        if ! grep -q "showInactive\|show\(\)" "${WINDOW_FILE}" 2>/dev/null; then
+          echo "WARNING: Window visibility fix marker found but actual fix code may be missing!" >&2
+          echo "  Checking for common fix patterns..." >&2
+          if ! grep -qE "(window\.show\(\)|window\.showInactive\(\)|Fix for macOS blank screen)" "${WINDOW_FILE}" 2>/dev/null; then
+            echo "  ERROR: Window visibility fix code not found! This will cause blank screen." >&2
+            echo "  Please verify the fix was applied correctly." >&2
+          fi
+        fi
       fi
     else
       echo "WARNING: window.ts not found at either:" >&2
@@ -215,6 +253,29 @@ find src/vs/workbench/contrib -path "*/media/*.css" -type f 2>/dev/null | while 
     replace "s|url(\"../../media/code-icon\.svg\")|url('../../../../media/code-icon.svg')|g" "$css_file"
   fi
 done
+
+# Verify CSS path fixes were applied correctly
+echo "Verifying CSS path fixes..."
+CSS_FIX_VERIFICATION_FAILED=0
+find src/vs/workbench/browser/parts -name "*.css" -type f 2>/dev/null | while read -r css_file; do
+  if [[ -f "$css_file" ]] && grep -q "../../media/code-icon.svg" "$css_file" 2>/dev/null; then
+    echo "Warning: $css_file still contains incorrect path ../../media/code-icon.svg" >&2
+    CSS_FIX_VERIFICATION_FAILED=1
+  fi
+done
+
+find src/vs/workbench/contrib -path "*/browser/media/*.css" -type f 2>/dev/null | while read -r css_file; do
+  if [[ -f "$css_file" ]] && grep -q "../../browser/media/code-icon.svg" "$css_file" 2>/dev/null; then
+    echo "Warning: $css_file still contains incorrect path ../../browser/media/code-icon.svg" >&2
+    CSS_FIX_VERIFICATION_FAILED=1
+  fi
+done
+
+if [[ "${CSS_FIX_VERIFICATION_FAILED}" -eq 1 ]]; then
+  echo "Warning: Some CSS files may still have incorrect paths. Icons may not display correctly." >&2
+else
+  echo "✓ CSS path fixes verified"
+fi
 
 echo "CSS path fixes completed."
 
@@ -667,10 +728,32 @@ fi
 jsonTmp=$( jq -s '.[0] * .[1]' product.json ../product.json )
 echo "${jsonTmp}" > product.json && unset jsonTmp
 
+# Validate product.json merge succeeded
+if ! jq empty product.json 2>/dev/null; then
+  echo "ERROR: product.json merge failed - file is invalid JSON!" >&2
+  exit 1
+fi
+
 # CRITICAL: Override extensionsGallery AFTER merge to ensure Open VSX is used
 # CortexIDE product.json has Microsoft Marketplace URLs that must be overridden
 # Microsoft prohibits usage of their marketplace by other products
 setpath_json "product" "extensionsGallery" '{"serviceUrl": "https://open-vsx.org/vscode/gallery", "itemUrl": "https://open-vsx.org/vscode/item"}'
+
+# CRITICAL: Verify extensionsGallery was correctly set to Open VSX (not Microsoft Marketplace)
+if ! jq -e '.extensionsGallery.serviceUrl | contains("open-vsx")' product.json >/dev/null 2>&1; then
+  echo "ERROR: extensionsGallery.serviceUrl was not correctly set to Open VSX!" >&2
+  echo "Current value: $(jq -r '.extensionsGallery.serviceUrl // "MISSING"' product.json)" >&2
+  echo "This will cause extension marketplace failures and may violate Microsoft's terms." >&2
+  exit 1
+fi
+
+# Verify extensionsGallery structure is complete
+if ! jq -e '.extensionsGallery.itemUrl' product.json >/dev/null 2>&1; then
+  echo "ERROR: extensionsGallery.itemUrl is missing!" >&2
+  exit 1
+fi
+
+echo "✓ extensionsGallery correctly configured for Open VSX"
 
 cat product.json
 

@@ -82,12 +82,22 @@ if [[ -d "../patches/${OS_NAME}/" ]]; then
           echo "CRITICAL: Window visibility patch failed. Applying script-based fix..." >&2
           if [[ -f "../patches/${OS_NAME}/apply-window-visibility-fix.sh" ]]; then
             chmod +x "../patches/${OS_NAME}/apply-window-visibility-fix.sh"
-            # Let the script auto-detect the correct file path
-            if "../patches/${OS_NAME}/apply-window-visibility-fix.sh"; then
-              echo "✓ Window visibility fix applied via script fallback" >&2
+            # Auto-detect which file exists (new or old structure)
+            WINDOW_FILE_FALLBACK=""
+            if [[ -f "src/vs/platform/windows/electron-main/windowImpl.ts" ]]; then
+              WINDOW_FILE_FALLBACK="src/vs/platform/windows/electron-main/windowImpl.ts"
+            elif [[ -f "src/vs/code/electron-main/window.ts" ]]; then
+              WINDOW_FILE_FALLBACK="src/vs/code/electron-main/window.ts"
+            fi
+            if [[ -n "${WINDOW_FILE_FALLBACK}" ]]; then
+              if "../patches/${OS_NAME}/apply-window-visibility-fix.sh" "${WINDOW_FILE_FALLBACK}"; then
+                echo "✓ Window visibility fix applied via script fallback" >&2
+              else
+                echo "ERROR: Script-based window visibility fix also failed!" >&2
+                echo "  This is a critical fix for macOS blank screen. Build may produce broken app." >&2
+              fi
             else
-              echo "ERROR: Script-based window visibility fix also failed!" >&2
-              echo "  This is a critical fix for macOS blank screen. Build may produce broken app." >&2
+              echo "ERROR: Could not find window file for script-based fix!" >&2
             fi
           else
             echo "ERROR: Window visibility fix script not found!" >&2

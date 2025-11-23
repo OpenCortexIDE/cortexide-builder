@@ -91,11 +91,11 @@ for (let i = 0; i < lines.length; i++) {
     braceDepth = 1;
     continue;
   }
-  
+
   if (inSwitch) {
     braceDepth += (lines[i].match(/\{/g) || []).length;
     braceDepth -= (lines[i].match(/\}/g) || []).length;
-    
+
     // Look for the last case before default or closing
     if (lines[i].match(/^\s*case\s+['"]/)) {
       insertIndex = i + 1;
@@ -111,7 +111,7 @@ for (let i = 0; i < lines.length; i++) {
         }
       }
     }
-    
+
     // If we hit the closing brace of the switch, insert before it
     if (braceDepth === 0 && lines[i].match(/^\s*\}/)) {
       if (insertIndex === -1) {
@@ -158,48 +158,114 @@ if (!content.includes('// REMOTE_SYSROOT_FALLBACK')) {
   // Use line-based approach for more reliable patching
   const lines = content.split('\n');
   let throwLineIndex = -1;
-  
+
   // Find the throw statement line - try multiple patterns
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if ((line.includes('throw new Error') || line.includes('throw new Error')) && 
-        (line.includes('Could not find asset') || line.includes('Could not find asset'))) {
+    // Look for throw statement with "Could not find asset"
+    if (line.includes('throw') && line.includes('Could not find asset')) {
+      throwLineIndex = i;
+      break;
+    }
+    // Also check for multi-line throw statements
+    if (line.includes('throw') && (i + 1 < lines.length) && lines[i + 1].includes('Could not find asset')) {
       throwLineIndex = i;
       break;
     }
   }
-  
-  // Also try to find by template literal pattern
+
+  // Also try to find by template literal pattern or Error constructor
   if (throwLineIndex === -1) {
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i].includes('Could not find asset') && lines[i].includes('repository') && lines[i].includes('actualVersion')) {
+      const line = lines[i];
+      if ((line.includes('Could not find asset') || line.includes('Could not find asset')) &&
+          (line.includes('repository') || line.includes('actualVersion') || line.includes('Error'))) {
         throwLineIndex = i;
         break;
       }
     }
   }
-  
+
+  // Last resort: find any line with "throw" and "asset" near "Could not find"
+  if (throwLineIndex === -1) {
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes('throw') &&
+          (lines[i].includes('asset') || (i > 0 && lines[i-1].includes('asset')))) {
+        // Check nearby lines for "Could not find"
+        for (let j = Math.max(0, i - 3); j < Math.min(lines.length, i + 3); j++) {
+          if (lines[j].includes('Could not find')) {
+            throwLineIndex = i;
+            break;
+          }
+        }
+        if (throwLineIndex >= 0) break;
+      }
+    }
+  }
+
   if (throwLineIndex >= 0) {
     const indent = lines[throwLineIndex].match(/^(\s*)/)[1] || '                ';
-    // Insert fallback logic before the throw - always do this
-    const fallbackCode = `${indent}// REMOTE_SYSROOT_FALLBACK: If remote sysroot doesn't exist, try without gcc suffix or skip
-${indent}if (!asset && options && options.name && options.name.includes('-gcc-') && process.env.VSCODE_SYSROOT_PREFIX && process.env.VSCODE_SYSROOT_PREFIX.includes('-gcc-')) {
-${indent}  console.error(\`Warning: Remote sysroot \${options.name} not found, trying without gcc suffix...\`);
-${indent}  const fallbackName = options.name.replace(/-gcc-[^-]+\.tar\.gz$/, '.tar.gz');
-${indent}  if (fallbackName !== options.name) {
-${indent}    const fallbackAsset = assets.find(a => a.name === fallbackName);
-${indent}    if (fallbackAsset) {
-${indent}      return fallbackAsset.browser_download_url;
-${indent}    }
+    // Find the start of the if (!asset) block - look backwards for it
+    let ifStartIndex = throwLineIndex;
+    for (let j = throwLineIndex; j >= Math.max(0, throwLineIndex - 5); j--) {
+      if (lines[j].includes('if (!asset') || lines[j].includes('if ( !asset') || lines[j].includes('if(!asset')) {
+        ifStartIndex = j;
+        break;
+      }
+    }
+
+    // Find where the if block ends (closing brace)
+    let ifEndIndex = throwLineIndex;
+    let braceCount = 0;
+    let inIfBlock = false;
+    for (let j = ifStartIndex; j < Math.min(ifStartIndex + 15, lines.length); j++) {
+      const line = lines[j];
+      if (line.includes('if (!asset') || line.includes('if ( !asset') || line.includes('if(!asset')) {
+        inIfBlock = true;
+        braceCount = (line.match(/\{/g) || []).length;
+      }
+      if (inIfBlock) {
+        braceCount += (line.match(/\{/g) || []).length;
+        braceCount -= (line.match(/\}/g) || []).length;
+        if (braceCount === 0 && line.includes('}')) {
+          ifEndIndex = j;
+          break;
+        }
+      }
+    }
+
+    // If we couldn't find the if block, just replace the throw line
+    if (ifStartIndex === throwLineIndex) {
+      ifEndIndex = throwLineIndex;
+      // Find end of throw statement
+      for (let j = throwLineIndex; j < Math.min(throwLineIndex + 5, lines.length); j++) {
+        if (lines[j].includes(';')) {
+          ifEndIndex = j;
+          break;
+        }
+      }
+    }
+
+    // Replace the if block or throw with fallback logic
+    // Use a more direct approach: replace the entire if (!asset) block
+    const fallbackCode = `${indent}// REMOTE_SYSROOT_FALLBACK: If remote sysroot doesn't exist, return null instead of throwing
+${indent}if (!asset) {
+${indent}  // Check if this is a remote sysroot request (has -gcc- in name or VSCODE_SYSROOT_PREFIX includes -gcc-)
+${indent}  const isRemoteSysroot = (options && options.name && options.name.includes('-gcc-')) ||
+${indent}                         (process.env.VSCODE_SYSROOT_PREFIX && process.env.VSCODE_SYSROOT_PREFIX.includes('-gcc-'));
+${indent}  if (isRemoteSysroot) {
+${indent}    console.error(\`Warning: Remote sysroot \${options?.name || 'asset'} not found, skipping. Client sysroot will be used.\`);
+${indent}    return null; // Return null instead of throwing for remote sysroot
 ${indent}  }
-${indent}  console.error(\`Warning: Remote sysroot not available for \${options.name}, skipping. Client sysroot will be used.\`);
-${indent}  return null;
+${indent}  // For other assets, still throw the error
+${indent}  throw new Error(\`Could not find asset in release of \${repository} @ \${actualVersion}\`);
 ${indent}}`;
-    
-    lines.splice(throwLineIndex, 0, fallbackCode);
+
+    // Replace the if block or throw with fallback code
+    lines.splice(ifStartIndex, ifEndIndex - ifStartIndex + 1, fallbackCode);
     content = lines.join('\n');
-    console.error(`✓ Patched fetchUrl at line ${throwLineIndex + 1} to handle missing remote sysroot assets gracefully`);
-    
+    console.error(`✓ Patched fetchUrl at line ${ifStartIndex + 1} to return null for missing remote sysroot assets instead of throwing`);
+
     // Also patch getVSCodeSysroot to handle errors from fetchUrl
     // Find where getVSCodeSysroot calls fetchUrl and wrap it in try-catch
     let getVSCodeSysrootStart = -1;
@@ -209,7 +275,7 @@ ${indent}}`;
         break;
       }
     }
-    
+
     if (getVSCodeSysrootStart >= 0) {
       // Find where fetchUrl is called in getVSCodeSysroot - look for remote sysroot download
       for (let i = getVSCodeSysrootStart; i < Math.min(getVSCodeSysrootStart + 150, lines.length); i++) {
@@ -222,7 +288,7 @@ ${indent}}`;
             // Check if already wrapped
             if (!lines[Math.max(0, i - 1)].includes('// REMOTE_SYSROOT_ERROR_HANDLER')) {
               const callIndent = lines[i].match(/^(\s*)/)[1] || '            ';
-              
+
               // Find the end of the fetchUrl call (might span multiple lines)
               let fetchUrlEnd = i;
               for (let j = i; j < Math.min(i + 5, lines.length); j++) {
@@ -231,7 +297,7 @@ ${indent}}`;
                   break;
                 }
               }
-              
+
               // Wrap the fetchUrl call in try-catch
               const tryCatchWrapper = `${callIndent}// REMOTE_SYSROOT_ERROR_HANDLER: Wrap fetchUrl in try-catch for graceful failure
 ${callIndent}try {
@@ -249,7 +315,7 @@ ${callIndent}    return; // Skip remote sysroot download
 ${callIndent}  }
 ${callIndent}  throw err; // Re-throw other errors
 ${callIndent}}`;
-              
+
               // Replace the fetchUrl call with wrapped version
               lines.splice(i, fetchUrlEnd - i + 1, tryCatchWrapper);
               console.error(`✓ Patched getVSCodeSysroot to handle errors from fetchUrl gracefully`);
@@ -259,10 +325,29 @@ ${callIndent}}`;
         }
       }
     }
-    
+
     content = lines.join('\n');
   } else {
     console.error('⚠ Could not find throw statement to patch for remote sysroot fallback');
+  }
+
+  // Also do a direct string replacement as backup - replace the throw statement directly if still present
+  if (content.includes('throw') && content.includes('Could not find asset') && !content.includes('// REMOTE_SYSROOT_FALLBACK')) {
+    // Direct replacement of the throw statement
+    content = content.replace(
+      /(\s+)throw\s+new\s+Error\([^)]*Could not find asset[^)]*\)/g,
+      (match, indent) => {
+        return `${indent}// REMOTE_SYSROOT_FALLBACK: Check for remote sysroot before throwing
+${indent}const isRemoteSysroot = (options && options.name && options.name.includes('-gcc-')) ||
+${indent}                         (process.env.VSCODE_SYSROOT_PREFIX && process.env.VSCODE_SYSROOT_PREFIX.includes('-gcc-'));
+${indent}if (isRemoteSysroot) {
+${indent}  console.error(\`Warning: Remote sysroot not found, skipping. Client sysroot will be used.\`);
+${indent}  return null;
+${indent}}
+${indent}throw new Error(\`Could not find asset in release of \${repository} @ \${actualVersion}\`)`;
+      }
+    );
+    console.error('✓ Applied backup direct replacement for remote sysroot fallback');
   }
 }
 
@@ -271,7 +356,7 @@ console.error(`✓ Successfully added ${arch} mapping to install-sysroot.js`);
 SYSROOTFIX
     echo "Warning: Failed to patch install-sysroot.js for ${VSCODE_ARCH}, continuing anyway..." >&2
   }
-  
+
 fi
 
 GLIBC_VERSION="2.28"
@@ -383,12 +468,12 @@ for (const checksum of archChecksums) {
   const parts = checksum.split(/\s+/);
   const checksumHash = parts[0];
   const filename = parts.slice(1).join(' ');
-  
+
   // Check if checksum already exists - check for both the full line and just the filename
   // install-sysroot.js looks for lines matching: <hash>  <filename>
   const checksumPattern = new RegExp(`^${checksumHash.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+${filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'm');
   const filenamePattern = new RegExp(`\\s+${filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'm');
-  
+
   if (!checksumPattern.test(content) && !filenamePattern.test(content)) {
     // Add checksum at the end of the file
     content = content.trim() + '\n' + checksum + '\n';
@@ -402,7 +487,7 @@ for (const checksum of archChecksums) {
 if (added) {
   fs.writeFileSync(filePath, content, 'utf8');
   console.error(`✓ Successfully added checksums for ${arch}`);
-  
+
   // Verify the checksums were actually written
   const verifyContent = fs.readFileSync(filePath, 'utf8');
   for (const checksum of archChecksums) {
@@ -416,7 +501,7 @@ if (added) {
   }
 } else {
   console.error(`All checksums for ${arch} already exist`);
-  
+
   // Verify they actually exist
   for (const checksum of archChecksums) {
     const filename = checksum.split(/\s+/).slice(1).join(' ');
@@ -528,7 +613,7 @@ VSECESIGNFIX
 fix_native_keymap_postinstall() {
   local postinstall_path="${1:-node_modules/native-keymap/package.json}"
   local module_dir=$(dirname "${postinstall_path}")
-  
+
   if [[ -f "${postinstall_path}" ]]; then
     # Check if already patched by looking for a marker
     if ! grep -q "// PATCHED: Skip native-keymap rebuild" "${postinstall_path}" 2>/dev/null; then
@@ -596,7 +681,7 @@ cp ../npmrc .npmrc
 for i in {1..5}; do # try 5 times
   # Fix vsce-sign postinstall before attempting install (in case it exists from previous attempt)
   fix_vsce_sign_postinstall
-  
+
   # Install with --ignore-scripts to skip all postinstall scripts (including native-keymap)
   npm ci --ignore-scripts --prefix build 2>&1 | tee /tmp/npm-install.log || {
     # If it fails for other reasons, retry normally
@@ -608,14 +693,14 @@ for i in {1..5}; do # try 5 times
     exit 1
   fi
   }
-  
+
   # Patch native-keymap to disable postinstall before any scripts run
   fix_native_keymap_postinstall "build/node_modules/native-keymap/package.json"
-  
+
   # Note: We skip running postinstall scripts manually since most packages work without them
   # and native-keymap's postinstall is now disabled. If other packages need postinstall,
   # they should be handled individually.
-  
+
   break
 done
 
@@ -650,9 +735,9 @@ for (let i = 0; i < lines.length; i++) {
     newLines.push('# SKIP_SYSROOT_PATCH');
     newLines.push('if [[ "$1" != "--skip-sysroot" ]] && [[ -z "${VSCODE_SKIP_SYSROOT}" ]]; then');
   }
-  
+
   newLines.push(lines[i]);
-  
+
   // After sysroot download section (line 24), close the if
   if (i === 23 && lines[i].includes('VSCODE_SYSROOT_PREFIX')) {
     newLines.push('fi');
@@ -691,14 +776,14 @@ for i in {1..5}; do # try 5 times
     exit 1
   fi
   }
-  
+
   # Patch native-keymap to disable postinstall before any scripts run
   fix_native_keymap_postinstall "node_modules/native-keymap/package.json"
-  
+
   # Note: We skip running postinstall scripts manually since most packages work without them
   # and native-keymap's postinstall is now disabled. If other packages need postinstall,
   # they should be handled individually.
-  
+
   break
 done
 
@@ -722,17 +807,17 @@ if [[ -d "extensions" ]]; then
     ext_dir=$(dirname "$ext_package_json")
     EXT_DIRS+=("$ext_dir")
   done < <(find extensions -name "package.json" -type f)
-  
+
   # Install dependencies for each extension
   for ext_dir in "${EXT_DIRS[@]}"; do
     ext_name=$(basename "$ext_dir")
-    
+
     # Skip if node_modules already exists and has content
     if [[ -d "${ext_dir}/node_modules" ]] && [[ -n "$(ls -A "${ext_dir}/node_modules" 2>/dev/null)" ]]; then
       echo "Dependencies already installed for ${ext_name}, skipping..." >&2
       continue
     fi
-    
+
     echo "Installing dependencies for extension: ${ext_name}..." >&2
     # Use --ignore-scripts to prevent native-keymap rebuild issues
     # Use --legacy-peer-deps to handle peer dependency conflicts
@@ -748,7 +833,7 @@ if [[ -d "extensions" ]]; then
       fi
     fi
   done
-  
+
   # Verify critical extensions have their dependencies
   # Some extensions need dependencies installed at root level for webpack to resolve them
   if [[ -d "extensions/microsoft-authentication" ]]; then
@@ -758,7 +843,7 @@ if [[ -d "extensions" ]]; then
     [[ ! -d "extensions/microsoft-authentication/node_modules/@vscode/extension-telemetry" ]] && MISSING_DEPS+=("@vscode/extension-telemetry")
     [[ ! -d "extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions" ]] && MISSING_DEPS+=("@azure/msal-node-extensions")
     [[ ! -d "extensions/microsoft-authentication/node_modules/vscode-tas-client" ]] && MISSING_DEPS+=("vscode-tas-client")
-    
+
     if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
       echo "Installing missing dependencies for microsoft-authentication: ${MISSING_DEPS[*]}..." >&2
       # Try installing in extension directory first
@@ -770,7 +855,7 @@ if [[ -d "extensions" ]]; then
         }
       }
     fi
-    
+
     # Also ensure keytar mock exists (it's a file: dependency)
     if [[ ! -d "extensions/microsoft-authentication/packageMocks/keytar" ]]; then
       echo "Creating keytar mock for microsoft-authentication..." >&2
@@ -904,7 +989,7 @@ export VSCODE_NODE_GLIBC="-glibc-${GLIBC_VERSION}"
 
 if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
   echo "Building REH"
-  
+
   # CRITICAL FIX: Patch gulpfile.reh.js to use correct Node.js version for riscv64 and fix Docker ENOBUFS
   if [[ -f "build/gulpfile.reh.js" ]]; then
     echo "Patching gulpfile.reh.js for Node.js version and Docker extraction..." >&2
@@ -920,7 +1005,7 @@ const nodeVersion = process.env.NODE_VERSION || '';
 // We need to patch where nodeVersion is used in the function, or where the function is called
 if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
   let patched = false;
-  
+
   // Strategy 1: Patch the nodejs function to override nodeVersion at the start
   // Look for: function nodejs(platform, arch) { ... and add version override
   const nodejsFunctionStart = /(function\s+nodejs\s*\([^)]*platform[^)]*arch[^)]*\)\s*\{)/;
@@ -930,7 +1015,7 @@ if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
       return `${match}\n\t// NODE_VERSION_FIX: Override nodeVersion for riscv64/loong64\n\tif (process.env.VSCODE_ARCH === '${arch}' && process.env.NODE_VERSION) {\n\t\tif (typeof nodeVersion === 'undefined' || nodeVersion === null) {\n\t\t\tnodeVersion = require('../package.json').version;\n\t\t}\n\t\t// Override with environment variable\n\t\tconst envNodeVersion = process.env.NODE_VERSION;\n\t\tif (envNodeVersion) {\n\t\t\tnodeVersion = envNodeVersion;\n\t\t}\n\t}`;
     });
   }
-  
+
   // Strategy 2: Patch where nodejs is called to pass the correct version
   // Look for: nodejs('linux', 'riscv64') or similar calls
   if (!patched) {
@@ -941,7 +1026,7 @@ if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
       console.error(`Found nodejs calls for ${arch}, but patching function start instead`);
     }
   }
-  
+
   // Strategy 3: Patch at the top level where nodeVersion might be defined
   if (!patched) {
     const topLevelVersion = /(const\s+nodeVersion\s*=\s*require\([^)]+package\.json[^)]+\)\.version;)/;
@@ -952,7 +1037,7 @@ if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
       });
     }
   }
-  
+
   // Strategy 4: Patch fetchUrls directly to use correct version
   if (!patched) {
     const fetchUrlsPattern = new RegExp(`(fetchUrls\\s*=\\s*\\[[^\\]]*['"]/v\\\\\\$\\\\{nodeVersion\\\\}/node-v\\\\\\$\\\\{nodeVersion\\\\}-[^}]+-${arch}[^}]+['"][^\\]]*\\])`, 'g');
@@ -967,7 +1052,7 @@ if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
       }
     }
   }
-  
+
   // Strategy 5: Patch the nodejs function to override nodeVersion parameter at the very start
   if (!patched) {
     // Find function nodejs(platform, arch) and add version override as first line
@@ -982,7 +1067,7 @@ if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
       }
     }
   }
-  
+
   // Strategy 6: Patch the actual URL construction in fetchUrls calls - be more aggressive
   if (!patched) {
     // Find fetchUrls calls with nodeVersion and replace them - try multiple patterns
@@ -991,7 +1076,7 @@ if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
       new RegExp(`(fetchUrls\\([^)]*['"]/dist/v\\\\\\$\\\\{nodeVersion\\\\}/node-v\\\\\\$\\\\{nodeVersion\\\\}-[^}]+-${arch}[^}]+['"][^)]*\\))`, 'g'),
       new RegExp(`(['"]/v\\\\\\$\\\\{nodeVersion\\\\}/node-v\\\\\\$\\\\{nodeVersion\\\\}-[^}]+-${arch}[^}]+['"])`, 'g')
     ];
-    
+
     for (const pattern of patterns) {
       if (pattern.test(content)) {
         content = content.replace(pattern, (match) => {
@@ -1006,7 +1091,7 @@ if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
       }
     }
   }
-  
+
   // Strategy 7: Patch at the very beginning of nodejs function to override nodeVersion immediately
   if (!patched) {
     // Find the function and add version override as the very first statement
@@ -1029,7 +1114,7 @@ if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
       }
     }
   }
-  
+
   // Strategy 8: Patch the actual URL strings directly - most aggressive approach
   if (!patched) {
     // Find any occurrence of v${nodeVersion} or v22.20.0 in URLs for this arch and replace
@@ -1040,7 +1125,7 @@ if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
       new RegExp(`(v\\$\\{nodeVersion\\}-[^}]+-${arch})`, 'g'),
       new RegExp(`(v22\\.20\\.0-[^}]+-${arch})`, 'g')
     ];
-    
+
     for (const pattern of urlPatterns) {
       if (pattern.test(content)) {
         content = content.replace(pattern, (match) => {
@@ -1055,8 +1140,35 @@ if ((arch === 'riscv64' || arch === 'loong64') && nodeVersion) {
       }
     }
   }
-  
+
+  // Strategy 9: Direct string replacement for any v22.20.0 references for this arch
+  if (!patched && nodeVersion && nodeVersion !== '22.20.0') {
+    // Replace all occurrences of v22.20.0 in URLs that include this arch
+    const archUrlPattern = new RegExp(`(v22\\.20\\.0[^'"]*-${arch}[^'"]*)`, 'g');
+    if (archUrlPattern.test(content)) {
+      content = content.replace(archUrlPattern, (match) => {
+        patched = true;
+        return match.replace(/v22\.20\.0/g, `v${nodeVersion}`);
+      });
+      if (patched) {
+        console.error(`✓ Replaced v22.20.0 with v${nodeVersion} in URLs for ${arch}`);
+      }
+    }
+  }
+
+  // Strategy 10: Replace v22.20.0 anywhere in the file for this arch (most aggressive)
+  if (!patched && nodeVersion && nodeVersion !== '22.20.0') {
+    // Replace v22.20.0 with the correct version anywhere in the file
+    const globalReplace = content.replace(/v22\.20\.0/g, `v${nodeVersion}`);
+    if (globalReplace !== content) {
+      content = globalReplace;
+      patched = true;
+      console.error(`✓ Replaced all v22.20.0 with v${nodeVersion} globally for ${arch}`);
+    }
+  }
+
   if (patched) {
+    fs.writeFileSync(filePath, content, 'utf8');
     console.error(`✓ Patched Node.js version to use ${nodeVersion} for ${arch}`);
   } else {
     console.error(`⚠ Could not find nodeVersion definition to patch for ${arch}`);
@@ -1090,6 +1202,7 @@ ${indent}const tmpFile = path.join(os.tmpdir(), \`node-\${nodeVersion}-\${arch}-
 ${indent}try {
 ${indent}	// Use spawn with file redirection to avoid ENOBUFS
 ${indent}	const { spawnSync } = require('child_process');
+<<<<<<< Current (Your changes)
 ${indent}		// Construct Docker command properly - handle arm64 and dockerPlatform
 ${indent}		let platformFlag = '';
 ${indent}		let finalImageName = imageName || 'node';
@@ -1104,6 +1217,22 @@ ${indent}		}
 ${indent}		const dockerPlatformStr = dockerPlatform ? dockerPlatform + ' ' : '';
 ${indent}		const dockerCmd = 'docker run --rm ' + platformFlag + dockerPlatformStr + finalImageName + ':' + nodeVersion + '-alpine /bin/sh -c "cat \\`which node\\`";
 ${indent}	const result = spawnSync('sh', ['-c', \`\${dockerCmd} > \${tmpFile}\`], { stdio: 'inherit' });
+=======
+${indent}	// Construct Docker command properly - handle arm64 and dockerPlatform
+${indent}	let platformFlag = '';
+${indent}	let finalImageName = imageName || 'node';
+${indent}	if (arch === 'arm64') {
+${indent}		if (!dockerPlatform && process.platform === 'linux') {
+${indent}			platformFlag = '--platform linux/arm64 ';
+${indent}		}
+${indent}		if (!finalImageName.includes('arm64v8/') && !finalImageName.includes('/')) {
+${indent}			finalImageName = 'arm64v8/' + finalImageName;
+${indent}		}
+${indent}	}
+${indent}	const dockerPlatformStr = dockerPlatform ? dockerPlatform + ' ' : '';
+${indent}	const dockerCmd = 'docker run --rm ' + platformFlag + dockerPlatformStr + finalImageName + ':' + nodeVersion + '-alpine /bin/sh -c "cat \\`which node\\`"';
+${indent}	const result = spawnSync('sh', ['-c', dockerCmd + ' > ' + tmpFile], { stdio: 'inherit' });
+>>>>>>> Incoming (Background Agent changes)
 ${indent}	if (result.error || result.status !== 0) {
 ${indent}		throw result.error || new Error(\`Docker command failed with status \${result.status}\`);
 ${indent}	}
@@ -1122,7 +1251,7 @@ ${indent}}`;
     const hasPath = requires.some(r => r.includes('path'));
     const hasOs = requires.some(r => r.includes('os'));
     const hasFs = requires.some(r => r.includes('fs'));
-    
+
     // Find where to add imports (after other requires)
     const requireSection = content.match(/(const\s+\w+\s*=\s*require\([^)]+\);[\s\n]*)+/);
     if (requireSection) {
@@ -1130,12 +1259,12 @@ ${indent}}`;
       if (!hasFs) importsToAdd += "const fs = require('fs');\n";
       if (!hasPath) importsToAdd += "const path = require('path');\n";
       if (!hasOs && !content.includes("const os = require('os')")) importsToAdd += "const os = require('os');\n";
-      
+
       if (importsToAdd) {
         content = content.replace(requireSection[0], requireSection[0] + importsToAdd);
       }
     }
-    
+
     fs.writeFileSync(filePath, content, 'utf8');
     console.error('✓ Successfully patched gulpfile.reh.js to use file-based Docker extraction');
   } else {
@@ -1160,7 +1289,7 @@ DOCKERBUFFERFIX
       echo "Warning: Failed to patch gulpfile.reh.js for Docker buffer fix, continuing anyway..." >&2
     }
   fi
-  
+
   # CRITICAL FIX: Patch build/lib/extensions.js to handle empty glob patterns (same as main build)
   # This is needed for REH builds that use doPackageLocalExtensionsStream
   if [[ -f "build/lib/extensions.js" ]]; then
@@ -1190,7 +1319,7 @@ if (content.includes('dependenciesSrc') && content.includes('gulp')) {
         i++;
         console.error(`✓ Added empty check for dependenciesSrc before gulp.src at line ${i + 1}`);
       }
-      
+
       if (!lines[i].includes('allowEmpty')) {
         lines[i] = lines[i].replace(/(base:\s*['"]\.['"])\s*\}\)/, '$1, allowEmpty: true })');
         lines[i] = lines[i].replace(/(base:\s*[^}]+)\s*\}\)/, '$1, allowEmpty: true })');
@@ -1234,7 +1363,7 @@ EXTENSIONSGLOBFIX
       echo "Warning: Failed to patch build/lib/extensions.js, continuing anyway..." >&2
     }
   fi
-  
+
   # CRITICAL FIX: Handle empty glob patterns in gulpfile.reh.js (same fix as main build.sh)
   if [[ -f "build/gulpfile.reh.js" ]]; then
     echo "Applying critical fix to gulpfile.reh.js for empty glob patterns..." >&2
@@ -1245,7 +1374,7 @@ try {
   let content = fs.readFileSync(filePath, 'utf8');
   const lines = content.split('\n');
   let modified = false;
-  
+
   // Fix 1: dependenciesSrc
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].includes('const dependenciesSrc =') && lines[i].includes('.flat()')) {
@@ -1261,7 +1390,7 @@ try {
       break;
     }
   }
-  
+
   // Fix 2: extensionPaths
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].includes('const extensionPaths =') && lines[i].includes('.map(name =>')) {
@@ -1278,7 +1407,7 @@ try {
       break;
     }
   }
-  
+
   if (modified) {
     content = lines.join('\n');
     fs.writeFileSync(filePath, content, 'utf8');
@@ -1292,24 +1421,24 @@ REHFIX
       echo "Warning: Failed to patch gulpfile.reh.js, continuing anyway..." >&2
     }
   fi
-  
+
   # Verify gulp is available before running
   if [[ ! -f "node_modules/gulp/bin/gulp.js" ]] && [[ ! -f "node_modules/.bin/gulp" ]]; then
     echo "Error: gulp is not installed. Cannot run REH build." >&2
     echo "This may indicate npm ci failed partially. Check logs above." >&2
     exit 1
   fi
-  
+
   npm run gulp minify-vscode-reh
-  
+
   # Verify REH gulp task exists, especially for alternative architectures
   REH_GULP_TASK="vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
   echo "Checking if REH gulp task '${REH_GULP_TASK}' exists..."
-  
+
   # Try to list tasks and check if our task exists
   if ! npm run gulp -- --tasks-simple 2>/dev/null | grep -q "^${REH_GULP_TASK}$"; then
     echo "Warning: REH gulp task '${REH_GULP_TASK}' not found. Ensuring architecture is in BUILD_TARGETS..." >&2
-    
+
     # For alternative architectures, ensure they're in BUILD_TARGETS in gulpfile.reh.js
     if [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]]; then
       echo "Ensuring ${VSCODE_ARCH} is in BUILD_TARGETS in gulpfile.reh.js..." >&2
@@ -1322,12 +1451,12 @@ const filePath = 'build/gulpfile.reh.js';
 const arch = '${VSCODE_ARCH}';
 try {
   let content = fs.readFileSync(filePath, 'utf8');
-  
+
   if (content.includes(\`{ platform: 'linux', arch: '\${arch}' }\`)) {
     console.error(\`✓ \${arch} already in BUILD_TARGETS\`);
     process.exit(0);
   }
-  
+
   // Find the BUILD_TARGETS array and add arch after ppc64le or arm64
   const pattern = /(\{\s*platform:\s*['"]linux['"],\s*arch:\s*['"](?:ppc64le|arm64)['"]\s*\},)/;
   if (pattern.test(content)) {
@@ -1352,7 +1481,7 @@ ARCHFIX
           }
         fi
       fi
-      
+
       # Re-check if task is now available
       if ! npm run gulp -- --tasks-simple 2>/dev/null | grep -q "^${REH_GULP_TASK}$"; then
         echo "Warning: REH gulp task '${REH_GULP_TASK}' still not found after patch attempt." >&2
@@ -1362,7 +1491,7 @@ ARCHFIX
       fi
     fi
   fi
-  
+
   npm run gulp "${REH_GULP_TASK}"
 
   EXPECTED_GLIBC_VERSION="${EXPECTED_GLIBC_VERSION}" EXPECTED_GLIBCXX_VERSION="${GLIBCXX_VERSION}" SEARCH_PATH="../vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}" ./build/azure-pipelines/linux/verify-glibc-requirements.sh
@@ -1387,17 +1516,17 @@ if [[ "${SHOULD_BUILD_REH_WEB}" != "no" ]]; then
     echo "This may indicate npm ci failed partially. Check logs above." >&2
     exit 1
   fi
-  
+
   npm run gulp minify-vscode-reh-web
-  
+
   # Verify REH-web gulp task exists, especially for alternative architectures
   REH_WEB_GULP_TASK="vscode-reh-web-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
   echo "Checking if REH-web gulp task '${REH_WEB_GULP_TASK}' exists..."
-  
+
   # Try to list tasks and check if our task exists
   if ! npm run gulp -- --tasks-simple 2>/dev/null | grep -q "^${REH_WEB_GULP_TASK}$"; then
     echo "Warning: REH-web gulp task '${REH_WEB_GULP_TASK}' not found. Ensuring architecture is in BUILD_TARGETS..." >&2
-    
+
     # For alternative architectures, ensure they're in BUILD_TARGETS in gulpfile.reh.js
     if [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]]; then
       echo "Ensuring ${VSCODE_ARCH} is in BUILD_TARGETS in gulpfile.reh.js..." >&2
@@ -1410,12 +1539,12 @@ const filePath = 'build/gulpfile.reh.js';
 const arch = '${VSCODE_ARCH}';
 try {
   let content = fs.readFileSync(filePath, 'utf8');
-  
+
   if (content.includes(\`{ platform: 'linux', arch: '\${arch}' }\`)) {
     console.error(\`✓ \${arch} already in BUILD_TARGETS\`);
     process.exit(0);
   }
-  
+
   // Find the BUILD_TARGETS array and add arch after ppc64le or arm64
   const pattern = /(\{\s*platform:\s*['"]linux['"],\s*arch:\s*['"](?:ppc64le|arm64)['"]\s*\},)/;
   if (pattern.test(content)) {
@@ -1440,7 +1569,7 @@ ARCHFIX
           }
         fi
       fi
-      
+
       # Re-check if task is now available
       if ! npm run gulp -- --tasks-simple 2>/dev/null | grep -q "^${REH_WEB_GULP_TASK}$"; then
         echo "Warning: REH-web gulp task '${REH_WEB_GULP_TASK}' still not found after patch attempt." >&2
@@ -1450,7 +1579,7 @@ ARCHFIX
       fi
     fi
   fi
-  
+
   npm run gulp "${REH_WEB_GULP_TASK}"
 
   EXPECTED_GLIBC_VERSION="${EXPECTED_GLIBC_VERSION}" EXPECTED_GLIBCXX_VERSION="${GLIBCXX_VERSION}" SEARCH_PATH="../vscode-reh-web-${VSCODE_PLATFORM}-${VSCODE_ARCH}" ./build/azure-pipelines/linux/verify-glibc-requirements.sh

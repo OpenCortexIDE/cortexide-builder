@@ -1489,6 +1489,7 @@ EOFPATCH2
     
     WORKBENCH_HTML="${APP_BUNDLE}/Contents/Resources/app/out/vs/code/electron-browser/workbench/workbench.html"
     MAIN_JS="${APP_BUNDLE}/Contents/Resources/app/out/main.js"
+    PRODUCT_JSON="${APP_BUNDLE}/Contents/Resources/app/product.json"
     
     if [[ ! -f "${WORKBENCH_HTML}" ]]; then
       echo "ERROR: workbench.html is missing from app bundle!" >&2
@@ -1516,6 +1517,22 @@ EOFPATCH2
       echo "ERROR: main.js is missing from app bundle!" >&2
       echo "  Expected at: ${MAIN_JS}" >&2
       echo "  App bundle: ${APP_BUNDLE}" >&2
+      exit 1
+    fi
+    
+    # Verify product.json exists and has correct extensionsGallery
+    if [[ ! -f "${PRODUCT_JSON}" ]]; then
+      echo "ERROR: product.json is missing from app bundle!" >&2
+      echo "  Expected at: ${PRODUCT_JSON}" >&2
+      echo "  App bundle: ${APP_BUNDLE}" >&2
+      exit 1
+    fi
+    
+    # Verify extensionsGallery is correctly set (should be Open VSX, not Microsoft)
+    if ! jq -e '.extensionsGallery.serviceUrl | contains("open-vsx")' "${PRODUCT_JSON}" >/dev/null 2>&1; then
+      echo "ERROR: product.json in app bundle has incorrect extensionsGallery!" >&2
+      echo "  Current serviceUrl: $(jq -r '.extensionsGallery.serviceUrl // "MISSING"' "${PRODUCT_JSON}")" >&2
+      echo "  This will cause extension marketplace failures at runtime!" >&2
       exit 1
     fi
     
@@ -1678,6 +1695,7 @@ APPXFIX
       WIN_PACKAGE="../VSCode-win32-${VSCODE_ARCH}"
       WORKBENCH_HTML="${WIN_PACKAGE}/resources/app/out/vs/code/electron-browser/workbench/workbench.html"
       MAIN_JS="${WIN_PACKAGE}/resources/app/out/main.js"
+      PRODUCT_JSON="${WIN_PACKAGE}/resources/app/product.json"
       
       if [[ ! -f "${WORKBENCH_HTML}" ]]; then
         echo "ERROR: workbench.html is missing from Windows package!" >&2
@@ -1696,6 +1714,19 @@ APPXFIX
       if [[ ! -f "${MAIN_JS}" ]]; then
         echo "ERROR: main.js is missing from Windows package!" >&2
         echo "  Expected at: ${MAIN_JS}" >&2
+        exit 1
+      fi
+      
+      # Verify product.json exists and has correct extensionsGallery
+      if [[ ! -f "${PRODUCT_JSON}" ]]; then
+        echo "ERROR: product.json is missing from Windows package!" >&2
+        echo "  Expected at: ${PRODUCT_JSON}" >&2
+        exit 1
+      fi
+      
+      if ! jq -e '.extensionsGallery.serviceUrl | contains("open-vsx")' "${PRODUCT_JSON}" >/dev/null 2>&1; then
+        echo "ERROR: product.json in Windows package has incorrect extensionsGallery!" >&2
+        echo "  Current serviceUrl: $(jq -r '.extensionsGallery.serviceUrl // "MISSING"' "${PRODUCT_JSON}")" >&2
         exit 1
       fi
       
@@ -1738,6 +1769,7 @@ APPXFIX
       LINUX_PACKAGE="../VSCode-linux-${VSCODE_ARCH}"
       WORKBENCH_HTML="${LINUX_PACKAGE}/resources/app/out/vs/code/electron-browser/workbench/workbench.html"
       MAIN_JS="${LINUX_PACKAGE}/resources/app/out/main.js"
+      PRODUCT_JSON="${LINUX_PACKAGE}/resources/app/product.json"
       
       if [[ ! -f "${WORKBENCH_HTML}" ]]; then
         echo "ERROR: workbench.html is missing from Linux package!" >&2
@@ -1756,6 +1788,19 @@ APPXFIX
       if [[ ! -f "${MAIN_JS}" ]]; then
         echo "ERROR: main.js is missing from Linux package!" >&2
         echo "  Expected at: ${MAIN_JS}" >&2
+        exit 1
+      fi
+      
+      # Verify product.json exists and has correct extensionsGallery
+      if [[ ! -f "${PRODUCT_JSON}" ]]; then
+        echo "ERROR: product.json is missing from Linux package!" >&2
+        echo "  Expected at: ${PRODUCT_JSON}" >&2
+        exit 1
+      fi
+      
+      if ! jq -e '.extensionsGallery.serviceUrl | contains("open-vsx")' "${PRODUCT_JSON}" >/dev/null 2>&1; then
+        echo "ERROR: product.json in Linux package has incorrect extensionsGallery!" >&2
+        echo "  Current serviceUrl: $(jq -r '.extensionsGallery.serviceUrl // "MISSING"' "${PRODUCT_JSON}")" >&2
         exit 1
       fi
       

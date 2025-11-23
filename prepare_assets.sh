@@ -389,7 +389,10 @@ try {
         // Change #ifdef AppxPackageName to #if 0 (always false)
         if (trimmed.includes('AppxPackageName') || trimmed.includes('AppxPackage')) {
           const indent = line.match(/^\s*/)[0];
-          lines[i] = `${indent}#if 0 ; PATCHED: AppX not available, disabled\n${indent}; Original: ${trimmed}`;
+          // Split into two lines properly
+          lines[i] = `${indent}#if 0 ; PATCHED: AppX not available, disabled`;
+          lines.splice(i + 1, 0, `${indent}; Original: ${trimmed}`);
+          i++; // Adjust index since we inserted a line
           modified = true;
         }
         continue;
@@ -401,7 +404,11 @@ try {
         for (let j = ifdefStartLine + 1; j < i; j++) {
           if (!lines[j].trim().startsWith(';') && !lines[j].trim().startsWith('#')) {
             const indent = lines[j].match(/^\s*/)[0];
-            lines[j] = `${indent}; PATCHED: AppX block content commented out\n${indent};${lines[j].substring(indent.length)}`;
+            // Split into two lines properly - add comment line, then commented original
+            const originalLine = lines[j].substring(indent.length);
+            lines[j] = `${indent}; PATCHED: AppX block content commented out`;
+            lines.splice(j + 1, 0, `${indent};${originalLine}`);
+            i++; // Adjust index since we inserted a line
           }
         }
         modified = true;
@@ -422,9 +429,13 @@ try {
         const lowerLine = line.toLowerCase();
         if (lowerLine.includes('appx')) {
           const indent = line.match(/^\s*/)[0];
-          lines[i] = `${indent}; PATCHED: AppX file not found, commented out\n${indent};${line.substring(indent.length)}`;
+          const originalLine = line.substring(indent.length);
+          // Split into two lines properly - add comment line, then commented original
+          lines[i] = `${indent}; PATCHED: AppX file not found, commented out`;
+          lines.splice(i + 1, 0, `${indent};${originalLine}`);
+          i++; // Adjust index since we inserted a line
           modified = true;
-          console.error(`✓ Commented out AppX reference at line ${i + 1}: ${trimmed.substring(0, 80)}`);
+          console.error(`✓ Commented out AppX reference at line ${i}: ${trimmed.substring(0, 80)}`);
         }
       }
       
@@ -433,9 +444,13 @@ try {
         const lowerLine = line.toLowerCase();
         if (lowerLine.includes('.appx') && !trimmed.startsWith(';')) {
           const indent = line.match(/^\s*/)[0];
-          lines[i] = `${indent}; PATCHED: AppX file not found, commented out\n${indent};${line.substring(indent.length)}`;
+          const originalLine = line.substring(indent.length);
+          // Split into two lines properly - add comment line, then commented original
+          lines[i] = `${indent}; PATCHED: AppX file not found, commented out`;
+          lines.splice(i + 1, 0, `${indent};${originalLine}`);
+          i++; // Adjust index since we inserted a line
           modified = true;
-          console.error(`✓ Commented out .appx reference at line ${i + 1}: ${trimmed.substring(0, 80)}`);
+          console.error(`✓ Commented out .appx reference at line ${i}: ${trimmed.substring(0, 80)}`);
         }
       }
     }

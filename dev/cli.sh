@@ -1,8 +1,8 @@
 export VSCODE_CLI_APP_NAME="cortexide"
 export VSCODE_CLI_BINARY_NAME="cortexide-server"
-export VSCODE_CLI_DOWNLOAD_URL="https://github.com/cortexide/cortexide/releases"
+export VSCODE_CLI_DOWNLOAD_URL="https://github.com/OpenCortexIDE/cortexide-binaries/releases"
 export VSCODE_CLI_QUALITY="stable"
-export VSCODE_CLI_UPDATE_URL="https://raw.githubusercontent.com/cortexide/versions/refs/heads/main"
+export VSCODE_CLI_UPDATE_URL="https://raw.githubusercontent.com/OpenCortexIDE/cortexide-versions/refs/heads/main"
 
 cargo build --release --target aarch64-apple-darwin --bin=code
 
@@ -14,9 +14,9 @@ cp target/aarch64-apple-darwin/release/code "../../VSCode-darwin-arm64/CortexIDE
 # export CARGO_NET_GIT_FETCH_WITH_CLI="true"
 # export VSCODE_CLI_APP_NAME="cortexide-insiders"
 # export VSCODE_CLI_BINARY_NAME="cortexide-server-insiders"
-# export VSCODE_CLI_DOWNLOAD_URL="https://github.com/cortexide/cortexide-insiders/releases"
+# export VSCODE_CLI_DOWNLOAD_URL="https://github.com/OpenCortexIDE/cortexide-binaries/releases"
 # export VSCODE_CLI_QUALITY="insider"
-# export VSCODE_CLI_UPDATE_URL="https://raw.githubusercontent.com/cortexide/versions/refs/heads/main"
+# export VSCODE_CLI_UPDATE_URL="https://raw.githubusercontent.com/OpenCortexIDE/cortexide-versions/refs/heads/main"
 
 # cargo build --release --target aarch64-apple-darwin --bin=code
 

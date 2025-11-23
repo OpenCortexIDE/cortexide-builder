@@ -59,7 +59,7 @@ if (content.includes('import("@electron/osx-sign")') || content.includes('const 
     /const osx_sign_1 = require\("@electron\/osx-sign"\);?/g,
     'let osx_sign_1;'
   );
-  
+
   // Find the main function and add dynamic import at the start
   // The main function is async, so we can use await
   if (content.includes('async function main(')) {
@@ -70,10 +70,10 @@ if (content.includes('import("@electron/osx-sign")') || content.includes('const 
       `$1\n    if (!osx_sign_1) {\n        const osxSignModule = await import("@electron/osx-sign");\n        osx_sign_1 = osxSignModule;\n    }`
     );
   }
-  
+
   // The usage (0, osx_sign_1.sign) is fine - it's just calling the function
   // No need to change it since osx_sign_1 will have the sign property
-  
+
   fs.writeFileSync(filePath, content, 'utf8');
   console.error('✓ Fixed sign.js to use dynamic import for @electron/osx-sign');
 } else {
@@ -85,11 +85,11 @@ SIGNFIX
     fi
 
     DEBUG="electron-osx-sign*" node vscode/build/darwin/sign.js "$( pwd )"
-    
+
     # Verify code signing succeeded
     echo "+ verifying code signature"
     cd "VSCode-darwin-${VSCODE_ARCH}"
-    
+
     # Find the app bundle (should be only one)
     APP_BUNDLE=$( find . -maxdepth 1 -name "*.app" -type d | head -n 1 )
     if [[ -z "${APP_BUNDLE}" ]]; then
@@ -97,10 +97,10 @@ SIGNFIX
       ls -la
       exit 1
     fi
-    
+
     # Normalize path (remove leading ./ if present)
     APP_BUNDLE="${APP_BUNDLE#./}"
-    
+
     # Verify the app is properly signed
     echo "+ checking code signature validity..."
     if ! codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}" 2>&1; then
@@ -110,18 +110,18 @@ SIGNFIX
       exit 1
     fi
     echo "✓ Code signature is valid"
-    
+
     # Check signature details
     echo "+ checking signature details..."
     codesign -dv --verbose=4 "${APP_BUNDLE}" 2>&1 | head -n 5
-    
+
     # Check for entitlements (non-fatal if missing)
     if codesign -d --entitlements :- "${APP_BUNDLE}" > /dev/null 2>&1; then
       echo "+ entitlements found"
     else
       echo "Warning: Could not extract entitlements (this may be normal)"
     fi
-    
+
     # Verify architecture of key binaries
     echo "+ verifying binary architectures..."
     MAIN_EXECUTABLE="${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
@@ -140,7 +140,7 @@ SIGNFIX
     else
       echo "Warning: Main executable not found at ${MAIN_EXECUTABLE}"
     fi
-    
+
     # Check CLI binary architecture if it exists
     TUNNEL_APP_NAME=$( node -p "require('../../product.json').tunnelApplicationName" 2>/dev/null || echo "" )
     if [[ -n "${TUNNEL_APP_NAME}" ]]; then
@@ -161,7 +161,7 @@ SIGNFIX
         echo "Warning: CLI binary not found at ${CLI_BINARY}"
       fi
     fi
-    
+
     echo "✓ Code signing verified successfully"
 
     echo "+ notarize"
@@ -180,18 +180,18 @@ SIGNFIX
       echo "Error: Failed to store notarization credentials"
       exit 1
     fi
-    
+
     # Submit for notarization
     echo "+ submitting for notarization (this may take several minutes)..."
     NOTARIZATION_OUTPUT=$( xcrun notarytool submit "${ZIP_FILE}" --keychain-profile "${APP_NAME}" --wait --keychain "${KEYCHAIN}" 2>&1 )
     NOTARIZATION_EXIT_CODE=$?
-    
+
     if [[ ${NOTARIZATION_EXIT_CODE} -ne 0 ]]; then
       echo "Error: Notarization submission failed"
       echo "${NOTARIZATION_OUTPUT}"
       exit 1
     fi
-    
+
     # Check notarization status
     if echo "${NOTARIZATION_OUTPUT}" | grep -qi "status:.*Accepted"; then
       echo "✓ Notarization accepted"
@@ -208,7 +208,7 @@ SIGNFIX
     STAPLE_ATTEMPTS=0
     MAX_STAPLE_ATTEMPTS=3
     STAPLE_SUCCESS=false
-    
+
     while [[ ${STAPLE_ATTEMPTS} -lt ${MAX_STAPLE_ATTEMPTS} ]]; do
       if xcrun stapler staple "${APP_BUNDLE}" 2>&1; then
         STAPLE_SUCCESS=true
@@ -221,22 +221,22 @@ SIGNFIX
         fi
       fi
     done
-    
+
     if [[ "${STAPLE_SUCCESS}" != "true" ]]; then
       echo "Error: Failed to staple notarization ticket after ${MAX_STAPLE_ATTEMPTS} attempts"
       exit 1
     fi
-    
+
     # Verify stapling succeeded - retry on network errors
     echo "+ validating staple"
     VALIDATE_ATTEMPTS=0
     MAX_VALIDATE_ATTEMPTS=3
     VALIDATE_SUCCESS=false
-    
+
     while [[ ${VALIDATE_ATTEMPTS} -lt ${MAX_VALIDATE_ATTEMPTS} ]]; do
       VALIDATE_OUTPUT=$(xcrun stapler validate "${APP_BUNDLE}" 2>&1)
       VALIDATE_EXIT_CODE=$?
-      
+
       if [[ ${VALIDATE_EXIT_CODE} -eq 0 ]]; then
         VALIDATE_SUCCESS=true
         break
@@ -265,7 +265,7 @@ SIGNFIX
         fi
       fi
     done
-    
+
     if [[ "${VALIDATE_SUCCESS}" == "true" ]]; then
       echo "✓ Stapling verified successfully"
     elif [[ "${VALIDATE_SUCCESS}" == "network_error" ]]; then
@@ -274,12 +274,12 @@ SIGNFIX
       echo "Error: Stapling validation failed" >&2
       exit 1
     fi
-    
+
     # Final verification: check Gatekeeper assessment
     echo "+ final Gatekeeper verification"
     SPCTL_OUTPUT=$( spctl --assess --verbose "${APP_BUNDLE}" 2>&1 )
     SPCTL_EXIT_CODE=$?
-    
+
     if [[ ${SPCTL_EXIT_CODE} -eq 0 ]]; then
       echo "✓ Gatekeeper assessment passed"
     else
@@ -342,31 +342,39 @@ try {
   let content = fs.readFileSync(filePath, 'utf8');
   const lines = content.split('\n');
   let modified = false;
-  
+
   // Check if AppX file exists
   const arch = process.env.VSCODE_ARCH || 'x64';
   const appxDir = path.join('..', 'VSCode-win32-' + arch, 'appx');
-  const appxFile = path.join(appxDir, `code_${arch}.appx`);
-  const appxExists = fs.existsSync(appxFile);
-  
-  console.error(`Checking for AppX file: ${appxFile}`);
+
+  // AppX filename depends on quality: 'code_${arch}.appx' for stable, 'code_insider_${arch}.appx' for insider/dev
+  // Try both possible filenames
+  const appxFileStable = path.join(appxDir, `code_${arch}.appx`);
+  const appxFileInsider = path.join(appxDir, `code_insider_${arch}.appx`);
+  const appxExists = fs.existsSync(appxFileStable) || fs.existsSync(appxFileInsider);
+  const appxFile = fs.existsSync(appxFileStable) ? appxFileStable : appxFileInsider;
+
+  console.error(`Checking for AppX file: ${appxFileStable}`);
+  if (!fs.existsSync(appxFileStable)) {
+    console.error(`Checking alternative AppX file: ${appxFileInsider}`);
+  }
   console.error(`AppX file exists: ${appxExists}`);
-  
+
   if (!appxExists) {
     console.error(`AppX file not found: ${appxFile}, making AppX reference conditional...`);
     console.error(`Searching for AppX references in code.iss (total lines: ${lines.length})...`);
-    
+
     // Find lines that reference the AppX file (around line 99 based on error)
     // Be VERY aggressive - comment out ANY line in [Files] section that mentions appx
     // But be careful with #ifdef blocks - comment out the entire block
     let inFilesSection = false;
     let inAppxIfdef = false;
     let ifdefStartLine = -1;
-    
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmed = line.trim();
-      
+
       // Track if we're in the [Files] section
       if (trimmed.startsWith('[Files]')) {
         inFilesSection = true;
@@ -377,7 +385,7 @@ try {
         inFilesSection = false;
         continue;
       }
-      
+
       // Track #ifdef blocks related to AppX
       // We need to handle these specially - don't comment out the #ifdef/#endif themselves
       // Instead, we'll set a flag to comment out the content inside
@@ -397,7 +405,7 @@ try {
         }
         continue;
       }
-      
+
       // Track #endif for AppX blocks
       if (inAppxIfdef && trimmed.startsWith('#endif')) {
         // Comment out the content inside the block (but keep #endif)
@@ -417,12 +425,12 @@ try {
         ifdefStartLine = -1;
         continue;
       }
-      
+
       // Skip already commented lines
       if (trimmed.startsWith(';')) {
         continue;
       }
-      
+
       // In [Files] section, comment out ANY line that mentions appx (case insensitive)
       // But skip if we're inside an #ifdef block (we'll handle the whole block)
       // Also skip Excludes lines - they're just patterns, not actual file references
@@ -440,7 +448,7 @@ try {
           console.error(`✓ Commented out AppX reference at line ${i}: ${trimmed.substring(0, 80)}`);
         }
       }
-      
+
       // Also check outside [Files] section for any .appx references (but not in #ifdef blocks)
       if (!inAppxIfdef) {
         const lowerLine = line.toLowerCase();
@@ -456,7 +464,7 @@ try {
         }
       }
     }
-    
+
     if (!modified) {
       console.error('⚠ WARNING: No AppX references found to patch!');
       console.error('Showing lines around line 99 for debugging:');
@@ -467,13 +475,13 @@ try {
   } else {
     console.error(`✓ AppX file found: ${appxFile}, no patching needed`);
   }
-  
+
   if (modified) {
     // Preserve original line endings (CRLF for Windows files)
     const originalContent = fs.readFileSync(filePath, 'utf8');
     const hasCRLF = originalContent.includes('\r\n');
     const lineEnding = hasCRLF ? '\r\n' : '\n';
-    
+
     content = lines.join(lineEnding);
     // Ensure file ends with newline (Inno Setup can be sensitive to this)
     if (!content.endsWith(lineEnding)) {
@@ -481,7 +489,7 @@ try {
     }
     fs.writeFileSync(filePath, content, 'utf8');
     console.error('✓ Successfully patched code.iss to handle missing AppX file');
-    
+
     // Validate the file has proper structure - check for common issues
     const runSectionMatch = content.match(/\[Run\][\s\S]*?(?=\[|$)/m);
     if (runSectionMatch) {

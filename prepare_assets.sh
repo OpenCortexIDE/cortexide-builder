@@ -425,9 +425,11 @@ try {
       
       // In [Files] section, comment out ANY line that mentions appx (case insensitive)
       // But skip if we're inside an #ifdef block (we'll handle the whole block)
+      // Also skip Excludes lines - they're just patterns, not actual file references
       if (inFilesSection && !inAppxIfdef) {
         const lowerLine = line.toLowerCase();
-        if (lowerLine.includes('appx')) {
+        // Skip Excludes lines - they contain "appx" as a pattern but aren't file references
+        if (lowerLine.includes('appx') && !lowerLine.includes('excludes')) {
           const indent = line.match(/^\s*/)[0];
           const originalLine = line.substring(indent.length);
           // Split into two lines properly - add comment line, then commented original

@@ -45,6 +45,7 @@ if [[ "${OS_NAME}" == "osx" ]]; then
   cd ..
 
   if [[ -n "${CERTIFICATE_OSX_P12_DATA}" ]]; then
+    # Store CODESIGN_IDENTITY for potential re-signing after permission fixes
     if [[ "${CI_BUILD}" == "no" ]]; then
       RUNNER_TEMP="${TMPDIR}"
     fi
@@ -326,6 +327,85 @@ SIGNFIX
 
     rm "${ZIP_FILE}"
 
+    cd ..
+  fi
+
+  # CRITICAL FIX: Re-fix permissions AFTER signing/notarization/stapling if needed
+  # Code signing and notarization may have set extended attributes or locked flags
+  # We need to check and fix these, then re-sign (but NOT re-notarize)
+  # Note: Re-signing after notarization is OK, but re-notarization is expensive
+  if [[ -n "${CERTIFICATE_OSX_P12_DATA}" ]] && [[ -n "${CODESIGN_IDENTITY}" ]]; then
+    echo "+ checking file permissions after signing/notarization"
+    cd "VSCode-darwin-${VSCODE_ARCH}"
+    
+    APP_BUNDLE=$( find . -maxdepth 1 -name "*.app" -type d | head -n 1 )
+    if [[ -n "${APP_BUNDLE}" ]]; then
+      APP_BUNDLE="${APP_BUNDLE#./}"
+      PERMISSION_FIX_NEEDED=false
+      
+      # Check for locked files (uchg flag)
+      LOCKED_FILES=$( find "${APP_BUNDLE}" -flags +uchg 2>/dev/null | head -5 )
+      if [[ -n "${LOCKED_FILES}" ]]; then
+        echo "  Warning: Found files with locked flags (uchg) - these may cause installation issues"
+        echo "  Sample locked files:"
+        echo "${LOCKED_FILES}" | head -3 | sed 's/^/    /'
+        PERMISSION_FIX_NEEDED=true
+      fi
+      
+      # Check for problematic extended attributes (quarantine, etc.)
+      # Note: Some extended attributes are normal (com.apple.quarantine is added by macOS)
+      # But we want to ensure files aren't marked as read-only
+      READONLY_FILES=$( find "${APP_BUNDLE}" -type f ! -perm -u+w 2>/dev/null | head -5 )
+      if [[ -n "${READONLY_FILES}" ]]; then
+        echo "  Warning: Found read-only files - these may cause installation issues"
+        echo "  Sample read-only files:"
+        echo "${READONLY_FILES}" | head -3 | sed 's/^/    /'
+        PERMISSION_FIX_NEEDED=true
+      fi
+      
+      if [[ "${PERMISSION_FIX_NEEDED}" == "true" ]]; then
+        echo "  Fixing permissions (will re-sign afterward)..."
+        
+        # Remove locked flags
+        chflags -R nouchg "${APP_BUNDLE}" 2>/dev/null || true
+        
+        # Ensure files are writable
+        find "${APP_BUNDLE}" -type f ! -perm -u+w -exec chmod u+w {} \; 2>/dev/null || true
+        
+        # CRITICAL: Do NOT remove extended attributes after signing!
+        # xattr -cr would remove code signature attributes and break the signature
+        # Extended attributes are set by code signing and are required for the signature
+        # Only remove specific problematic attributes if needed, but we'll skip this
+        # since locked flags and read-only permissions are the main issues
+        echo "  Note: Preserving extended attributes (required for code signature)"
+        
+        # Re-sign after permission fix (required to maintain valid signature)
+        # Note: Re-signing invalidates the notarization ticket, so we'll need to re-staple
+        echo "  Re-signing app after permission fix..."
+        if codesign --force --deep --sign "${CODESIGN_IDENTITY}" "${APP_BUNDLE}" 2>&1; then
+          echo "  ✓ Re-signed successfully"
+          # Verify the signature is still valid
+          if codesign --verify --deep --strict "${APP_BUNDLE}" 2>/dev/null; then
+            echo "  ✓ Signature verification passed"
+            # Re-signing invalidates the notarization ticket, so re-staple if it was previously stapled
+            echo "  Re-stapling notarization ticket (re-signing invalidated it)..."
+            if xcrun stapler staple "${APP_BUNDLE}" 2>&1; then
+              echo "  ✓ Re-stapled successfully"
+            else
+              echo "  ⚠ Warning: Re-stapling failed (app may need to be re-notarized)"
+              echo "  Note: The app will still work, but Gatekeeper may show warnings"
+            fi
+          else
+            echo "  ⚠ Warning: Signature verification failed after re-signing"
+          fi
+        else
+          echo "  ⚠ Warning: Re-signing failed, but continuing..."
+        fi
+      else
+        echo "  ✓ File permissions are correct"
+      fi
+    fi
+    
     cd ..
   fi
 

@@ -33,7 +33,7 @@ if [[ -d "${CORTEXIDE_REPO}" && -f "${CORTEXIDE_REPO}/package.json" ]]; then
   # Copy the local CortexIDE repo to vscode directory (exclude heavy/temp files)
   echo "Copying CortexIDE repository to vscode directory..."
   mkdir -p vscode
-  rsync -a --delete \
+  if ! rsync -a --delete \
     --exclude ".git" \
     --exclude "node_modules" \
     --exclude "out" \
@@ -41,9 +41,19 @@ if [[ -d "${CORTEXIDE_REPO}" && -f "${CORTEXIDE_REPO}/package.json" ]]; then
     --exclude ".vscode" \
     --exclude "**/.vscode" \
     --exclude "**/node_modules" \
-    "${CORTEXIDE_REPO}/" "vscode/"
+    "${CORTEXIDE_REPO}/" "vscode/" 2>&1; then
+    echo "Error: Failed to copy local CortexIDE repository from ${CORTEXIDE_REPO} to vscode/" >&2
+    echo "Please check:" >&2
+    echo "  1. That ${CORTEXIDE_REPO} is accessible and readable" >&2
+    echo "  2. That you have write permissions in the current directory" >&2
+    rm -rf vscode
+    exit 1
+  fi
   
-  cd vscode || { echo "'vscode' dir not found"; exit 1; }
+  cd vscode || { 
+    echo "Error: Failed to change to vscode directory after copy." >&2
+    exit 1
+  }
   
   # Get version info from local repo
   MS_TAG=$( jq -r '.version' "package.json" 2>/dev/null || echo "" )
@@ -109,9 +119,19 @@ else
   # Otherwise use the public URL
   if [[ -n "${GITHUB_TOKEN}" ]]; then
     echo "Using GITHUB_TOKEN for authentication"
-    git remote add origin "https://${GITHUB_TOKEN}@github.com/OpenCortexIDE/cortexide.git"
+    if ! git remote add origin "https://${GITHUB_TOKEN}@github.com/OpenCortexIDE/cortexide.git" 2>&1; then
+      echo "Error: Failed to add git remote." >&2
+      cd ..
+      rm -rf vscode
+      exit 1
+    fi
   else
-    git remote add origin https://github.com/OpenCortexIDE/cortexide.git
+    if ! git remote add origin https://github.com/OpenCortexIDE/cortexide.git 2>&1; then
+      echo "Error: Failed to add git remote." >&2
+      cd ..
+      rm -rf vscode
+      exit 1
+    fi
   fi
   
   # Allow callers to specify a particular commit to checkout via the
@@ -120,7 +140,17 @@ else
   if [[ -n "${CORTEXIDE_COMMIT}" ]]; then
     echo "Using explicit commit ${CORTEXIDE_COMMIT}"
     # Fetch just that commit to keep the clone shallow.
-    git fetch --depth 1 origin "${CORTEXIDE_COMMIT}"
+    if ! git fetch --depth 1 origin "${CORTEXIDE_COMMIT}" 2>&1; then
+      echo "Error: Failed to fetch commit ${CORTEXIDE_COMMIT} from GitHub." >&2
+      echo "Please check:" >&2
+      echo "  1. Your network connection" >&2
+      echo "  2. That you can access https://github.com/OpenCortexIDE/cortexide" >&2
+      echo "  3. That the commit ${CORTEXIDE_COMMIT} exists" >&2
+      echo "  4. If using a local repo, ensure '../cortexide' directory exists with package.json" >&2
+      cd ..
+      rm -rf vscode
+      exit 1
+    fi
     # Remove any conflicting untracked files before checkout
     # This handles cases where files in .gitignore exist in the working directory
     git clean -fd 2>/dev/null || true
@@ -131,7 +161,16 @@ else
       git checkout -f "${CORTEXIDE_COMMIT}"
     }
   else
-    git fetch --depth 1 origin "${CORTEXIDE_BRANCH}"
+    if ! git fetch --depth 1 origin "${CORTEXIDE_BRANCH}" 2>&1; then
+      echo "Error: Failed to fetch branch ${CORTEXIDE_BRANCH} from GitHub." >&2
+      echo "Please check:" >&2
+      echo "  1. Your network connection" >&2
+      echo "  2. That you can access https://github.com/OpenCortexIDE/cortexide" >&2
+      echo "  3. If using a local repo, ensure '../cortexide' directory exists with package.json" >&2
+      cd ..
+      rm -rf vscode
+      exit 1
+    fi
     # Remove any conflicting untracked files before checkout
     # This handles cases where files in .gitignore exist in the working directory
     git clean -fd 2>/dev/null || true

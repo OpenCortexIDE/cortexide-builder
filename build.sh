@@ -2011,10 +2011,21 @@ APPXFIX
       fi
 
       echo "Building Windows package for ${VSCODE_ARCH}..."
-      # CRITICAL FIX: Patch InnoSetup code.iss to escape PowerShell curly braces BEFORE gulp task
+
+      if ! npm run gulp "vscode-win32-${VSCODE_ARCH}-min-ci"; then
+        echo "Error: Windows build failed for ${VSCODE_ARCH}. Check for:" >&2
+        echo "  - Electron packaging errors" >&2
+        echo "  - Missing build artifacts" >&2
+        echo "  - Architecture mismatch" >&2
+        echo "  - Check logs above for specific errors" >&2
+        exit 1
+      fi
+
+      # CRITICAL FIX: Patch InnoSetup code.iss to escape PowerShell curly braces AFTER gulp task
+      # The gulp task generates code.iss, so we must patch it AFTER, not before
       # Inno Setup interprets { and } as its own constants, so PowerShell code blocks need escaping
       if [[ -f "vscode/build/win32/code.iss" ]]; then
-        echo "Patching InnoSetup code.iss to escape PowerShell curly braces..." >&2
+        echo "Patching InnoSetup code.iss to escape PowerShell curly braces (after gulp task)..." >&2
         node << 'POWERSHELLESCAPEFIX' || {
 const fs = require('fs');
 const filePath = 'vscode/build/win32/code.iss';
@@ -2087,20 +2098,14 @@ try {
   }
 } catch (error) {
   console.error(`✗ ERROR: ${error.message}`);
+  console.error(error.stack);
   process.exit(1);
 }
 POWERSHELLESCAPEFIX
           echo "Warning: Failed to patch code.iss for PowerShell escaping, continuing anyway..." >&2
         }
-      fi
-
-      if ! npm run gulp "vscode-win32-${VSCODE_ARCH}-min-ci"; then
-        echo "Error: Windows build failed for ${VSCODE_ARCH}. Check for:" >&2
-        echo "  - Electron packaging errors" >&2
-        echo "  - Missing build artifacts" >&2
-        echo "  - Architecture mismatch" >&2
-        echo "  - Check logs above for specific errors" >&2
-        exit 1
+      else
+        echo "Warning: code.iss not found after gulp task, cannot patch for PowerShell escaping" >&2
       fi
 
       # CRITICAL: Verify workbench.html exists in the built Windows package to prevent blank screen

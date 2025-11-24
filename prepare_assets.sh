@@ -533,11 +533,70 @@ try {
     console.error(`✓ AppX file found: ${appxFile}, no patching needed`);
   }
 
+  // CRITICAL FIX: Always escape { characters in PowerShell commands in [Run] section
+  // This must run regardless of AppX patching, as it fixes a separate issue
+  // Inno Setup uses { for constants, so PowerShell { must be escaped as {{
+  let runSectionFixed = false;
+  let inRunSection = false;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    
+    // Track if we're in [Run] section
+    if (trimmed.startsWith('[Run]')) {
+      inRunSection = true;
+      continue;
+    }
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      inRunSection = false;
+      continue;
+    }
+    
+    // Fix PowerShell commands in [Run] section
+    if (inRunSection && line.includes('powershell.exe') && line.includes('Parameters:')) {
+      // Check if line contains unescaped { characters (not already {{)
+      if (line.includes('{') && !line.includes('{{')) {
+        // Protect Inno Setup constants first by replacing them with placeholders
+        const innoConstants = [];
+        const innoPattern = /\{(tmp|app|sys|pf|cf|src|sd|fonts|group|#\w+)\}/g;
+        let protectedLine = line;
+        let constIndex = 0;
+        
+        protectedLine = protectedLine.replace(innoPattern, (match) => {
+          const placeholder = `__INNO_CONST_${constIndex}__`;
+          innoConstants.push(match);
+          constIndex++;
+          return placeholder;
+        });
+        
+        // Now escape all remaining { and } characters (these are PowerShell code blocks)
+        protectedLine = protectedLine.replace(/\{/g, '{{').replace(/\}/g, '}}');
+        
+        // Restore Inno Setup constants
+        innoConstants.forEach((constant, idx) => {
+          protectedLine = protectedLine.replace(`__INNO_CONST_${idx}__`, constant);
+        });
+        
+        if (protectedLine !== line) {
+          lines[i] = protectedLine;
+          runSectionFixed = true;
+          console.error(`✓ Escaped PowerShell { characters in [Run] section at line ${i + 1}`);
+        }
+      }
+    }
+  }
+  
+  if (runSectionFixed) {
+    modified = true;
+  }
+
   if (modified) {
-    // Preserve original line endings (CRLF for Windows files)
+    // Rebuild content from lines (after all modifications)
     const originalContent = fs.readFileSync(filePath, 'utf8');
     const hasCRLF = originalContent.includes('\r\n');
     const lineEnding = hasCRLF ? '\r\n' : '\n';
+    content = lines.join(lineEnding);
 
     content = lines.join(lineEnding);
     // Ensure file ends with newline (Inno Setup can be sensitive to this)
@@ -599,11 +658,65 @@ INNOSETUPFIX
   fi
 
   if [[ "${SHOULD_BUILD_EXE_SYS}" != "no" ]]; then
-    npm run gulp "vscode-win32-${VSCODE_ARCH}-system-setup"
+    echo "Building system setup for ${VSCODE_ARCH}..." >&2
+    # Run gulp task and capture output for better error reporting
+    # Inno Setup compilation can fail silently if there are issues with code.iss
+    if npm run gulp "vscode-win32-${VSCODE_ARCH}-system-setup" 2>&1; then
+      echo "✓ Gulp task completed" >&2
+    else
+      EXIT_CODE=$?
+      echo "⚠ Gulp task exited with code ${EXIT_CODE}, checking if output file exists..." >&2
+    fi
+    
+    # Verify output file exists (check both possible locations)
+    SETUP_EXE=""
+    if [[ -f ".build/win32-${VSCODE_ARCH}/system-setup/VSCodeSetup.exe" ]]; then
+      SETUP_EXE=".build/win32-${VSCODE_ARCH}/system-setup/VSCodeSetup.exe"
+    elif [[ -f "vscode/.build/win32-${VSCODE_ARCH}/system-setup/VSCodeSetup.exe" ]]; then
+      SETUP_EXE="vscode/.build/win32-${VSCODE_ARCH}/system-setup/VSCodeSetup.exe"
+    fi
+    
+    if [[ -n "${SETUP_EXE}" ]]; then
+      echo "✓ System setup build completed successfully: ${SETUP_EXE}" >&2
+    else
+      echo "ERROR: System setup build failed - VSCodeSetup.exe not found" >&2
+      echo "  Expected locations:" >&2
+      echo "    - .build/win32-${VSCODE_ARCH}/system-setup/VSCodeSetup.exe" >&2
+      echo "    - vscode/.build/win32-${VSCODE_ARCH}/system-setup/VSCodeSetup.exe" >&2
+      echo "  This usually indicates an issue with Inno Setup compilation" >&2
+      echo "  Check code.iss for syntax errors or missing files" >&2
+      echo "  Searching for VSCodeSetup.exe in build directories..." >&2
+      find . -name "VSCodeSetup.exe" -type f 2>/dev/null | head -5 >&2 || echo "  No VSCodeSetup.exe found" >&2
+      exit 1
+    fi
   fi
 
   if [[ "${SHOULD_BUILD_EXE_USR}" != "no" ]]; then
-    npm run gulp "vscode-win32-${VSCODE_ARCH}-user-setup"
+    echo "Building user setup for ${VSCODE_ARCH}..." >&2
+    if npm run gulp "vscode-win32-${VSCODE_ARCH}-user-setup" 2>&1; then
+      echo "✓ Gulp task completed" >&2
+    else
+      EXIT_CODE=$?
+      echo "⚠ Gulp task exited with code ${EXIT_CODE}, checking if output file exists..." >&2
+    fi
+    
+    SETUP_EXE=""
+    if [[ -f ".build/win32-${VSCODE_ARCH}/user-setup/VSCodeSetup.exe" ]]; then
+      SETUP_EXE=".build/win32-${VSCODE_ARCH}/user-setup/VSCodeSetup.exe"
+    elif [[ -f "vscode/.build/win32-${VSCODE_ARCH}/user-setup/VSCodeSetup.exe" ]]; then
+      SETUP_EXE="vscode/.build/win32-${VSCODE_ARCH}/user-setup/VSCodeSetup.exe"
+    fi
+    
+    if [[ -n "${SETUP_EXE}" ]]; then
+      echo "✓ User setup build completed successfully: ${SETUP_EXE}" >&2
+    else
+      echo "ERROR: User setup build failed - VSCodeSetup.exe not found" >&2
+      echo "  Expected locations:" >&2
+      echo "    - .build/win32-${VSCODE_ARCH}/user-setup/VSCodeSetup.exe" >&2
+      echo "    - vscode/.build/win32-${VSCODE_ARCH}/user-setup/VSCodeSetup.exe" >&2
+      find . -name "VSCodeSetup.exe" -type f 2>/dev/null | head -5 >&2 || echo "  No VSCodeSetup.exe found" >&2
+      exit 1
+    fi
   fi
 
   if [[ "${VSCODE_ARCH}" == "ia32" || "${VSCODE_ARCH}" == "x64" ]]; then

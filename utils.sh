@@ -40,6 +40,45 @@ apply_patch() {
     echo "$non_critical" | grep -q "$patch_name"
   }
   
+  # Helper function to check if version-1-update patch changes are already applied
+  check_update_patch_already_applied() {
+    local patch_file="$1"
+    local patch_name=$(basename "$patch_file")
+    
+    # Only check version-1-update patch
+    if [[ "$patch_name" != "version-1-update.patch" ]]; then
+      return 1
+    fi
+    
+    # Check if key changes from the patch are already present
+    # The patch adds WindowsInstaller to UpdateType enum and new type definitions
+    # Note: This function is called from within vscode/ directory context
+    local update_ts="src/vs/platform/update/common/update.ts"
+    if [[ -f "$update_ts" ]]; then
+      # Check if WindowsInstaller is already in UpdateType enum
+      if grep -q "WindowsInstaller" "$update_ts" 2>/dev/null; then
+        # Check if Architecture, Platform, Quality, Target types are defined
+        if grep -q "export type Architecture" "$update_ts" 2>/dev/null && \
+           grep -q "export type Platform" "$update_ts" 2>/dev/null && \
+           grep -q "export type Quality" "$update_ts" 2>/dev/null && \
+           grep -q "export type Target" "$update_ts" 2>/dev/null; then
+          # Also verify createUpdateURL signature has been updated
+          local abstract_service="src/vs/platform/update/electron-main/abstractUpdateService.ts"
+          if [[ -f "$abstract_service" ]]; then
+            # Check if createUpdateURL has the new signature with Target parameter
+            if grep -q "createUpdateURL.*target\?:" "$abstract_service" 2>/dev/null || \
+               grep -q "createUpdateURL.*Target" "$abstract_service" 2>/dev/null; then
+              echo "Update patch changes already present, skipping patch..." >&2
+              return 0
+            fi
+          fi
+        fi
+      fi
+    fi
+    
+    return 1
+  }
+  
   # Helper function to check if architecture patch changes are already applied
   check_arch_patch_already_applied() {
     local patch_file="$1"
@@ -94,6 +133,12 @@ apply_patch() {
   
   # Check if this is a non-critical patch early, so we can ensure it never causes build failure
   PATCH_IS_NON_CRITICAL=$(is_non_critical_patch "$1" && echo "yes" || echo "no")
+  
+  # Check if update patch is already applied (to avoid conflicts when manually applied)
+  if check_update_patch_already_applied "$1"; then
+    echo "Skipping patch (changes already applied): $(basename "$1")" >&2
+    return 0
+  fi
   
   # grep '^+++' "$1"  | sed -e 's#+++ [ab]/#./vscode/#' | while read line; do shasum -a 256 "${line}"; done
 

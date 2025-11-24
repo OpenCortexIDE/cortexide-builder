@@ -339,13 +339,28 @@ const path = require('path');
 const filePath = 'build/win32/code.iss';
 
 try {
+  // Validate file exists and is readable
+  if (!fs.existsSync(filePath)) {
+    console.error(`ERROR: code.iss file not found at ${filePath}`);
+    process.exit(1);
+  }
+  
   let content = fs.readFileSync(filePath, 'utf8');
+  
+  // Validate file is not empty
+  if (!content || content.trim().length === 0) {
+    console.error(`ERROR: code.iss file is empty or invalid`);
+    process.exit(1);
+  }
+  
   const lines = content.split('\n');
   let modified = false;
 
   // Check if AppX file exists
   const arch = process.env.VSCODE_ARCH || 'x64';
-  const appxDir = path.join('..', 'VSCode-win32-' + arch, 'appx');
+  // Use path.resolve with process.cwd() since we're in vscode directory
+  // The script runs from vscode/ directory, so .. goes to parent (cortexide-builder)
+  const appxDir = path.resolve(process.cwd(), '..', 'VSCode-win32-' + arch, 'appx');
 
   // AppX filename depends on quality: 'code_${arch}.appx' for stable, 'code_insider_${arch}.appx' for insider/dev
   // Try both possible filenames
@@ -426,6 +441,14 @@ try {
       // Track #endif for AppX blocks
       if (inAppxIfdef && trimmed.startsWith('#endif')) {
         ifdefDepth--;
+        // Guard against negative depth (more #endif than #ifdef)
+        if (ifdefDepth < 0) {
+          console.error(`⚠ WARNING: Found extra #endif at line ${i + 1} (depth: ${ifdefDepth}). Resetting AppX block tracking.`);
+          inAppxIfdef = false;
+          ifdefStartLine = -1;
+          ifdefDepth = 0;
+          continue;
+        }
         if (ifdefDepth === 0) {
           // This is the closing #endif for the outermost AppX block
           // Comment out the content inside the block (but keep #endif)
@@ -521,8 +544,21 @@ try {
     if (!content.endsWith(lineEnding)) {
       content += lineEnding;
     }
+    
+    // Validate content before writing
+    if (!content || content.trim().length === 0) {
+      console.error('ERROR: Generated content is empty! Not writing file.');
+      process.exit(1);
+    }
+    
     fs.writeFileSync(filePath, content, 'utf8');
     console.error('✓ Successfully patched code.iss to handle missing AppX file');
+    
+    // Verify the file was written correctly
+    const verifyContent = fs.readFileSync(filePath, 'utf8');
+    if (verifyContent !== content) {
+      console.error('⚠ WARNING: File content mismatch after write. File may be corrupted.');
+    }
 
     // Validate the file has proper structure - check for common issues
     const runSectionMatch = content.match(/\[Run\][\s\S]*?(?=\[|$)/m);

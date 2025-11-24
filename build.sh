@@ -5,6 +5,127 @@ set -ex
 
 . version.sh
 
+# Download helper with retry/backoff to reduce transient GitHub outages
+download_with_retries() {
+  local url="$1"
+  local dest="$2"
+  local max_attempts="${3:-4}"
+  local tmp="${dest}.partial"
+
+  if [[ -z "${url}" || -z "${dest}" ]]; then
+    return 1
+  }
+
+  mkdir -p "$(dirname "${dest}")"
+
+  for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+    echo "Prefetching ${url} (attempt ${attempt}/${max_attempts})..." >&2
+    rm -f "${tmp}"
+
+    local -a curl_headers=()
+    if [[ "${url}" == https://github.com/* || "${url}" == https://objects.githubusercontent.com/* ]]; then
+      if [[ -n "${GITHUB_TOKEN}" ]]; then
+        curl_headers+=("-H" "Authorization: Bearer ${GITHUB_TOKEN}")
+      fi
+    fi
+
+    if curl --fail --location --show-error --silent \
+        --connect-timeout 20 --retry 0 \
+        "${curl_headers[@]}" \
+        --output "${tmp}" "${url}"; then
+      if [[ -s "${tmp}" ]]; then
+        mv "${tmp}" "${dest}"
+        echo "✓ Downloaded ${url} -> ${dest}" >&2
+        return 0
+      fi
+    fi
+
+    echo "Download failed for ${url}, retrying in $((attempt * 5))s..." >&2
+    sleep $((attempt * 5))
+  done
+
+  rm -f "${tmp}"
+  echo "✗ Unable to download ${url}" >&2
+  return 1
+}
+
+detect_electron_version() {
+  local candidate version
+  for candidate in ".npmrc" ".npmrc.bak"; do
+    if [[ -f "${candidate}" ]]; then
+      version=$(grep -E '^target=' "${candidate}" | head -1 | cut -d'=' -f2 | tr -d '"' | tr -d "'" )
+      if [[ -n "${version}" ]]; then
+        echo "${version}"
+        return 0
+      fi
+    fi
+  done
+
+  if [[ -f "package.json" ]]; then
+    version=$(node -p "(() => { try { const pkg = require('./package.json'); return pkg.electronVersion || (pkg.engines && pkg.engines.electron) || ''; } catch { return ''; } })()" 2>/dev/null)
+    if [[ -n "${version}" ]]; then
+      echo "${version}"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+ensure_electron_cached() {
+  local platform="$1"
+  local arch="$2"
+  local electron_version="$3"
+
+  if [[ -z "${platform}" || -z "${arch}" ]]; then
+    return 1
+  fi
+
+  if [[ -z "${electron_version}" ]]; then
+    electron_version="$(detect_electron_version)" || true
+  fi
+
+  if [[ -z "${electron_version}" ]]; then
+    echo "Warning: Could not detect Electron version, skipping cache warm-up" >&2
+    return 1
+  fi
+
+  local artifact_arch="${arch}"
+  if [[ "${platform}" == "linux" && "${arch}" == "armhf" ]]; then
+    artifact_arch="armv7l"
+  fi
+
+  local cache_dir="${ELECTRON_DOWNLOAD_CACHE:-$(pwd)/.electron-cache}"
+  mkdir -p "${cache_dir}"
+  export ELECTRON_DOWNLOAD_CACHE="${cache_dir}"
+
+  local artifact="electron-v${electron_version}-${platform}-${artifact_arch}.zip"
+  local destination="${cache_dir}/${artifact}"
+
+  if [[ -f "${destination}" && -s "${destination}" ]]; then
+    echo "✓ Electron artifact already cached: ${artifact}" >&2
+    return 0
+  fi
+
+  local -a mirrors=()
+  if [[ -n "${CORTEXIDE_ELECTRON_BASE_URL}" ]]; then
+    mirrors+=("${CORTEXIDE_ELECTRON_BASE_URL%/}/v${electron_version}/${artifact}")
+  fi
+  mirrors+=("https://github.com/electron/electron/releases/download/v${electron_version}/${artifact}")
+  mirrors+=("https://registry.npmmirror.com/-/binary/electron/v${electron_version}/${artifact}")
+  mirrors+=("https://download.npmmirror.com/electron/v${electron_version}/${artifact}")
+  mirrors+=("https://npm.taobao.org/mirrors/electron/v${electron_version}/${artifact}")
+
+  for mirror in "${mirrors[@]}"; do
+    if download_with_retries "${mirror}" "${destination}"; then
+      return 0
+    fi
+  done
+
+  echo "Warning: Failed to prefetch ${artifact} from all mirrors" >&2
+  return 1
+}
+
 # Validate required environment variables
 if [[ -z "${OS_NAME}" ]]; then
   echo "Warning: OS_NAME is not set. Defaulting based on system..." >&2
@@ -1446,6 +1567,9 @@ EOFPATCH2
     # node build/lib/policies darwin # Void commented this out
 
     echo "Building macOS package for ${VSCODE_ARCH}..."
+    ensure_electron_cached "darwin" "${VSCODE_ARCH}" || {
+      echo "Warning: Electron cache warm-up failed; gulp will download directly." >&2
+    }
     if ! npm run gulp "vscode-darwin-${VSCODE_ARCH}-min-ci"; then
       echo "Error: macOS build failed for ${VSCODE_ARCH}. Check for:" >&2
       echo "  - Electron packaging errors" >&2

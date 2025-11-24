@@ -91,15 +91,13 @@ index 57398fb..b30ef50 100644
 -		const url = createUpdateURL(assetID, quality, this.productService);
 +		const url = createUpdateURL(this.productService, quality, process.platform, process.arch);
  		try {
-@@ -94,4 +90,29 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
--	protected doCheckForUpdates(explicit: boolean): void {
-+	protected doCheckForUpdates(explicit: boolean): void {
+@@ -96,11 +96,28 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
+ 	protected doCheckForUpdates(explicit: boolean): void {
  		if (!this.url) {
  			return;
  		}
  
--		this.setState(State.CheckingForUpdates(explicit));
-+		this.setState(State.CheckingForUpdates(explicit));
+ 		this.setState(State.CheckingForUpdates(explicit));
  
 -		const url = explicit ? this.url : `${this.url}?bg=true`;
 -		electron.autoUpdater.setFeedURL({ url });

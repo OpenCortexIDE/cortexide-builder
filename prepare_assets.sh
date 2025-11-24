@@ -328,6 +328,82 @@ SIGNFIX
 elif [[ "${OS_NAME}" == "windows" ]]; then
   cd vscode || { echo "'vscode' dir not found"; exit 1; }
 
+  # CRITICAL FIX: Patch InnoSetup code.iss to escape PowerShell curly braces
+  # Inno Setup interprets { and } as its own constants, so PowerShell code blocks need escaping
+  if [[ -f "build/win32/code.iss" ]]; then
+    echo "Patching InnoSetup code.iss to escape PowerShell curly braces..." >&2
+    node << 'POWERSHELLESCAPEFIX' || {
+const fs = require('fs');
+const filePath = 'build/win32/code.iss';
+
+try {
+  let content = fs.readFileSync(filePath, 'utf8');
+  let modified = false;
+
+  // Find [Run] section
+  const runSectionMatch = content.match(/\[Run\][\s\S]*?(?=\[|$)/m);
+  if (runSectionMatch) {
+    const runSection = runSectionMatch[0];
+    let newRunSection = runSection;
+
+    // Step 1: Temporarily replace Inno Setup constants with placeholders
+    // Process longer constants first to avoid partial matches
+    const constants = [
+      '{code:GetShellFolderPath|0}',
+      '{tmp}', '{app}', '{sys}', '{pf}', '{cf}', 
+      '{userdocs}', '{commondocs}', '{userappdata}', '{commonappdata}', '{localappdata}', 
+      '{sendto}', '{startmenu}', '{startup}', '{desktop}', '{fonts}', '{group}', '{reg}'
+    ];
+    const placeholders = {};
+    constants.forEach((constant, idx) => {
+      const placeholder = `__INNO_CONST_${idx}__`;
+      placeholders[placeholder] = constant;
+      // Replace constants (not in comments, not already escaped)
+      // Use word boundaries and ensure we're not inside a string or comment
+      const escaped = constant.replace(/[{}]/g, '\\$&');
+      const regex = new RegExp(escaped, 'g');
+      newRunSection = newRunSection.replace(regex, placeholder);
+    });
+
+    // Step 2: Escape all remaining { and } (these belong to PowerShell)
+    newRunSection = newRunSection.replace(/\{/g, '{{').replace(/\}/g, '}}');
+
+    // Step 3: Restore Inno Setup constants from placeholders
+    Object.keys(placeholders).forEach(placeholder => {
+      newRunSection = newRunSection.replace(new RegExp(placeholder, 'g'), placeholders[placeholder]);
+    });
+
+    if (newRunSection !== runSection) {
+      content = content.replace(runSection, newRunSection);
+      modified = true;
+      console.error('✓ Successfully escaped PowerShell curly braces in [Run] section');
+    }
+  }
+
+  if (modified) {
+    // Preserve original line endings (CRLF for Windows files)
+    const originalContent = fs.readFileSync(filePath, 'utf8');
+    const hasCRLF = originalContent.includes('\r\n');
+    const lineEnding = hasCRLF ? '\r\n' : '\n';
+    
+    // Ensure file ends with newline
+    if (!content.endsWith(lineEnding)) {
+      content += lineEnding;
+    }
+    fs.writeFileSync(filePath, content, 'utf8');
+  } else {
+    console.error('⚠ No PowerShell escaping needed or [Run] section not found');
+  }
+} catch (error) {
+  console.error(`✗ ERROR: ${error.message}`);
+  console.error(error.stack);
+  process.exit(1);
+}
+POWERSHELLESCAPEFIX
+      echo "Warning: Failed to patch code.iss for PowerShell escaping, continuing anyway..." >&2
+    }
+  fi
+
   # CRITICAL FIX: Patch InnoSetup code.iss to conditionally include AppX file
   # If AppX building was skipped (win32ContextMenu missing), the AppX file won't exist
   # and InnoSetup will fail. Make the AppX file reference conditional.

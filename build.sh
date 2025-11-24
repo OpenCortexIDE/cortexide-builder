@@ -1992,6 +1992,77 @@ APPXFIX
       fi
 
       echo "Building Windows package for ${VSCODE_ARCH}..."
+      # CRITICAL FIX: Patch InnoSetup code.iss to escape PowerShell curly braces BEFORE gulp task
+      # Inno Setup interprets { and } as its own constants, so PowerShell code blocks need escaping
+      if [[ -f "vscode/build/win32/code.iss" ]]; then
+        echo "Patching InnoSetup code.iss to escape PowerShell curly braces..." >&2
+        node << 'POWERSHELLESCAPEFIX' || {
+const fs = require('fs');
+const filePath = 'vscode/build/win32/code.iss';
+
+try {
+  let content = fs.readFileSync(filePath, 'utf8');
+  const originalContent = content;
+  let modified = false;
+
+  // Find [Run] section
+  const runSectionMatch = content.match(/\[Run\][\s\S]*?(?=\[|$)/m);
+  if (runSectionMatch) {
+    const runSection = runSectionMatch[0];
+    let newRunSection = runSection;
+    const originalRunSection = runSection;
+
+    // Step 1: Temporarily replace Inno Setup constants with placeholders
+    const constants = [
+      '{code:GetShellFolderPath|0}',
+      '{tmp}', '{app}', '{sys}', '{pf}', '{cf}', 
+      '{userdocs}', '{commondocs}', '{userappdata}', '{commonappdata}', '{localappdata}', 
+      '{sendto}', '{startmenu}', '{startup}', '{desktop}', '{fonts}', '{group}', '{reg}'
+    ];
+    const placeholders = {};
+    constants.forEach((constant, idx) => {
+      const placeholder = `__INNO_CONST_${idx}__`;
+      placeholders[placeholder] = constant;
+      const escaped = constant.replace(/[{}()\[\]\\^$.*+?|]/g, '\\$&');
+      const regex = new RegExp(escaped, 'g');
+      newRunSection = newRunSection.replace(regex, placeholder);
+    });
+
+    // Step 2: Escape all remaining { and } (these belong to PowerShell)
+    newRunSection = newRunSection.replace(/\{/g, '{{').replace(/\}/g, '}}');
+
+    // Step 3: Restore Inno Setup constants from placeholders
+    Object.keys(placeholders).reverse().forEach(placeholder => {
+      const constant = placeholders[placeholder];
+      const regex = new RegExp(placeholder.replace(/[()\[\]\\^$.*+?|]/g, '\\$&'), 'g');
+      newRunSection = newRunSection.replace(regex, constant);
+    });
+
+    if (newRunSection !== originalRunSection) {
+      content = content.replace(originalRunSection, newRunSection);
+      modified = true;
+      console.error('✓ Successfully escaped PowerShell curly braces in [Run] section');
+    }
+  }
+
+  if (modified) {
+    const hasCRLF = originalContent.includes('\r\n');
+    const lineEnding = hasCRLF ? '\r\n' : '\n';
+    if (!content.endsWith(lineEnding)) {
+      content += lineEnding;
+    }
+    fs.writeFileSync(filePath, content, 'utf8');
+    console.error('✓ Saved patched code.iss file');
+  }
+} catch (error) {
+  console.error(`✗ ERROR: ${error.message}`);
+  process.exit(1);
+}
+POWERSHELLESCAPEFIX
+          echo "Warning: Failed to patch code.iss for PowerShell escaping, continuing anyway..." >&2
+        }
+      fi
+
       if ! npm run gulp "vscode-win32-${VSCODE_ARCH}-min-ci"; then
         echo "Error: Windows build failed for ${VSCODE_ARCH}. Check for:" >&2
         echo "  - Electron packaging errors" >&2

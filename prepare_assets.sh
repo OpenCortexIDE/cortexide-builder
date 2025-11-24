@@ -338,6 +338,7 @@ const filePath = 'build/win32/code.iss';
 
 try {
   let content = fs.readFileSync(filePath, 'utf8');
+  const originalContent = content;
   let modified = false;
 
   // Find [Run] section
@@ -345,6 +346,7 @@ try {
   if (runSectionMatch) {
     const runSection = runSectionMatch[0];
     let newRunSection = runSection;
+    const originalRunSection = runSection;
 
     // Step 1: Temporarily replace Inno Setup constants with placeholders
     // Process longer constants first to avoid partial matches
@@ -358,31 +360,50 @@ try {
     constants.forEach((constant, idx) => {
       const placeholder = `__INNO_CONST_${idx}__`;
       placeholders[placeholder] = constant;
-      // Replace constants (not in comments, not already escaped)
-      // Use word boundaries and ensure we're not inside a string or comment
-      const escaped = constant.replace(/[{}]/g, '\\$&');
+      // Replace constants - escape special regex characters
+      const escaped = constant.replace(/[{}()\[\]\\^$.*+?|]/g, '\\$&');
       const regex = new RegExp(escaped, 'g');
+      const beforeReplace = newRunSection;
       newRunSection = newRunSection.replace(regex, placeholder);
+      if (beforeReplace !== newRunSection) {
+        console.error(`  Replaced ${constant} with placeholder`);
+      }
     });
 
     // Step 2: Escape all remaining { and } (these belong to PowerShell)
+    const beforeEscape = newRunSection;
     newRunSection = newRunSection.replace(/\{/g, '{{').replace(/\}/g, '}}');
+    if (beforeEscape !== newRunSection) {
+      console.error('  Escaped PowerShell curly braces');
+    }
 
     // Step 3: Restore Inno Setup constants from placeholders
-    Object.keys(placeholders).forEach(placeholder => {
-      newRunSection = newRunSection.replace(new RegExp(placeholder, 'g'), placeholders[placeholder]);
+    // Process in reverse order to avoid conflicts
+    Object.keys(placeholders).reverse().forEach(placeholder => {
+      const constant = placeholders[placeholder];
+      const regex = new RegExp(placeholder.replace(/[()\[\]\\^$.*+?|]/g, '\\$&'), 'g');
+      newRunSection = newRunSection.replace(regex, constant);
     });
 
-    if (newRunSection !== runSection) {
-      content = content.replace(runSection, newRunSection);
+    if (newRunSection !== originalRunSection) {
+      content = content.replace(originalRunSection, newRunSection);
       modified = true;
       console.error('✓ Successfully escaped PowerShell curly braces in [Run] section');
+      
+      // Debug: Show line 114 if it exists
+      const lines = content.split(/\r?\n/);
+      if (lines.length >= 114) {
+        console.error(`  Line 114: ${lines[113].substring(0, 100)}...`);
+      }
+    } else {
+      console.error('⚠ No changes made to [Run] section');
     }
+  } else {
+    console.error('⚠ [Run] section not found in code.iss');
   }
 
   if (modified) {
     // Preserve original line endings (CRLF for Windows files)
-    const originalContent = fs.readFileSync(filePath, 'utf8');
     const hasCRLF = originalContent.includes('\r\n');
     const lineEnding = hasCRLF ? '\r\n' : '\n';
     
@@ -391,6 +412,7 @@ try {
       content += lineEnding;
     }
     fs.writeFileSync(filePath, content, 'utf8');
+    console.error('✓ Saved patched code.iss file');
   } else {
     console.error('⚠ No PowerShell escaping needed or [Run] section not found');
   }

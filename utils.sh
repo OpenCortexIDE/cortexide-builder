@@ -131,12 +131,40 @@ apply_patch() {
     return 1
   }
   
+  # Helper function to skip TrustedTypes patch if it's already present
+  check_trustedtypes_patch_already_applied() {
+    local patch_file="$1"
+    local patch_name=$(basename "$patch_file")
+
+    if [[ "$patch_name" != "add-trusted-types-bootstrap-import-map.patch" ]]; then
+      return 1
+    fi
+
+    local workbench_html="src/vs/code/electron-browser/workbench/workbench.html"
+    local workbench_dev_html="src/vs/code/electron-browser/workbench/workbench-dev.html"
+
+    if [[ -f "$workbench_html" && -f "$workbench_dev_html" ]]; then
+      if grep -q "vscode-bootstrapImportMap" "$workbench_html" 2>/dev/null && \
+         grep -q "vscode-bootstrapImportMap" "$workbench_dev_html" 2>/dev/null; then
+        echo "Skipping patch (TrustedTypes policy already present): ${patch_name}" >&2
+        return 0
+      fi
+    fi
+
+    return 1
+  }
+
   # Check if this is a non-critical patch early, so we can ensure it never causes build failure
   PATCH_IS_NON_CRITICAL=$(is_non_critical_patch "$1" && echo "yes" || echo "no")
   
   # Check if update patch is already applied (to avoid conflicts when manually applied)
   if check_update_patch_already_applied "$1"; then
     echo "Skipping patch (changes already applied): $(basename "$1")" >&2
+    return 0
+  fi
+
+  # Check if TrustedTypes patch is already applied
+  if check_trustedtypes_patch_already_applied "$1"; then
     return 0
   fi
   

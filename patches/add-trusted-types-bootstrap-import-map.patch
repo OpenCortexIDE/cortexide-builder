@@ -6,9 +6,11 @@ index 3cb64e9359f6..b674cda1033d 100644
  				require-trusted-types-for
  					'script'
  				;
- 				trusted-types
+-				trusted-types
+-					amdLoader
++				trusted-types
 +					vscode-bootstrapImportMap
- 					amdLoader
++					amdLoader
  					cellRendererEditorText
  					collapsedCellPreview
  					defaultWorkerFactory
@@ -20,9 +22,11 @@ index 778996c57c5a..b151cd7a3530 100644
  				require-trusted-types-for
  					'script'
  				;
- 				trusted-types
+-				trusted-types
+-					amdLoader
++				trusted-types
 +					vscode-bootstrapImportMap
- 					amdLoader
++					amdLoader
  					cellRendererEditorText
  					collapsedCellPreview
  					defaultWorkerFactory

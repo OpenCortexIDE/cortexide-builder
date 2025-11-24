@@ -91,8 +91,8 @@ index 57398fb..b30ef50 100644
 -		const url = createUpdateURL(assetID, quality, this.productService);
 +		const url = createUpdateURL(this.productService, quality, process.platform, process.arch);
  		try {
-@@ -90,10 +90,34 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
- protected doCheckForUpdates(explicit: boolean): void {
+@@ -89,10 +89,34 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
+	protected doCheckForUpdates(explicit: boolean): void {
  		if (!this.url) {
  			return;
  		}

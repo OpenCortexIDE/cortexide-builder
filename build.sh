@@ -14,7 +14,7 @@ download_with_retries() {
 
   if [[ -z "${url}" || -z "${dest}" ]]; then
     return 1
-  }
+  fi
 
   mkdir -p "$(dirname "${dest}")"
 

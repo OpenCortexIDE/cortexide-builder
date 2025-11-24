@@ -151,6 +151,30 @@ If the app installs successfully but doesn't open on Intel Mac (x64), try the fo
 
 #### <a id="macos-blank-screen"></a>*Blank screen after installation*
 
+**Quick Debug Steps:**
+
+1. **Run the debug script** (recommended first step):
+   ```bash
+   cd /path/to/cortexide-builder
+   ./debug_macos_app.sh
+   ```
+   This will launch the app with verbose logging and help identify the issue.
+
+2. **Verify the fix is in the compiled code**:
+   ```bash
+   ./verify_macos_fix.sh
+   ```
+   This checks if the window visibility fix was included in the build.
+
+3. **Check Console.app**:
+   - Open Console.app (Applications → Utilities → Console)
+   - Filter for "CortexIDE" or "Electron"
+   - Look for errors related to:
+     - Window creation
+     - workbench.html loading
+     - GPU/rendering issues
+     - File not found errors
+
 If the app launches but shows a blank/white screen, try the following solutions in order:
 
 1. **Clear GPU cache** (most common fix):

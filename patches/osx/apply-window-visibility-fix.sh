@@ -110,20 +110,29 @@ try:
     with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
     
-    # Check if already applied
-    if "Fix for macOS blank screen" in content:
+    # Check if already applied (check for any macOS fix comment)
+    if "Fix for macOS blank screen" in content or "macOS: Comprehensive fix for blank screen" in content or "macOS: Ensure window is visible" in content:
         print("Fix already applied")
         sys.exit(0)
     
     # Pattern 1: After loadURL (new structure) or windowConfiguration (old structure)
     if insertion_pattern == "this\\._win\\.loadURL":
-        # New structure: Insert after loadURL line, before "Remember that we did load"
-        pattern1 = r'(this\._win\.loadURL\([^)]+\);\s*)(\n\s*// Remember that we did load)'
+        # New structure: Insert after loadURL line, before any existing macOS fix or "Remember that we did load"
+        pattern1 = r'(this\._win\.loadURL\([^)]+\);\s*)(\n\s*(?:// (?:macOS|Remember that we did load)|macOS:))'
         if re.search(pattern1, content, re.MULTILINE | re.DOTALL):
-            content = re.sub(pattern1, r'\1\n' + fix_code + r'\2', content, flags=re.MULTILINE | re.DOTALL)
+            content = re.sub(pattern1, r'\1\n' + fix_code + r'\n\2', content, flags=re.MULTILINE | re.DOTALL)
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(content)
             print("✓ Applied using pattern 1 (new structure: after loadURL)")
+            sys.exit(0)
+        
+        # Fallback: Just after loadURL line
+        pattern2 = r'(this\._win\.loadURL\([^)]+\);)(\s*\n)'
+        if re.search(pattern2, content):
+            content = re.sub(pattern2, r'\1\n' + fix_code + r'\2', content)
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print("✓ Applied using pattern 2 (new structure: after loadURL)")
             sys.exit(0)
     else:
         # Old structure: After windowConfiguration send, before return
@@ -134,18 +143,7 @@ try:
                 f.write(content)
             print("✓ Applied using pattern 1 (old structure: after windowConfiguration)")
             sys.exit(0)
-    
-    # Pattern 2: Find insertion pattern and insert after the next line
-    if insertion_pattern == "this\\._win\\.loadURL":
-        # Find loadURL line and insert after it
-        pattern2 = r'(this\._win\.loadURL\([^)]+\);)(\s*\n)'
-        if re.search(pattern2, content):
-            content = re.sub(pattern2, r'\1' + fix_code + r'\2', content)
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print("✓ Applied using pattern 2 (new structure: after loadURL)")
-            sys.exit(0)
-    else:
+        
         # Old structure: Just before return this.win
         pattern2 = r'(\n\s*)(return\s+this\.win;)'
         match = re.search(pattern2, content)
@@ -168,6 +166,8 @@ try:
     sys.exit(1)
 except Exception as e:
     print(f"✗ Error: {e}", file=sys.stderr)
+    import traceback
+    traceback.print_exc(file=sys.stderr)
     sys.exit(1)
 PYTHON_SCRIPT
 "${WINDOW_TS_FILE}" "${FIX_CODE}" "${INSERTION_PATTERN}"

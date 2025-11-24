@@ -2,22 +2,20 @@ diff --git a/src/vs/code/electron-browser/workbench/workbench.html b/src/vs/code
 index 6cf8895..0000000 100644
 --- a/src/vs/code/electron-browser/workbench/workbench.html
 +++ b/src/vs/code/electron-browser/workbench/workbench.html
-@@ -26,5 +26,6 @@
+@@ -27,4 +27,5 @@
  				script-src
  					'self'
  					'unsafe-eval'
 +					'unsafe-inline'
  					blob:
- 				style-src
 diff --git a/src/vs/code/electron-browser/workbench/workbench-dev.html b/src/vs/code/electron-browser/workbench/workbench-dev.html
 index 8b2fd17..0000000 100644
 --- a/src/vs/code/electron-browser/workbench/workbench-dev.html
 +++ b/src/vs/code/electron-browser/workbench/workbench-dev.html
-@@ -26,5 +26,6 @@
+@@ -27,4 +27,5 @@
  				script-src
  					'self'
  					'unsafe-eval'
 +					'unsafe-inline'
  					blob:
- 				style-src
 

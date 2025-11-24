@@ -391,7 +391,6 @@ try {
       // Instead, we'll set a flag to comment out the content inside
       if (trimmed.startsWith('#ifdef') && trimmed.toLowerCase().includes('appx')) {
         inAppxIfdef = true;
-        ifdefStartLine = i;
         console.error(`Found AppX #ifdef block starting at line ${i + 1}`);
         // Don't comment out the #ifdef line itself - keep it but make it always false
         // Change #ifdef AppxPackageName to #if 0 (always false)
@@ -400,8 +399,13 @@ try {
           // Split into two lines properly
           lines[i] = `${indent}#if 0 ; PATCHED: AppX not available, disabled`;
           lines.splice(i + 1, 0, `${indent}; Original: ${trimmed}`);
+          // Set ifdefStartLine after inserting the line, so it points to the #if 0 line
+          ifdefStartLine = i;
           i++; // Adjust index since we inserted a line
           modified = true;
+        } else {
+          // If we don't modify the #ifdef line, set ifdefStartLine normally
+          ifdefStartLine = i;
         }
         continue;
       }
@@ -409,18 +413,25 @@ try {
       // Track #endif for AppX blocks
       if (inAppxIfdef && trimmed.startsWith('#endif')) {
         // Comment out the content inside the block (but keep #endif)
+        // Work backwards to avoid index issues when inserting lines
+        const linesToComment = [];
         for (let j = ifdefStartLine + 1; j < i; j++) {
           if (!lines[j].trim().startsWith(';') && !lines[j].trim().startsWith('#')) {
-            const indent = lines[j].match(/^\s*/)[0];
-            // Split into two lines properly - add comment line, then commented original
-            const originalLine = lines[j].substring(indent.length);
-            lines[j] = `${indent}; PATCHED: AppX block content commented out`;
-            lines.splice(j + 1, 0, `${indent};${originalLine}`);
-            i++; // Adjust index since we inserted a line
+            linesToComment.push(j);
           }
         }
+        // Comment out lines in reverse order to maintain correct indices
+        for (let k = linesToComment.length - 1; k >= 0; k--) {
+          const j = linesToComment[k];
+          const indent = lines[j].match(/^\s*/)[0];
+          const originalLine = lines[j].substring(indent.length);
+          lines[j] = `${indent}; PATCHED: AppX block content commented out`;
+          lines.splice(j + 1, 0, `${indent};${originalLine}`);
+        }
+        // Adjust i to account for all inserted lines
+        i += linesToComment.length;
         modified = true;
-        console.error(`✓ Commented out AppX #ifdef block content from line ${ifdefStartLine + 2} to ${i}`);
+        console.error(`✓ Commented out AppX #ifdef block content from line ${ifdefStartLine + 2} to ${i - linesToComment.length}`);
         inAppxIfdef = false;
         ifdefStartLine = -1;
         continue;

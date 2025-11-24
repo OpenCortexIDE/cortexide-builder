@@ -2,12 +2,13 @@ diff --git a/src/vs/code/electron-browser/workbench/workbench.html b/src/vs/code
 index 3cb64e9359f6..b674cda1033d 100644
 --- a/src/vs/code/electron-browser/workbench/workbench.html
 +++ b/src/vs/code/electron-browser/workbench/workbench.html
-@@
--				trusted-types
--					amdLoader
-+				trusted-types
+@@ -47,16 +47,17 @@
+ 				require-trusted-types-for
+ 					'script'
+ 				;
+ 				trusted-types
 +					vscode-bootstrapImportMap
-+					amdLoader
+ 					amdLoader
  					cellRendererEditorText
  					collapsedCellPreview
  					defaultWorkerFactory
@@ -15,12 +16,13 @@ diff --git a/src/vs/code/electron-browser/workbench/workbench-dev.html b/src/vs/
 index 778996c57c5a..b151cd7a3530 100644
 --- a/src/vs/code/electron-browser/workbench/workbench-dev.html
 +++ b/src/vs/code/electron-browser/workbench/workbench-dev.html
-@@
--				trusted-types
--					amdLoader
-+				trusted-types
+@@ -47,16 +47,17 @@
+ 				require-trusted-types-for
+ 					'script'
+ 				;
+ 				trusted-types
 +					vscode-bootstrapImportMap
-+					amdLoader
+ 					amdLoader
  					cellRendererEditorText
  					collapsedCellPreview
  					defaultWorkerFactory

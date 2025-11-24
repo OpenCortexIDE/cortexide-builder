@@ -8,44 +8,7 @@ APP_NAME_LC="$( echo "${APP_NAME}" | awk '{print tolower($0)}' )"
 mkdir -p assets
 
 if [[ "${OS_NAME}" == "osx" ]]; then
-  # CRITICAL FIX: Ensure all files in app bundle have correct permissions BEFORE signing
-  # macOS installer requires files to be writable and not locked
-  # This must happen BEFORE code signing to avoid invalidating the signature
-  echo "+ fixing file permissions for installation compatibility (before signing)"
-  cd "VSCode-darwin-${VSCODE_ARCH}" || { echo "Error: VSCode-darwin-${VSCODE_ARCH} directory not found"; exit 1; }
-  
-  # Find the app bundle
-  APP_BUNDLE=$( find . -maxdepth 1 -name "*.app" -type d | head -n 1 )
-  if [[ -n "${APP_BUNDLE}" ]]; then
-    APP_BUNDLE="${APP_BUNDLE#./}"
-    
-    # Remove any extended attributes that might cause issues (quarantine, locked, etc.)
-    echo "  Removing extended attributes..."
-    xattr -cr "${APP_BUNDLE}" 2>/dev/null || {
-      echo "  Warning: Failed to remove extended attributes (may not be available on this system)"
-    }
-    
-    # Ensure all files are readable and writable (remove read-only flags)
-    echo "  Fixing file permissions..."
-    find "${APP_BUNDLE}" -type f -exec chmod 644 {} \; 2>/dev/null || true
-    find "${APP_BUNDLE}" -type d -exec chmod 755 {} \; 2>/dev/null || true
-    
-    # Make executables actually executable
-    find "${APP_BUNDLE}/Contents/MacOS" -type f -exec chmod 755 {} \; 2>/dev/null || true
-    find "${APP_BUNDLE}/Contents/Resources/app/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
-    
-    # Remove any locked flags (uchg = user immutable flag)
-    chflags -R nouchg "${APP_BUNDLE}" 2>/dev/null || true
-    
-    echo "✓ File permissions fixed"
-  else
-    echo "Warning: App bundle not found, skipping permission fix"
-  fi
-  
-  cd ..
-
   if [[ -n "${CERTIFICATE_OSX_P12_DATA}" ]]; then
-    # Store CODESIGN_IDENTITY for potential re-signing after permission fixes
     if [[ "${CI_BUILD}" == "no" ]]; then
       RUNNER_TEMP="${TMPDIR}"
     fi
@@ -330,162 +293,9 @@ SIGNFIX
     cd ..
   fi
 
-  # CRITICAL FIX: Re-fix permissions AFTER signing/notarization/stapling if needed
-  # Code signing and notarization may have set extended attributes or locked flags
-  # We need to check and fix these, then re-sign (but NOT re-notarize)
-  # Note: Re-signing after notarization is OK, but re-notarization is expensive
-  if [[ -n "${CERTIFICATE_OSX_P12_DATA}" ]] && [[ -n "${CODESIGN_IDENTITY}" ]]; then
-    echo "+ checking file permissions after signing/notarization"
-    cd "VSCode-darwin-${VSCODE_ARCH}"
-    
-    APP_BUNDLE=$( find . -maxdepth 1 -name "*.app" -type d | head -n 1 )
-    if [[ -n "${APP_BUNDLE}" ]]; then
-      APP_BUNDLE="${APP_BUNDLE#./}"
-      PERMISSION_FIX_NEEDED=false
-      
-      # Check for locked files (uchg flag)
-      LOCKED_FILES=$( find "${APP_BUNDLE}" -flags +uchg 2>/dev/null | head -5 )
-      if [[ -n "${LOCKED_FILES}" ]]; then
-        echo "  Warning: Found files with locked flags (uchg) - these may cause installation issues"
-        echo "  Sample locked files:"
-        echo "${LOCKED_FILES}" | head -3 | sed 's/^/    /'
-        PERMISSION_FIX_NEEDED=true
-      fi
-      
-      # Check for problematic extended attributes (quarantine, etc.)
-      # Note: Some extended attributes are normal (com.apple.quarantine is added by macOS)
-      # But we want to ensure files aren't marked as read-only
-      READONLY_FILES=$( find "${APP_BUNDLE}" -type f ! -perm -u+w 2>/dev/null | head -5 )
-      if [[ -n "${READONLY_FILES}" ]]; then
-        echo "  Warning: Found read-only files - these may cause installation issues"
-        echo "  Sample read-only files:"
-        echo "${READONLY_FILES}" | head -3 | sed 's/^/    /'
-        PERMISSION_FIX_NEEDED=true
-      fi
-      
-      if [[ "${PERMISSION_FIX_NEEDED}" == "true" ]]; then
-        echo "  Fixing permissions (will re-sign afterward)..."
-        
-        # Remove locked flags
-        chflags -R nouchg "${APP_BUNDLE}" 2>/dev/null || true
-        
-        # Ensure files are writable
-        find "${APP_BUNDLE}" -type f ! -perm -u+w -exec chmod u+w {} \; 2>/dev/null || true
-        
-        # CRITICAL: Do NOT remove extended attributes after signing!
-        # xattr -cr would remove code signature attributes and break the signature
-        # Extended attributes are set by code signing and are required for the signature
-        # Only remove specific problematic attributes if needed, but we'll skip this
-        # since locked flags and read-only permissions are the main issues
-        echo "  Note: Preserving extended attributes (required for code signature)"
-        
-        # Re-sign after permission fix (required to maintain valid signature)
-        # Note: Re-signing invalidates the notarization ticket, so we'll need to re-staple
-        echo "  Re-signing app after permission fix..."
-        if codesign --force --deep --sign "${CODESIGN_IDENTITY}" "${APP_BUNDLE}" 2>&1; then
-          echo "  ✓ Re-signed successfully"
-          # Verify the signature is still valid
-          if codesign --verify --deep --strict "${APP_BUNDLE}" 2>/dev/null; then
-            echo "  ✓ Signature verification passed"
-            # Re-signing invalidates the notarization ticket, so re-staple if it was previously stapled
-            echo "  Re-stapling notarization ticket (re-signing invalidated it)..."
-            if xcrun stapler staple "${APP_BUNDLE}" 2>&1; then
-              echo "  ✓ Re-stapled successfully"
-            else
-              echo "  ⚠ Warning: Re-stapling failed (app may need to be re-notarized)"
-              echo "  Note: The app will still work, but Gatekeeper may show warnings"
-            fi
-          else
-            echo "  ⚠ Warning: Signature verification failed after re-signing"
-          fi
-        else
-          echo "  ⚠ Warning: Re-signing failed, but continuing..."
-        fi
-      else
-        echo "  ✓ File permissions are correct"
-      fi
-    fi
-    
-    cd ..
-  fi
-
-  # CRITICAL: Final permission check before packaging
-  # Ensure app bundle is ready for installation before creating ZIP/DMG
-  # This is the LAST chance to fix permissions before the app is packaged
-  echo "+ final permission check before packaging"
-  cd "VSCode-darwin-${VSCODE_ARCH}"
-  
-  APP_BUNDLE=$( find . -maxdepth 1 -name "*.app" -type d | head -n 1 )
-  if [[ -n "${APP_BUNDLE}" ]]; then
-    APP_BUNDLE="${APP_BUNDLE#./}"
-    
-    # Final check and fix - be aggressive about removing any locked flags
-    echo "  Performing final permission fix..."
-    
-    # Step 1: Remove ALL locked flags (uchg, schg, uappnd, sappnd)
-    # Try multiple times with different approaches
-    echo "  Removing locked flags..."
-    chflags -R nouchg "${APP_BUNDLE}" 2>/dev/null || true
-    chflags -R noschg "${APP_BUNDLE}" 2>/dev/null || true
-    chflags -R nouappnd "${APP_BUNDLE}" 2>/dev/null || true
-    chflags -R nosappnd "${APP_BUNDLE}" 2>/dev/null || true
-    chflags -R nouchg,noschg "${APP_BUNDLE}" 2>/dev/null || true
-    
-    # Step 2: Ensure all files are writable (not read-only)
-    echo "  Ensuring files are writable..."
-    find "${APP_BUNDLE}" -type f ! -perm -u+w -exec chmod u+w {} \; 2>/dev/null || true
-    find "${APP_BUNDLE}" -type d ! -perm -u+w -exec chmod u+w {} \; 2>/dev/null || true
-    
-    # Step 3: Set standard permissions
-    echo "  Setting standard permissions..."
-    find "${APP_BUNDLE}" -type f -exec chmod 644 {} \; 2>/dev/null || true
-    find "${APP_BUNDLE}" -type d -exec chmod 755 {} \; 2>/dev/null || true
-    find "${APP_BUNDLE}/Contents/MacOS" -type f -exec chmod 755 {} \; 2>/dev/null || true
-    find "${APP_BUNDLE}/Contents/Resources/app/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
-    
-    # Step 4: Verify no locked files remain
-    echo "  Verifying no locked files remain..."
-    REMAINING_LOCKED=$( find "${APP_BUNDLE}" -flags +uchg 2>/dev/null | wc -l | tr -d ' ' )
-    if [[ "${REMAINING_LOCKED}" -gt 0 ]]; then
-      echo "  ⚠ Warning: ${REMAINING_LOCKED} files still have locked flags after fix"
-      echo "  Listing first 5 locked files:"
-      find "${APP_BUNDLE}" -flags +uchg 2>/dev/null | head -5 | sed 's/^/    /'
-      echo "  Attempting more aggressive fix with sudo..."
-      # Try with sudo if available (but don't fail if not)
-      sudo chflags -R nouchg,noschg "${APP_BUNDLE}" 2>/dev/null || chflags -R nouchg,noschg "${APP_BUNDLE}" 2>/dev/null || true
-      
-      # Final check
-      REMAINING_LOCKED=$( find "${APP_BUNDLE}" -flags +uchg 2>/dev/null | wc -l | tr -d ' ' )
-      if [[ "${REMAINING_LOCKED}" -gt 0 ]]; then
-        echo "  ⚠ ERROR: ${REMAINING_LOCKED} files STILL have locked flags - installation may fail!"
-        echo "  This is a critical issue that needs manual intervention"
-      else
-        echo "  ✓ All locked flags removed after sudo attempt"
-      fi
-    else
-      echo "  ✓ No locked files found"
-    fi
-    
-    # Step 5: Verify permissions are correct
-    READONLY_COUNT=$( find "${APP_BUNDLE}" -type f ! -perm -u+w 2>/dev/null | wc -l | tr -d ' ' )
-    if [[ "${READONLY_COUNT}" -gt 0 ]]; then
-      echo "  ⚠ Warning: ${READONLY_COUNT} files are still read-only"
-      find "${APP_BUNDLE}" -type f ! -perm -u+w -exec chmod u+w {} \; 2>/dev/null || true
-    else
-      echo "  ✓ All files are writable"
-    fi
-    
-    echo "✓ Final permission check complete"
-  else
-    echo "  ⚠ Warning: App bundle not found for final permission check"
-  fi
-  
-  cd ..
-
   if [[ "${SHOULD_BUILD_ZIP}" != "no" ]]; then
     echo "Building and moving ZIP"
     cd "VSCode-darwin-${VSCODE_ARCH}"
-    # Use zip with -X to avoid storing extended attributes that might cause issues
     zip -r -X -y "../assets/${APP_NAME}-darwin-${VSCODE_ARCH}-${RELEASE_VERSION}.zip" ./*.app
     cd ..
   fi
@@ -493,75 +303,13 @@ SIGNFIX
   if [[ "${SHOULD_BUILD_DMG}" != "no" ]]; then
     echo "Building and moving DMG"
     pushd "VSCode-darwin-${VSCODE_ARCH}"
-    # Final permission check right before DMG creation
-    APP_BUNDLE=$( find . -maxdepth 1 -name "*.app" -type d | head -n 1 )
-    if [[ -n "${APP_BUNDLE}" ]]; then
-      APP_BUNDLE="${APP_BUNDLE#./}"
-      echo "  Final unlock before DMG creation..."
-      
-      # CRITICAL: Remove ALL locked flags aggressively before DMG creation
-      # create-dmg will copy files, and we need to ensure no locked flags are preserved
-      chflags -R nouchg "${APP_BUNDLE}" 2>/dev/null || true
-      chflags -R noschg "${APP_BUNDLE}" 2>/dev/null || true
-      chflags -R nouappnd "${APP_BUNDLE}" 2>/dev/null || true
-      chflags -R nosappnd "${APP_BUNDLE}" 2>/dev/null || true
-      chflags -R nouchg,noschg "${APP_BUNDLE}" 2>/dev/null || true
-      
-      # Ensure all files are writable
-      find "${APP_BUNDLE}" -type f ! -perm -u+w -exec chmod u+w {} \; 2>/dev/null || true
-      find "${APP_BUNDLE}" -type d ! -perm -u+w -exec chmod u+w {} \; 2>/dev/null || true
-      
-      # Try sudo unlock if regular unlock didn't work
-      LOCKED_BEFORE_DMG=$( find "${APP_BUNDLE}" -flags +uchg 2>/dev/null | wc -l | tr -d ' ' )
-      if [[ "${LOCKED_BEFORE_DMG}" -gt 0 ]]; then
-        echo "  ⚠ WARNING: ${LOCKED_BEFORE_DMG} files still locked - attempting sudo unlock..."
-        sudo chflags -R nouchg,noschg "${APP_BUNDLE}" 2>/dev/null || chflags -R nouchg,noschg "${APP_BUNDLE}" 2>/dev/null || true
-        
-        # Final check
-        LOCKED_BEFORE_DMG=$( find "${APP_BUNDLE}" -flags +uchg 2>/dev/null | wc -l | tr -d ' ' )
-        if [[ "${LOCKED_BEFORE_DMG}" -gt 0 ]]; then
-          echo "  ⚠ CRITICAL: ${LOCKED_BEFORE_DMG} files STILL locked before DMG creation!"
-          echo "  This will cause installation errors. Listing first 5:"
-          find "${APP_BUNDLE}" -flags +uchg 2>/dev/null | head -5 | sed 's/^/    /'
-        else
-          echo "  ✓ All locked flags removed with sudo"
-        fi
-      else
-        echo "  ✓ No locked files found before DMG creation"
-      fi
-    fi
-    
     if [[ -n "${CODESIGN_IDENTITY}" ]]; then
       npx create-dmg ./*.app .
     else
       npx create-dmg --no-code-sign ./*.app .
     fi
-    
-    DMG_FILE=$( find . -maxdepth 1 -name "*.dmg" -type f | head -n 1 )
-    if [[ -n "${DMG_FILE}" ]]; then
-      DEST_DMG="../assets/${APP_NAME}.${VSCODE_ARCH}.${RELEASE_VERSION}.dmg"
-      mv "${DMG_FILE}" "${DEST_DMG}"
-      echo "  ✓ DMG created: ${APP_NAME}.${VSCODE_ARCH}.${RELEASE_VERSION}.dmg"
-    else
-      echo "  ⚠ Warning: DMG file not found after creation"
-    fi
+    mv ./*.dmg "../assets/${APP_NAME}.${VSCODE_ARCH}.${RELEASE_VERSION}.dmg"
     popd
-
-    # Automatically verify DMG permissions (fail build if issues remain)
-    DMG_PATH="assets/${APP_NAME}.${VSCODE_ARCH}.${RELEASE_VERSION}.dmg"
-    if [[ -f "${DMG_PATH}" ]]; then
-      if command -v hdiutil >/dev/null 2>&1 && [[ -x "./check_dmg_permissions.sh" ]]; then
-        echo "  Verifying DMG permissions..."
-        if ./check_dmg_permissions.sh "${DMG_PATH}"; then
-          echo "  ✓ DMG permissions verified"
-        else
-          echo "  ✗ DMG permission verification failed" >&2
-          exit 1
-        fi
-      else
-        echo "  ⚠ Skipping DMG permission verification (missing hdiutil or check_dmg_permissions.sh)"
-      fi
-    fi
   fi
 
   if [[ "${SHOULD_BUILD_SRC}" == "yes" ]]; then
@@ -591,40 +339,17 @@ const path = require('path');
 const filePath = 'build/win32/code.iss';
 
 try {
-  // Validate file exists and is readable
-  if (!fs.existsSync(filePath)) {
-    console.error(`ERROR: code.iss file not found at ${filePath}`);
-    process.exit(1);
-  }
-  
   let content = fs.readFileSync(filePath, 'utf8');
-  
-  // Validate file is not empty
-  if (!content || content.trim().length === 0) {
-    console.error(`ERROR: code.iss file is empty or invalid`);
-    process.exit(1);
-  }
-  
   const lines = content.split('\n');
   let modified = false;
 
   // Check if AppX file exists
   const arch = process.env.VSCODE_ARCH || 'x64';
-  // Use path.resolve with process.cwd() since we're in vscode directory
-  // The script runs from vscode/ directory, so .. goes to parent (cortexide-builder)
-  const appxDir = path.resolve(process.cwd(), '..', 'VSCode-win32-' + arch, 'appx');
+  const appxDir = path.join('..', 'VSCode-win32-' + arch, 'appx');
+  const appxFile = path.join(appxDir, `code_${arch}.appx`);
+  const appxExists = fs.existsSync(appxFile);
 
-  // AppX filename depends on quality: 'code_${arch}.appx' for stable, 'code_insider_${arch}.appx' for insider/dev
-  // Try both possible filenames
-  const appxFileStable = path.join(appxDir, `code_${arch}.appx`);
-  const appxFileInsider = path.join(appxDir, `code_insider_${arch}.appx`);
-  const appxExists = fs.existsSync(appxFileStable) || fs.existsSync(appxFileInsider);
-  const appxFile = fs.existsSync(appxFileStable) ? appxFileStable : appxFileInsider;
-
-  console.error(`Checking for AppX file: ${appxFileStable}`);
-  if (!fs.existsSync(appxFileStable)) {
-    console.error(`Checking alternative AppX file: ${appxFileInsider}`);
-  }
+  console.error(`Checking for AppX file: ${appxFile}`);
   console.error(`AppX file exists: ${appxExists}`);
 
   if (!appxExists) {
@@ -637,7 +362,6 @@ try {
     let inFilesSection = false;
     let inAppxIfdef = false;
     let ifdefStartLine = -1;
-    let ifdefDepth = 0; // Track nesting depth for #ifdef blocks
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -658,74 +382,39 @@ try {
       // We need to handle these specially - don't comment out the #ifdef/#endif themselves
       // Instead, we'll set a flag to comment out the content inside
       if (trimmed.startsWith('#ifdef') && trimmed.toLowerCase().includes('appx')) {
-        if (!inAppxIfdef) {
-          // First AppX #ifdef block
-          inAppxIfdef = true;
-          ifdefDepth = 1;
-          console.error(`Found AppX #ifdef block starting at line ${i + 1}`);
-        } else {
-          // Nested AppX #ifdef block - increment depth
-          ifdefDepth++;
-          console.error(`Found nested AppX #ifdef block at line ${i + 1} (depth: ${ifdefDepth})`);
-        }
+        inAppxIfdef = true;
+        ifdefStartLine = i;
+        console.error(`Found AppX #ifdef block starting at line ${i + 1}`);
         // Don't comment out the #ifdef line itself - keep it but make it always false
         // Change #ifdef AppxPackageName to #if 0 (always false)
         if (trimmed.includes('AppxPackageName') || trimmed.includes('AppxPackage')) {
-          const indent = (line.match(/^\s*/) || [''])[0];
+          const indent = line.match(/^\s*/)[0];
           // Split into two lines properly
           lines[i] = `${indent}#if 0 ; PATCHED: AppX not available, disabled`;
           lines.splice(i + 1, 0, `${indent}; Original: ${trimmed}`);
-          // Set ifdefStartLine after inserting the line, so it points to the #if 0 line
-          if (ifdefDepth === 1) {
-            ifdefStartLine = i;
-          }
           i++; // Adjust index since we inserted a line
           modified = true;
-        } else {
-          // If we don't modify the #ifdef line, set ifdefStartLine normally (only for first block)
-          if (ifdefDepth === 1) {
-            ifdefStartLine = i;
-          }
         }
         continue;
       }
 
       // Track #endif for AppX blocks
       if (inAppxIfdef && trimmed.startsWith('#endif')) {
-        ifdefDepth--;
-        // Guard against negative depth (more #endif than #ifdef)
-        if (ifdefDepth < 0) {
-          console.error(`⚠ WARNING: Found extra #endif at line ${i + 1} (depth: ${ifdefDepth}). Resetting AppX block tracking.`);
-          inAppxIfdef = false;
-          ifdefStartLine = -1;
-          ifdefDepth = 0;
-          continue;
-        }
-        if (ifdefDepth === 0) {
-          // This is the closing #endif for the outermost AppX block
-          // Comment out the content inside the block (but keep #endif)
-          // Work backwards to avoid index issues when inserting lines
-          const linesToComment = [];
-          for (let j = ifdefStartLine + 1; j < i; j++) {
-            if (!lines[j].trim().startsWith(';') && !lines[j].trim().startsWith('#')) {
-              linesToComment.push(j);
-            }
-          }
-          // Comment out lines in reverse order to maintain correct indices
-          for (let k = linesToComment.length - 1; k >= 0; k--) {
-            const j = linesToComment[k];
-            const indent = (lines[j].match(/^\s*/) || [''])[0];
+        // Comment out the content inside the block (but keep #endif)
+        for (let j = ifdefStartLine + 1; j < i; j++) {
+          if (!lines[j].trim().startsWith(';') && !lines[j].trim().startsWith('#')) {
+            const indent = lines[j].match(/^\s*/)[0];
+            // Split into two lines properly - add comment line, then commented original
             const originalLine = lines[j].substring(indent.length);
             lines[j] = `${indent}; PATCHED: AppX block content commented out`;
             lines.splice(j + 1, 0, `${indent};${originalLine}`);
+            i++; // Adjust index since we inserted a line
           }
-          // Adjust i to account for all inserted lines
-          i += linesToComment.length;
-          modified = true;
-          console.error(`✓ Commented out AppX #ifdef block content from line ${ifdefStartLine + 2} to ${i - linesToComment.length}`);
-          inAppxIfdef = false;
-          ifdefStartLine = -1;
         }
+        modified = true;
+        console.error(`✓ Commented out AppX #ifdef block content from line ${ifdefStartLine + 2} to ${i}`);
+        inAppxIfdef = false;
+        ifdefStartLine = -1;
         continue;
       }
 
@@ -741,7 +430,7 @@ try {
         const lowerLine = line.toLowerCase();
         // Skip Excludes lines - they contain "appx" as a pattern but aren't file references
         if (lowerLine.includes('appx') && !lowerLine.includes('excludes')) {
-          const indent = (line.match(/^\s*/) || [''])[0];
+          const indent = line.match(/^\s*/)[0];
           const originalLine = line.substring(indent.length);
           // Split into two lines properly - add comment line, then commented original
           lines[i] = `${indent}; PATCHED: AppX file not found, commented out`;
@@ -756,7 +445,7 @@ try {
       if (!inAppxIfdef) {
         const lowerLine = line.toLowerCase();
         if (lowerLine.includes('.appx') && !trimmed.startsWith(';')) {
-          const indent = (line.match(/^\s*/) || [''])[0];
+          const indent = line.match(/^\s*/)[0];
           const originalLine = line.substring(indent.length);
           // Split into two lines properly - add comment line, then commented original
           lines[i] = `${indent}; PATCHED: AppX file not found, commented out`;
@@ -775,101 +464,23 @@ try {
         console.error(`Line ${i + 1}: ${lines[i]}`);
       }
     }
-    
-    // Warn if we're still in an AppX #ifdef block (missing #endif)
-    if (inAppxIfdef) {
-      console.error(`⚠ WARNING: AppX #ifdef block starting at line ${ifdefStartLine + 1} has no matching #endif!`);
-      console.error('  This may cause incorrect patching. The block will remain open.');
-    }
   } else {
     console.error(`✓ AppX file found: ${appxFile}, no patching needed`);
   }
 
-  // CRITICAL FIX: Always escape { characters in PowerShell commands in [Run] section
-  // This must run regardless of AppX patching, as it fixes a separate issue
-  // Inno Setup uses { for constants, so PowerShell { must be escaped as {{
-  let runSectionFixed = false;
-  let inRunSection = false;
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    
-    // Track if we're in [Run] section
-    if (trimmed.startsWith('[Run]')) {
-      inRunSection = true;
-      continue;
-    }
-    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-      inRunSection = false;
-      continue;
-    }
-    
-    // Fix PowerShell commands in [Run] section
-    if (inRunSection && line.includes('powershell.exe') && line.includes('Parameters:')) {
-      // Check if line contains unescaped { characters (not already {{)
-      if (line.includes('{') && !line.includes('{{')) {
-        // Protect Inno Setup constants first by replacing them with placeholders
-        const innoConstants = [];
-        const innoPattern = /\{(tmp|app|sys|pf|cf|src|sd|fonts|group|#\w+)\}/g;
-        let protectedLine = line;
-        let constIndex = 0;
-        
-        protectedLine = protectedLine.replace(innoPattern, (match) => {
-          const placeholder = `__INNO_CONST_${constIndex}__`;
-          innoConstants.push(match);
-          constIndex++;
-          return placeholder;
-        });
-        
-        // Now escape all remaining { and } characters (these are PowerShell code blocks)
-        protectedLine = protectedLine.replace(/\{/g, '{{').replace(/\}/g, '}}');
-        
-        // Restore Inno Setup constants
-        innoConstants.forEach((constant, idx) => {
-          protectedLine = protectedLine.replace(`__INNO_CONST_${idx}__`, constant);
-        });
-        
-        if (protectedLine !== line) {
-          lines[i] = protectedLine;
-          runSectionFixed = true;
-          console.error(`✓ Escaped PowerShell { characters in [Run] section at line ${i + 1}`);
-        }
-      }
-    }
-  }
-  
-  if (runSectionFixed) {
-    modified = true;
-  }
-
   if (modified) {
-    // Rebuild content from lines (after all modifications)
+    // Preserve original line endings (CRLF for Windows files)
     const originalContent = fs.readFileSync(filePath, 'utf8');
     const hasCRLF = originalContent.includes('\r\n');
     const lineEnding = hasCRLF ? '\r\n' : '\n';
-    content = lines.join(lineEnding);
 
     content = lines.join(lineEnding);
     // Ensure file ends with newline (Inno Setup can be sensitive to this)
     if (!content.endsWith(lineEnding)) {
       content += lineEnding;
     }
-    
-    // Validate content before writing
-    if (!content || content.trim().length === 0) {
-      console.error('ERROR: Generated content is empty! Not writing file.');
-      process.exit(1);
-    }
-    
     fs.writeFileSync(filePath, content, 'utf8');
     console.error('✓ Successfully patched code.iss to handle missing AppX file');
-    
-    // Verify the file was written correctly
-    const verifyContent = fs.readFileSync(filePath, 'utf8');
-    if (verifyContent !== content) {
-      console.error('⚠ WARNING: File content mismatch after write. File may be corrupted.');
-    }
 
     // Validate the file has proper structure - check for common issues
     const runSectionMatch = content.match(/\[Run\][\s\S]*?(?=\[|$)/m);
@@ -910,65 +521,11 @@ INNOSETUPFIX
   fi
 
   if [[ "${SHOULD_BUILD_EXE_SYS}" != "no" ]]; then
-    echo "Building system setup for ${VSCODE_ARCH}..." >&2
-    # Run gulp task and capture output for better error reporting
-    # Inno Setup compilation can fail silently if there are issues with code.iss
-    if npm run gulp "vscode-win32-${VSCODE_ARCH}-system-setup" 2>&1; then
-      echo "✓ Gulp task completed" >&2
-    else
-      EXIT_CODE=$?
-      echo "⚠ Gulp task exited with code ${EXIT_CODE}, checking if output file exists..." >&2
-    fi
-    
-    # Verify output file exists (check both possible locations)
-    SETUP_EXE=""
-    if [[ -f ".build/win32-${VSCODE_ARCH}/system-setup/VSCodeSetup.exe" ]]; then
-      SETUP_EXE=".build/win32-${VSCODE_ARCH}/system-setup/VSCodeSetup.exe"
-    elif [[ -f "vscode/.build/win32-${VSCODE_ARCH}/system-setup/VSCodeSetup.exe" ]]; then
-      SETUP_EXE="vscode/.build/win32-${VSCODE_ARCH}/system-setup/VSCodeSetup.exe"
-    fi
-    
-    if [[ -n "${SETUP_EXE}" ]]; then
-      echo "✓ System setup build completed successfully: ${SETUP_EXE}" >&2
-    else
-      echo "ERROR: System setup build failed - VSCodeSetup.exe not found" >&2
-      echo "  Expected locations:" >&2
-      echo "    - .build/win32-${VSCODE_ARCH}/system-setup/VSCodeSetup.exe" >&2
-      echo "    - vscode/.build/win32-${VSCODE_ARCH}/system-setup/VSCodeSetup.exe" >&2
-      echo "  This usually indicates an issue with Inno Setup compilation" >&2
-      echo "  Check code.iss for syntax errors or missing files" >&2
-      echo "  Searching for VSCodeSetup.exe in build directories..." >&2
-      find . -name "VSCodeSetup.exe" -type f 2>/dev/null | head -5 >&2 || echo "  No VSCodeSetup.exe found" >&2
-      exit 1
-    fi
+    npm run gulp "vscode-win32-${VSCODE_ARCH}-system-setup"
   fi
 
   if [[ "${SHOULD_BUILD_EXE_USR}" != "no" ]]; then
-    echo "Building user setup for ${VSCODE_ARCH}..." >&2
-    if npm run gulp "vscode-win32-${VSCODE_ARCH}-user-setup" 2>&1; then
-      echo "✓ Gulp task completed" >&2
-    else
-      EXIT_CODE=$?
-      echo "⚠ Gulp task exited with code ${EXIT_CODE}, checking if output file exists..." >&2
-    fi
-    
-    SETUP_EXE=""
-    if [[ -f ".build/win32-${VSCODE_ARCH}/user-setup/VSCodeSetup.exe" ]]; then
-      SETUP_EXE=".build/win32-${VSCODE_ARCH}/user-setup/VSCodeSetup.exe"
-    elif [[ -f "vscode/.build/win32-${VSCODE_ARCH}/user-setup/VSCodeSetup.exe" ]]; then
-      SETUP_EXE="vscode/.build/win32-${VSCODE_ARCH}/user-setup/VSCodeSetup.exe"
-    fi
-    
-    if [[ -n "${SETUP_EXE}" ]]; then
-      echo "✓ User setup build completed successfully: ${SETUP_EXE}" >&2
-    else
-      echo "ERROR: User setup build failed - VSCodeSetup.exe not found" >&2
-      echo "  Expected locations:" >&2
-      echo "    - .build/win32-${VSCODE_ARCH}/user-setup/VSCodeSetup.exe" >&2
-      echo "    - vscode/.build/win32-${VSCODE_ARCH}/user-setup/VSCodeSetup.exe" >&2
-      find . -name "VSCodeSetup.exe" -type f 2>/dev/null | head -5 >&2 || echo "  No VSCodeSetup.exe found" >&2
-      exit 1
-    fi
+    npm run gulp "vscode-win32-${VSCODE_ARCH}-user-setup"
   fi
 
   if [[ "${VSCODE_ARCH}" == "ia32" || "${VSCODE_ARCH}" == "x64" ]]; then

@@ -1582,16 +1582,39 @@ EOFPATCH2
   done
   
   if [[ ${MISSING_FILES} -gt 0 ]]; then
-    echo "ERROR: ${MISSING_FILES} critical file(s) missing from out-vscode-min!" >&2
-    echo "  This will cause runtime errors. The minify-vscode task may have failed silently." >&2
-    echo "  Checking if files exist in out-build..." >&2
+    echo "WARNING: ${MISSING_FILES} critical file(s) missing from out-vscode-min!" >&2
+    echo "  The minify-vscode task may not have copied all individual module files." >&2
+    echo "  Attempting to copy missing files from out-build..." >&2
+    
+    COPIED_COUNT=0
     for file in "${CRITICAL_FILES[@]}"; do
-      out_build_file="${file/out-vscode-min/out-build}"
-      if [[ -f "${out_build_file}" ]]; then
-        echo "  Found in out-build: ${out_build_file}" >&2
+      if [[ ! -f "${file}" ]]; then
+        out_build_file="${file/out-vscode-min/out-build}"
+        if [[ -f "${out_build_file}" ]]; then
+          # Create destination directory if it doesn't exist
+          dest_dir=$(dirname "${file}")
+          mkdir -p "${dest_dir}"
+          # Copy the file
+          if cp "${out_build_file}" "${file}" 2>/dev/null; then
+            echo "  ✓ Copied ${file} from out-build" >&2
+            COPIED_COUNT=$((COPIED_COUNT + 1))
+          else
+            echo "  ✗ Failed to copy ${file}" >&2
+          fi
+        else
+          echo "  ✗ File not found in out-build: ${out_build_file}" >&2
+        fi
       fi
     done
-    exit 1
+    
+    if [[ ${COPIED_COUNT} -lt ${MISSING_FILES} ]]; then
+      echo "ERROR: Could not copy all missing files. ${MISSING_FILES} file(s) still missing." >&2
+      echo "  This will cause runtime errors." >&2
+      exit 1
+    else
+      echo "  ✓ Successfully copied ${COPIED_COUNT} missing file(s) from out-build" >&2
+      echo "  Note: This is a workaround. The minify-vscode task should copy these files." >&2
+    fi
   fi
   
   echo "✓ Verified critical files exist in out-vscode-min"

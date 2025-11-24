@@ -370,6 +370,7 @@ try {
     let inFilesSection = false;
     let inAppxIfdef = false;
     let ifdefStartLine = -1;
+    let ifdefDepth = 0; // Track nesting depth for #ifdef blocks
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -390,50 +391,66 @@ try {
       // We need to handle these specially - don't comment out the #ifdef/#endif themselves
       // Instead, we'll set a flag to comment out the content inside
       if (trimmed.startsWith('#ifdef') && trimmed.toLowerCase().includes('appx')) {
-        inAppxIfdef = true;
-        console.error(`Found AppX #ifdef block starting at line ${i + 1}`);
+        if (!inAppxIfdef) {
+          // First AppX #ifdef block
+          inAppxIfdef = true;
+          ifdefDepth = 1;
+          console.error(`Found AppX #ifdef block starting at line ${i + 1}`);
+        } else {
+          // Nested AppX #ifdef block - increment depth
+          ifdefDepth++;
+          console.error(`Found nested AppX #ifdef block at line ${i + 1} (depth: ${ifdefDepth})`);
+        }
         // Don't comment out the #ifdef line itself - keep it but make it always false
         // Change #ifdef AppxPackageName to #if 0 (always false)
         if (trimmed.includes('AppxPackageName') || trimmed.includes('AppxPackage')) {
-          const indent = line.match(/^\s*/)[0];
+          const indent = (line.match(/^\s*/) || [''])[0];
           // Split into two lines properly
           lines[i] = `${indent}#if 0 ; PATCHED: AppX not available, disabled`;
           lines.splice(i + 1, 0, `${indent}; Original: ${trimmed}`);
           // Set ifdefStartLine after inserting the line, so it points to the #if 0 line
-          ifdefStartLine = i;
+          if (ifdefDepth === 1) {
+            ifdefStartLine = i;
+          }
           i++; // Adjust index since we inserted a line
           modified = true;
         } else {
-          // If we don't modify the #ifdef line, set ifdefStartLine normally
-          ifdefStartLine = i;
+          // If we don't modify the #ifdef line, set ifdefStartLine normally (only for first block)
+          if (ifdefDepth === 1) {
+            ifdefStartLine = i;
+          }
         }
         continue;
       }
 
       // Track #endif for AppX blocks
       if (inAppxIfdef && trimmed.startsWith('#endif')) {
-        // Comment out the content inside the block (but keep #endif)
-        // Work backwards to avoid index issues when inserting lines
-        const linesToComment = [];
-        for (let j = ifdefStartLine + 1; j < i; j++) {
-          if (!lines[j].trim().startsWith(';') && !lines[j].trim().startsWith('#')) {
-            linesToComment.push(j);
+        ifdefDepth--;
+        if (ifdefDepth === 0) {
+          // This is the closing #endif for the outermost AppX block
+          // Comment out the content inside the block (but keep #endif)
+          // Work backwards to avoid index issues when inserting lines
+          const linesToComment = [];
+          for (let j = ifdefStartLine + 1; j < i; j++) {
+            if (!lines[j].trim().startsWith(';') && !lines[j].trim().startsWith('#')) {
+              linesToComment.push(j);
+            }
           }
+          // Comment out lines in reverse order to maintain correct indices
+          for (let k = linesToComment.length - 1; k >= 0; k--) {
+            const j = linesToComment[k];
+            const indent = (lines[j].match(/^\s*/) || [''])[0];
+            const originalLine = lines[j].substring(indent.length);
+            lines[j] = `${indent}; PATCHED: AppX block content commented out`;
+            lines.splice(j + 1, 0, `${indent};${originalLine}`);
+          }
+          // Adjust i to account for all inserted lines
+          i += linesToComment.length;
+          modified = true;
+          console.error(`✓ Commented out AppX #ifdef block content from line ${ifdefStartLine + 2} to ${i - linesToComment.length}`);
+          inAppxIfdef = false;
+          ifdefStartLine = -1;
         }
-        // Comment out lines in reverse order to maintain correct indices
-        for (let k = linesToComment.length - 1; k >= 0; k--) {
-          const j = linesToComment[k];
-          const indent = lines[j].match(/^\s*/)[0];
-          const originalLine = lines[j].substring(indent.length);
-          lines[j] = `${indent}; PATCHED: AppX block content commented out`;
-          lines.splice(j + 1, 0, `${indent};${originalLine}`);
-        }
-        // Adjust i to account for all inserted lines
-        i += linesToComment.length;
-        modified = true;
-        console.error(`✓ Commented out AppX #ifdef block content from line ${ifdefStartLine + 2} to ${i - linesToComment.length}`);
-        inAppxIfdef = false;
-        ifdefStartLine = -1;
         continue;
       }
 
@@ -449,7 +466,7 @@ try {
         const lowerLine = line.toLowerCase();
         // Skip Excludes lines - they contain "appx" as a pattern but aren't file references
         if (lowerLine.includes('appx') && !lowerLine.includes('excludes')) {
-          const indent = line.match(/^\s*/)[0];
+          const indent = (line.match(/^\s*/) || [''])[0];
           const originalLine = line.substring(indent.length);
           // Split into two lines properly - add comment line, then commented original
           lines[i] = `${indent}; PATCHED: AppX file not found, commented out`;
@@ -464,7 +481,7 @@ try {
       if (!inAppxIfdef) {
         const lowerLine = line.toLowerCase();
         if (lowerLine.includes('.appx') && !trimmed.startsWith(';')) {
-          const indent = line.match(/^\s*/)[0];
+          const indent = (line.match(/^\s*/) || [''])[0];
           const originalLine = line.substring(indent.length);
           // Split into two lines properly - add comment line, then commented original
           lines[i] = `${indent}; PATCHED: AppX file not found, commented out`;
@@ -482,6 +499,12 @@ try {
       for (let i = Math.max(0, 94); i < Math.min(lines.length, 104); i++) {
         console.error(`Line ${i + 1}: ${lines[i]}`);
       }
+    }
+    
+    // Warn if we're still in an AppX #ifdef block (missing #endif)
+    if (inAppxIfdef) {
+      console.error(`⚠ WARNING: AppX #ifdef block starting at line ${ifdefStartLine + 1} has no matching #endif!`);
+      console.error('  This may cause incorrect patching. The block will remain open.');
     }
   } else {
     console.error(`✓ AppX file found: ${appxFile}, no patching needed`);

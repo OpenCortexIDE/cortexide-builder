@@ -1561,6 +1561,40 @@ EOFPATCH2
     echo "  - Check logs above for specific errors" >&2
     exit 1
   fi
+  
+  # CRITICAL: Verify out-vscode-min has required files before packaging
+  echo "Verifying out-vscode-min directory has required files..."
+  CRITICAL_FILES=(
+    "out-vscode-min/vs/workbench/workbench.desktop.main.js"
+    "out-vscode-min/vs/base/common/lifecycle.js"
+    "out-vscode-min/vs/platform/theme/common/theme.js"
+    "out-vscode-min/main.js"
+    "out-vscode-min/cli.js"
+    "out-vscode-min/vs/code/electron-browser/workbench/workbench.html"
+  )
+  
+  MISSING_FILES=0
+  for file in "${CRITICAL_FILES[@]}"; do
+    if [[ ! -f "${file}" ]]; then
+      echo "ERROR: Critical file missing from out-vscode-min: ${file}" >&2
+      MISSING_FILES=$((MISSING_FILES + 1))
+    fi
+  done
+  
+  if [[ ${MISSING_FILES} -gt 0 ]]; then
+    echo "ERROR: ${MISSING_FILES} critical file(s) missing from out-vscode-min!" >&2
+    echo "  This will cause runtime errors. The minify-vscode task may have failed silently." >&2
+    echo "  Checking if files exist in out-build..." >&2
+    for file in "${CRITICAL_FILES[@]}"; do
+      out_build_file="${file/out-vscode-min/out-build}"
+      if [[ -f "${out_build_file}" ]]; then
+        echo "  Found in out-build: ${out_build_file}" >&2
+      fi
+    done
+    exit 1
+  fi
+  
+  echo "✓ Verified critical files exist in out-vscode-min"
 
   if [[ "${OS_NAME}" == "osx" ]]; then
     # generate Group Policy definitions
@@ -1664,6 +1698,129 @@ EOFPATCH2
       echo "ERROR: product.json in app bundle has incorrect extensionsGallery!" >&2
       echo "  Current serviceUrl: $(jq -r '.extensionsGallery.serviceUrl // "MISSING"' "${PRODUCT_JSON}")" >&2
       echo "  This will cause extension marketplace failures at runtime!" >&2
+      exit 1
+    fi
+    
+    # CRITICAL: Verify all required JS files are present in app bundle
+    echo "Verifying required JS files in app bundle..."
+    APP_OUT_DIR="${APP_BUNDLE}/Contents/Resources/app/out"
+    
+    # First, check if the out directory exists and has files
+    if [[ ! -d "${APP_OUT_DIR}" ]]; then
+      echo "ERROR: out directory does not exist in app bundle: ${APP_OUT_DIR}" >&2
+      exit 1
+    fi
+    
+    # Count JS files in app bundle
+    JS_FILE_COUNT=$(find "${APP_OUT_DIR}" -name "*.js" -type f 2>/dev/null | wc -l | tr -d ' ')
+    if [[ ${JS_FILE_COUNT} -eq 0 ]]; then
+      echo "ERROR: No JS files found in app bundle out directory!" >&2
+      echo "  This indicates a serious packaging failure." >&2
+      exit 1
+    fi
+    echo "  Found ${JS_FILE_COUNT} JS files in app bundle"
+    
+    CRITICAL_JS_FILES=(
+      "vs/workbench/workbench.desktop.main.js"
+      "vs/base/common/lifecycle.js"
+      "vs/platform/theme/common/theme.js"
+      "vs/platform/theme/common/themeService.js"
+      "vs/base/common/uri.js"
+      "vs/base/common/path.js"
+      "vs/platform/instantiation/common/instantiation.js"
+      "vs/platform/commands/common/commands.js"
+    )
+    
+    MISSING_JS_FILES=0
+    MISSING_FILE_LIST=()
+    for js_file in "${CRITICAL_JS_FILES[@]}"; do
+      full_path="${APP_OUT_DIR}/${js_file}"
+      if [[ ! -f "${full_path}" ]]; then
+        echo "ERROR: Required JS file missing: ${full_path}" >&2
+        MISSING_JS_FILES=$((MISSING_JS_FILES + 1))
+        MISSING_FILE_LIST+=("${js_file}")
+      fi
+    done
+    
+    if [[ ${MISSING_JS_FILES} -gt 0 ]]; then
+      echo "ERROR: ${MISSING_JS_FILES} required JS file(s) missing from app bundle!" >&2
+      echo "  This will cause ERR_FILE_NOT_FOUND errors at runtime." >&2
+      echo "  Attempting to copy missing files from out-vscode-min..." >&2
+      
+      for js_file in "${MISSING_FILE_LIST[@]}"; do
+        source_file="out-vscode-min/${js_file}"
+        dest_file="${APP_OUT_DIR}/${js_file}"
+        
+        if [[ -f "${source_file}" ]]; then
+          echo "  Copying ${js_file} from out-vscode-min..." >&2
+          mkdir -p "$(dirname "${dest_file}")"
+          if cp "${source_file}" "${dest_file}" 2>/dev/null; then
+            echo "  ✓ Copied ${js_file}" >&2
+            MISSING_JS_FILES=$((MISSING_JS_FILES - 1))
+          else
+            echo "  ✗ Failed to copy ${js_file}" >&2
+          fi
+        else
+          # Try out-build as fallback
+          source_file="out-build/${js_file}"
+          if [[ -f "${source_file}" ]]; then
+            echo "  Copying ${js_file} from out-build (fallback)..." >&2
+            mkdir -p "$(dirname "${dest_file}")"
+            if cp "${source_file}" "${dest_file}" 2>/dev/null; then
+              echo "  ✓ Copied ${js_file} from out-build" >&2
+              MISSING_JS_FILES=$((MISSING_JS_FILES - 1))
+            else
+              echo "  ✗ Failed to copy ${js_file}" >&2
+            fi
+          else
+            echo "  ✗ Source file not found: ${js_file} (checked out-vscode-min and out-build)" >&2
+          fi
+        fi
+      done
+      
+      if [[ ${MISSING_JS_FILES} -gt 0 ]]; then
+        echo "ERROR: ${MISSING_JS_FILES} file(s) could not be copied. Build may fail at runtime." >&2
+        echo "  This indicates a serious packaging issue. Check:" >&2
+        echo "  1. The minify-vscode task completed successfully" >&2
+        echo "  2. The out-vscode-min directory has all required files" >&2
+        echo "  3. The packaging task (vscode-darwin-*-min-ci) copied files correctly" >&2
+        exit 1
+      else
+        echo "✓ All missing files were successfully copied" >&2
+      fi
+    fi
+    
+    # CRITICAL FIX: Copy ALL vs/ module files from out-vscode-min to app bundle
+    # workbench.desktop.main.js has ES module imports for individual files that must exist
+    # The bundler should bundle these, but it's not working correctly, so we copy all files
+    echo "Copying all vs/ module files from out-vscode-min to app bundle..." >&2
+    if [[ -d "out-vscode-min/vs" ]]; then
+      VS_FILES_COUNT=$(find "out-vscode-min/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+      echo "  Found ${VS_FILES_COUNT} .js files in out-vscode-min/vs" >&2
+      
+      # Copy all vs/ directories and files
+      if rsync -a --include="vs/" --include="vs/**" --exclude="*" "out-vscode-min/" "${APP_OUT_DIR}/" 2>/dev/null; then
+        COPIED_COUNT=$(find "${APP_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+        echo "  ✓ Copied ${COPIED_COUNT} .js files to app bundle" >&2
+      else
+        # Fallback: use cp -R if rsync is not available
+        echo "  rsync not available, using cp -R..." >&2
+        if cp -R "out-vscode-min/vs" "${APP_OUT_DIR}/" 2>/dev/null; then
+          COPIED_COUNT=$(find "${APP_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+          echo "  ✓ Copied ${COPIED_COUNT} .js files to app bundle" >&2
+        else
+          echo "  ✗ WARNING: Failed to copy vs/ directory. Some imports may fail at runtime." >&2
+        fi
+      fi
+    else
+      echo "  ✗ WARNING: out-vscode-min/vs directory not found!" >&2
+    fi
+    
+    # Verify workbench.desktop.main.js exists (most critical file)
+    WORKBENCH_MAIN="${APP_OUT_DIR}/vs/workbench/workbench.desktop.main.js"
+    if [[ ! -f "${WORKBENCH_MAIN}" ]]; then
+      echo "ERROR: workbench.desktop.main.js is missing! This is the most critical file." >&2
+      echo "  This will cause the app to fail immediately on launch." >&2
       exit 1
     fi
     
@@ -1861,6 +2018,123 @@ APPXFIX
         exit 1
       fi
       
+      # CRITICAL: Verify all required JS files are present in Windows package
+      echo "Verifying required JS files in Windows package..."
+      WIN_OUT_DIR="${WIN_PACKAGE}/resources/app/out"
+      
+      # First, check if the out directory exists and has files
+      if [[ ! -d "${WIN_OUT_DIR}" ]]; then
+        echo "ERROR: out directory does not exist in Windows package: ${WIN_OUT_DIR}" >&2
+        exit 1
+      fi
+      
+      # Count JS files in package
+      JS_FILE_COUNT=$(find "${WIN_OUT_DIR}" -name "*.js" -type f 2>/dev/null | wc -l | tr -d ' ')
+      if [[ ${JS_FILE_COUNT} -eq 0 ]]; then
+        echo "ERROR: No JS files found in Windows package out directory!" >&2
+        echo "  This indicates a serious packaging failure." >&2
+        exit 1
+      fi
+      echo "  Found ${JS_FILE_COUNT} JS files in Windows package"
+      
+      CRITICAL_JS_FILES=(
+        "vs/workbench/workbench.desktop.main.js"
+        "vs/base/common/lifecycle.js"
+        "vs/platform/theme/common/theme.js"
+        "vs/platform/theme/common/themeService.js"
+        "vs/base/common/uri.js"
+        "vs/base/common/path.js"
+        "vs/platform/instantiation/common/instantiation.js"
+        "vs/platform/commands/common/commands.js"
+      )
+      
+      MISSING_JS_FILES=0
+      MISSING_FILE_LIST=()
+      for js_file in "${CRITICAL_JS_FILES[@]}"; do
+        full_path="${WIN_OUT_DIR}/${js_file}"
+        if [[ ! -f "${full_path}" ]]; then
+          echo "ERROR: Required JS file missing: ${full_path}" >&2
+          MISSING_JS_FILES=$((MISSING_JS_FILES + 1))
+          MISSING_FILE_LIST+=("${js_file}")
+        fi
+      done
+      
+      if [[ ${MISSING_JS_FILES} -gt 0 ]]; then
+        echo "ERROR: ${MISSING_JS_FILES} required JS file(s) missing from Windows package!" >&2
+        echo "  This will cause ERR_FILE_NOT_FOUND errors at runtime." >&2
+        echo "  Attempting to copy missing files from out-vscode-min..." >&2
+        
+        for js_file in "${MISSING_FILE_LIST[@]}"; do
+          source_file="out-vscode-min/${js_file}"
+          dest_file="${WIN_OUT_DIR}/${js_file}"
+          
+          if [[ -f "${source_file}" ]]; then
+            echo "  Copying ${js_file} from out-vscode-min..." >&2
+            mkdir -p "$(dirname "${dest_file}")"
+            if cp "${source_file}" "${dest_file}" 2>/dev/null; then
+              echo "  ✓ Copied ${js_file}" >&2
+              MISSING_JS_FILES=$((MISSING_JS_FILES - 1))
+            else
+              echo "  ✗ Failed to copy ${js_file}" >&2
+            fi
+          else
+            # Try out-build as fallback
+            source_file="out-build/${js_file}"
+            if [[ -f "${source_file}" ]]; then
+              echo "  Copying ${js_file} from out-build (fallback)..." >&2
+              mkdir -p "$(dirname "${dest_file}")"
+              if cp "${source_file}" "${dest_file}" 2>/dev/null; then
+                echo "  ✓ Copied ${js_file} from out-build" >&2
+                MISSING_JS_FILES=$((MISSING_JS_FILES - 1))
+              else
+                echo "  ✗ Failed to copy ${js_file}" >&2
+              fi
+            else
+              echo "  ✗ Source file not found: ${js_file} (checked out-vscode-min and out-build)" >&2
+            fi
+          fi
+        done
+        
+        if [[ ${MISSING_JS_FILES} -gt 0 ]]; then
+          echo "ERROR: ${MISSING_JS_FILES} file(s) could not be copied. Build may fail at runtime." >&2
+          echo "  This indicates a serious packaging issue. Check:" >&2
+          echo "  1. The minify-vscode task completed successfully" >&2
+          echo "  2. The out-vscode-min directory has all required files" >&2
+          echo "  3. The packaging task (vscode-win32-*-min-ci) copied files correctly" >&2
+          exit 1
+        else
+          echo "✓ All missing files were successfully copied" >&2
+        fi
+      fi
+      
+      # CRITICAL FIX: Copy ALL vs/ module files from out-vscode-min to Windows package
+      # workbench.desktop.main.js has ES module imports for individual files that must exist
+      echo "Copying all vs/ module files from out-vscode-min to Windows package..." >&2
+      if [[ -d "out-vscode-min/vs" ]]; then
+        VS_FILES_COUNT=$(find "out-vscode-min/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+        echo "  Found ${VS_FILES_COUNT} .js files in out-vscode-min/vs" >&2
+        
+        if rsync -a --include="vs/" --include="vs/**" --exclude="*" "out-vscode-min/" "${WIN_OUT_DIR}/" 2>/dev/null; then
+          COPIED_COUNT=$(find "${WIN_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+          echo "  ✓ Copied ${COPIED_COUNT} .js files to Windows package" >&2
+        else
+          if cp -R "out-vscode-min/vs" "${WIN_OUT_DIR}/" 2>/dev/null; then
+            COPIED_COUNT=$(find "${WIN_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+            echo "  ✓ Copied ${COPIED_COUNT} .js files to Windows package" >&2
+          else
+            echo "  ✗ WARNING: Failed to copy vs/ directory. Some imports may fail at runtime." >&2
+          fi
+        fi
+      fi
+      
+      # Verify workbench.desktop.main.js exists (most critical file)
+      WORKBENCH_MAIN="${WIN_OUT_DIR}/vs/workbench/workbench.desktop.main.js"
+      if [[ ! -f "${WORKBENCH_MAIN}" ]]; then
+        echo "ERROR: workbench.desktop.main.js is missing! This is the most critical file." >&2
+        echo "  This will cause the app to fail immediately on launch." >&2
+        exit 1
+      fi
+      
       echo "✓ Critical files verified in Windows package"
 
       if [[ "${VSCODE_ARCH}" != "x64" ]]; then
@@ -1932,6 +2206,123 @@ APPXFIX
       if ! jq -e '.extensionsGallery.serviceUrl | contains("open-vsx")' "${PRODUCT_JSON}" >/dev/null 2>&1; then
         echo "ERROR: product.json in Linux package has incorrect extensionsGallery!" >&2
         echo "  Current serviceUrl: $(jq -r '.extensionsGallery.serviceUrl // "MISSING"' "${PRODUCT_JSON}")" >&2
+        exit 1
+      fi
+      
+      # CRITICAL: Verify all required JS files are present in Linux package
+      echo "Verifying required JS files in Linux package..."
+      LINUX_OUT_DIR="${LINUX_PACKAGE}/resources/app/out"
+      
+      # First, check if the out directory exists and has files
+      if [[ ! -d "${LINUX_OUT_DIR}" ]]; then
+        echo "ERROR: out directory does not exist in Linux package: ${LINUX_OUT_DIR}" >&2
+        exit 1
+      fi
+      
+      # Count JS files in package
+      JS_FILE_COUNT=$(find "${LINUX_OUT_DIR}" -name "*.js" -type f 2>/dev/null | wc -l | tr -d ' ')
+      if [[ ${JS_FILE_COUNT} -eq 0 ]]; then
+        echo "ERROR: No JS files found in Linux package out directory!" >&2
+        echo "  This indicates a serious packaging failure." >&2
+        exit 1
+      fi
+      echo "  Found ${JS_FILE_COUNT} JS files in Linux package"
+      
+      CRITICAL_JS_FILES=(
+        "vs/workbench/workbench.desktop.main.js"
+        "vs/base/common/lifecycle.js"
+        "vs/platform/theme/common/theme.js"
+        "vs/platform/theme/common/themeService.js"
+        "vs/base/common/uri.js"
+        "vs/base/common/path.js"
+        "vs/platform/instantiation/common/instantiation.js"
+        "vs/platform/commands/common/commands.js"
+      )
+      
+      MISSING_JS_FILES=0
+      MISSING_FILE_LIST=()
+      for js_file in "${CRITICAL_JS_FILES[@]}"; do
+        full_path="${LINUX_OUT_DIR}/${js_file}"
+        if [[ ! -f "${full_path}" ]]; then
+          echo "ERROR: Required JS file missing: ${full_path}" >&2
+          MISSING_JS_FILES=$((MISSING_JS_FILES + 1))
+          MISSING_FILE_LIST+=("${js_file}")
+        fi
+      done
+      
+      if [[ ${MISSING_JS_FILES} -gt 0 ]]; then
+        echo "ERROR: ${MISSING_JS_FILES} required JS file(s) missing from Linux package!" >&2
+        echo "  This will cause ERR_FILE_NOT_FOUND errors at runtime." >&2
+        echo "  Attempting to copy missing files from out-vscode-min..." >&2
+        
+        for js_file in "${MISSING_FILE_LIST[@]}"; do
+          source_file="out-vscode-min/${js_file}"
+          dest_file="${LINUX_OUT_DIR}/${js_file}"
+          
+          if [[ -f "${source_file}" ]]; then
+            echo "  Copying ${js_file} from out-vscode-min..." >&2
+            mkdir -p "$(dirname "${dest_file}")"
+            if cp "${source_file}" "${dest_file}" 2>/dev/null; then
+              echo "  ✓ Copied ${js_file}" >&2
+              MISSING_JS_FILES=$((MISSING_JS_FILES - 1))
+            else
+              echo "  ✗ Failed to copy ${js_file}" >&2
+            fi
+          else
+            # Try out-build as fallback
+            source_file="out-build/${js_file}"
+            if [[ -f "${source_file}" ]]; then
+              echo "  Copying ${js_file} from out-build (fallback)..." >&2
+              mkdir -p "$(dirname "${dest_file}")"
+              if cp "${source_file}" "${dest_file}" 2>/dev/null; then
+                echo "  ✓ Copied ${js_file} from out-build" >&2
+                MISSING_JS_FILES=$((MISSING_JS_FILES - 1))
+              else
+                echo "  ✗ Failed to copy ${js_file}" >&2
+              fi
+            else
+              echo "  ✗ Source file not found: ${js_file} (checked out-vscode-min and out-build)" >&2
+            fi
+          fi
+        done
+        
+        if [[ ${MISSING_JS_FILES} -gt 0 ]]; then
+          echo "ERROR: ${MISSING_JS_FILES} file(s) could not be copied. Build may fail at runtime." >&2
+          echo "  This indicates a serious packaging issue. Check:" >&2
+          echo "  1. The minify-vscode task completed successfully" >&2
+          echo "  2. The out-vscode-min directory has all required files" >&2
+          echo "  3. The packaging task (vscode-linux-*-min-ci) copied files correctly" >&2
+          exit 1
+        else
+          echo "✓ All missing files were successfully copied" >&2
+        fi
+      fi
+      
+      # CRITICAL FIX: Copy ALL vs/ module files from out-vscode-min to Linux package
+      # workbench.desktop.main.js has ES module imports for individual files that must exist
+      echo "Copying all vs/ module files from out-vscode-min to Linux package..." >&2
+      if [[ -d "out-vscode-min/vs" ]]; then
+        VS_FILES_COUNT=$(find "out-vscode-min/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+        echo "  Found ${VS_FILES_COUNT} .js files in out-vscode-min/vs" >&2
+        
+        if rsync -a --include="vs/" --include="vs/**" --exclude="*" "out-vscode-min/" "${LINUX_OUT_DIR}/" 2>/dev/null; then
+          COPIED_COUNT=$(find "${LINUX_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+          echo "  ✓ Copied ${COPIED_COUNT} .js files to Linux package" >&2
+        else
+          if cp -R "out-vscode-min/vs" "${LINUX_OUT_DIR}/" 2>/dev/null; then
+            COPIED_COUNT=$(find "${LINUX_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+            echo "  ✓ Copied ${COPIED_COUNT} .js files to Linux package" >&2
+          else
+            echo "  ✗ WARNING: Failed to copy vs/ directory. Some imports may fail at runtime." >&2
+          fi
+        fi
+      fi
+      
+      # Verify workbench.desktop.main.js exists (most critical file)
+      WORKBENCH_MAIN="${LINUX_OUT_DIR}/vs/workbench/workbench.desktop.main.js"
+      if [[ ! -f "${WORKBENCH_MAIN}" ]]; then
+        echo "ERROR: workbench.desktop.main.js is missing! This is the most critical file." >&2
+        echo "  This will cause the app to fail immediately on launch." >&2
         exit 1
       fi
       

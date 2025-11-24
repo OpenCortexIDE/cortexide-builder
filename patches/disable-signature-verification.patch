@@ -2,7 +2,16 @@ diff --git a/src/vs/platform/extensionManagement/node/extensionManagementService
 index 680e0dd..0b04279 100644
 --- a/src/vs/platform/extensionManagement/node/extensionManagementService.ts
 +++ b/src/vs/platform/extensionManagement/node/extensionManagementService.ts
-@@ -81,11 +81,12 @@ constructor(
+@@ -30,6 +30,7 @@ import {
+ 	ExtensionSignatureVerificationCode,
+ 	computeSize,
+ 	IAllowedExtensionsService,
+-	VerifyExtensionSignatureConfigKey,
++	// VerifyExtensionSignatureConfigKey, // Unused after disabling signature verification
+ 	shouldRequireRepositorySignatureFor,
+ } from '../common/extensionManagement.js';
+ import { areSameExtensions, computeTargetPlatform, ExtensionKey, getGalleryExtensionId, groupByExtension } from '../common/extensionManagementUtil.js';
+@@ -81,11 +82,12 @@ constructor(
  		@ILogService logService: ILogService,
  		@INativeEnvironmentService private readonly environmentService: INativeEnvironmentService,
  		@IExtensionsScannerService private readonly extensionsScannerService: IExtensionsScannerService,
@@ -17,7 +26,7 @@ index 680e0dd..0b04279 100644
  		@IExtensionGalleryManifestService protected readonly extensionGalleryManifestService: IExtensionGalleryManifestService,
  		@IProductService productService: IProductService,
  		@IAllowedExtensionsService allowedExtensionsService: IAllowedExtensionsService,
-@@ -340,7 +341,7 @@ private async downloadExtension(extension: IGalleryExtension, operation: Install
+@@ -340,7 +342,7 @@ private async downloadExtension(extension: IGalleryExtension, operation: Install
  	private async downloadExtension(extension: IGalleryExtension, operation: InstallOperation, verifySignature: boolean, clientTargetPlatform?: TargetPlatform): Promise<{ readonly location: URI; readonly verificationStatus: ExtensionSignatureVerificationCode | undefined }> {
  		if (verifySignature) {
 -			const value = this.configurationService.getValue(VerifyExtensionSignatureConfigKey);

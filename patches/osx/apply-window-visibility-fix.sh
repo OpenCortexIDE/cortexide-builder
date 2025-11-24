@@ -35,8 +35,11 @@ if [[ ! -f "${WINDOW_TS_FILE}" ]]; then
   exit 1
 fi
 
-# Check if fix is already applied
-if grep -q "Fix for macOS blank screen" "${WINDOW_TS_FILE}"; then
+# Check if fix is already applied (check for multiple possible fix markers)
+if grep -q "Fix for macOS blank screen" "${WINDOW_TS_FILE}" || \
+   grep -q "macOS: Comprehensive fix for blank screen" "${WINDOW_TS_FILE}" || \
+   grep -q "macOS: Ensure window is visible" "${WINDOW_TS_FILE}" || \
+   grep -q "macOS: Use 'ready-to-show' event" "${WINDOW_TS_FILE}"; then
   echo "Window visibility fix already applied to ${WINDOW_TS_FILE}"
   exit 0
 fi

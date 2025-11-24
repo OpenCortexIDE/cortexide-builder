@@ -152,7 +152,10 @@ if [[ -d "../patches/${OS_NAME}/" ]]; then
     fi
     
     if [[ -n "${WINDOW_FILE}" ]]; then
-      if ! grep -q "Fix for macOS blank screen" "${WINDOW_FILE}"; then
+      # Check for any macOS fix marker (multiple possible formats)
+      if ! grep -q "Fix for macOS blank screen" "${WINDOW_FILE}" && \
+         ! grep -q "macOS: Comprehensive fix for blank screen" "${WINDOW_FILE}" && \
+         ! grep -q "macOS.*blank screen" "${WINDOW_FILE}"; then
         echo "CRITICAL: Window visibility fix not found. Applying via script (this MUST succeed)..." >&2
         if [[ -f "../patches/${OS_NAME}/apply-window-visibility-fix.sh" ]]; then
           chmod +x "../patches/${OS_NAME}/apply-window-visibility-fix.sh"
@@ -170,7 +173,17 @@ if [[ -d "../patches/${OS_NAME}/" ]]; then
           echo "  ../patches/${OS_NAME}/apply-window-visibility-fix.sh" >&2
         fi
       else
-        echo "✓ Window visibility fix verified in ${WINDOW_FILE}"
+        # Verify the fix is actually present (not just a comment)
+        if grep -q "isMacintosh.*this\._win\|isMacintosh.*this\.win" "${WINDOW_FILE}"; then
+          echo "✓ Window visibility fix verified in ${WINDOW_FILE}"
+        else
+          echo "WARNING: Window visibility fix marker found but actual fix code may be missing!" >&2
+          if ! grep -q "showInactive\|isVisible\|getBounds" "${WINDOW_FILE}"; then
+            echo "  ERROR: Window visibility fix code not found! This will cause blank screen." >&2
+            echo "  File: ${WINDOW_FILE}" >&2
+            echo "  Please check the file structure and fix manually." >&2
+          fi
+        fi
         # Double-check the fix is actually present (not just a comment)
         if ! grep -q "showInactive\|show\(\)" "${WINDOW_FILE}" 2>/dev/null; then
           echo "WARNING: Window visibility fix marker found but actual fix code may be missing!" >&2

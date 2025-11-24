@@ -184,9 +184,28 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
     done
   fi
   
-  # Check if vscode directory will exist
+  # Check if vscode directory exists, and if not, call get_repo.sh to create it
   if [[ ! -d "vscode" ]] && [[ ! -d "../cortexide" ]]; then
-    echo "Warning: Neither 'vscode' nor '../cortexide' directory found. get_repo.sh should create it." >&2
+    echo "Neither 'vscode' nor '../cortexide' directory found. Calling get_repo.sh to create it..." >&2
+    if ! . get_repo.sh; then
+      echo "Error: get_repo.sh failed. Please check:" >&2
+      echo "  1. Network connectivity (if cloning from GitHub)" >&2
+      echo "  2. That '../cortexide' exists and contains package.json (if using local repo)" >&2
+      echo "  3. Git is installed and configured" >&2
+      exit 1
+    fi
+    # Verify vscode directory was created
+    if [[ ! -d "vscode" ]]; then
+      echo "Error: get_repo.sh did not create 'vscode' directory." >&2
+      exit 1
+    fi
+  elif [[ ! -d "vscode" ]] && [[ -d "../cortexide" ]]; then
+    # If ../cortexide exists but vscode doesn't, call get_repo.sh to copy it
+    echo "Found '../cortexide' but 'vscode' directory not found. Calling get_repo.sh to copy it..." >&2
+    if ! . get_repo.sh; then
+      echo "Error: get_repo.sh failed to copy '../cortexide' to 'vscode'." >&2
+      exit 1
+    fi
   fi
   
   if [[ $MISSING_DEPS -eq 1 ]]; then
@@ -2042,7 +2061,17 @@ try {
       content = content.replace(originalRunSection, newRunSection);
       modified = true;
       console.error('✓ Successfully escaped PowerShell curly braces in [Run] section');
+      
+      // Debug: Show line 114 if it exists (where the error occurs)
+      const lines = content.split(/\r?\n/);
+      if (lines.length >= 114) {
+        console.error(`  Line 114: ${lines[113].substring(0, 100)}...`);
+      }
+    } else {
+      console.error('⚠ No changes made to [Run] section');
     }
+  } else {
+    console.error('⚠ [Run] section not found in code.iss');
   }
 
   if (modified) {
@@ -2053,6 +2082,8 @@ try {
     }
     fs.writeFileSync(filePath, content, 'utf8');
     console.error('✓ Saved patched code.iss file');
+  } else {
+    console.error('⚠ No PowerShell escaping needed or [Run] section not found');
   }
 } catch (error) {
   console.error(`✗ ERROR: ${error.message}`);

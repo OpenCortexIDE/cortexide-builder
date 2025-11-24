@@ -2125,6 +2125,8 @@ APPXFIX
             echo "  ✗ WARNING: Failed to copy vs/ directory. Some imports may fail at runtime." >&2
           fi
         fi
+      else
+        echo "  ✗ WARNING: out-vscode-min/vs directory not found!" >&2
       fi
       
       # Verify workbench.desktop.main.js exists (most critical file)
@@ -2316,6 +2318,8 @@ APPXFIX
             echo "  ✗ WARNING: Failed to copy vs/ directory. Some imports may fail at runtime." >&2
           fi
         fi
+      else
+        echo "  ✗ WARNING: out-vscode-min/vs directory not found!" >&2
       fi
       
       # Verify workbench.desktop.main.js exists (most critical file)

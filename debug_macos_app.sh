@@ -183,15 +183,12 @@ echo ""
 # Redirect both stdout and stderr to log file and terminal
 echo "Starting ${APP_NAME}..." | tee -a "${LOG_FILE}"
 echo "Timestamp: $(date)" | tee -a "${LOG_FILE}"
-echo "Command: ${EXECUTABLE} --enable-logging --log-level=0 --enable-logging=stderr" | tee -a "${LOG_FILE}"
+DEBUG_ARGS=(--enable-logging --log-level=0 --enable-logging=stderr)
+echo "Command: ELECTRON_RUN_AS_NODE=0 ${EXECUTABLE} ${DEBUG_ARGS[*]}" | tee -a "${LOG_FILE}"
 echo "" | tee -a "${LOG_FILE}"
 
 # Launch in background and capture output
-"${EXECUTABLE}" \
-    --enable-logging \
-    --log-level=0 \
-    --enable-logging=stderr \
-    2>&1 | tee -a "${LOG_FILE}" &
+ELECTRON_RUN_AS_NODE=0 "${EXECUTABLE}" "${DEBUG_ARGS[@]}" 2>&1 | tee -a "${LOG_FILE}" &
 
 APP_PID=$!
 

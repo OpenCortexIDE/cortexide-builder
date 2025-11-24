@@ -1,0 +1,73 @@
+diff --git a/src/vs/platform/update/electron-main/updateService.darwin.ts b/src/vs/platform/update/electron-main/updateService.darwin.ts
+index cf1dacfb344..2043f64d1f3 100644
+--- a/src/vs/platform/update/electron-main/updateService.darwin.ts
++++ b/src/vs/platform/update/electron-main/updateService.darwin.ts
+@@ -13,10 +13,12 @@ import { IEnvironmentMainService } from '../../environment/electron-main/environ
+ import { ILifecycleMainService, IRelaunchHandler, IRelaunchOptions } from '../../lifecycle/electron-main/lifecycleMainService.js';
+ import { ILogService } from '../../log/common/log.js';
+ import { IProductService } from '../../product/common/productService.js';
+-import { IRequestService } from '../../request/common/request.js';
++import { asJson, IRequestService } from '../../request/common/request.js';
+ import { ITelemetryService } from '../../telemetry/common/telemetry.js';
+ import { IUpdate, State, StateType, UpdateType } from '../common/update.js';
+ import { AbstractUpdateService, createUpdateURL, UpdateErrorClassification } from './abstractUpdateService.js';
++import { CancellationToken } from '../../../base/common/cancellation.js';
++import * as semver from 'semver';
+ 
+ export class DarwinUpdateService extends AbstractUpdateService implements IRelaunchHandler {
+ 
+@@ -76,13 +78,7 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
+ 	}
+ 
+ 	protected buildUpdateFeedUrl(quality: string): string | undefined {
+-		let assetID: string;
+-		if (!this.productService.darwinUniversalAssetId) {
+-			assetID = process.arch === 'x64' ? 'darwin' : 'darwin-arm64';
+-		} else {
+-			assetID = this.productService.darwinUniversalAssetId;
+-		}
+-		const url = createUpdateURL(assetID, quality, this.productService);
++		const url = createUpdateURL(this.productService, quality, process.platform, process.arch);
+ 		try {
+ 			electron.autoUpdater.setFeedURL({ url });
+ 		} catch (e) {
+@@ -98,11 +94,36 @@ export class DarwinUpdateService extends AbstractUpdateService implements IRelau
+ 			return;
+ 		}
+ 
++		const updateUrl = this.url; // Capture to ensure type narrowing
+ 		this.setState(State.CheckingForUpdates(explicit));
+ 
+-		const url = explicit ? this.url : `${this.url}?bg=true`;
+-		electron.autoUpdater.setFeedURL({ url });
+-		electron.autoUpdater.checkForUpdates();
++		this.requestService.request({ url: updateUrl }, CancellationToken.None)
++			.then<IUpdate | null>(asJson)
++			.then(update => {
++				if (!update || !update.url || !update.version || !update.productVersion) {
++					this.setState(State.Idle(UpdateType.Archive));
++
++					return Promise.resolve(null);
++				}
++
++				const fetchedVersion: string = /\d+\.\d+\.\d+\.\d+/.test(update.productVersion) ? update.productVersion.replace(/(\d+\.\d+\.\d+)\.\d+(\-\w+)?/, '$1$2') : update.productVersion.replace(/(\d+\.\d+\.)0+(\d+)(\-\w+)?/, '$1$2$3');
++				const currentVersion: string = this.productService.version.replace(/(\d+\.\d+\.)0+(\d+)(\-\w+)?/, '$1$2$3');
++
++				if(semver.compareBuild(currentVersion, fetchedVersion) >= 0) {
++					this.setState(State.Idle(UpdateType.Archive));
++				}
++				else {
++					const url: string = explicit ? updateUrl : `${updateUrl}?bg=true`;
++					electron.autoUpdater.setFeedURL({ url });
++					electron.autoUpdater.checkForUpdates();
++				}
++
++				return Promise.resolve(null);
++			})
++			.catch(err => {
++				this.logService.error('Update check failed:', err);
++				this.setState(State.Idle(UpdateType.Archive));
++			});
+ 	}
+ 
+ 	private onUpdateAvailable(): void {

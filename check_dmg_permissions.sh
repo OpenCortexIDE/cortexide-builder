@@ -1,36 +1,51 @@
 #!/usr/bin/env bash
 # Diagnostic script to check for locked files in a DMG
 
-set -e
+set -euo pipefail
 
-DMG_PATH="${1}"
+DMG_PATH="${1-}"
 
 if [[ -z "${DMG_PATH}" ]]; then
-  echo "Usage: $0 <path-to-dmg>"
+  echo "Usage: $0 <path-to-dmg>" >&2
   exit 1
 fi
 
 if [[ ! -f "${DMG_PATH}" ]]; then
-  echo "Error: DMG file not found: ${DMG_PATH}"
+  echo "Error: DMG file not found: ${DMG_PATH}" >&2
   exit 1
 fi
 
 echo "=== Checking DMG: ${DMG_PATH} ==="
 echo ""
 
+STATUS=0
+MOUNT_POINT=""
+
+cleanup() {
+  if [[ -n "${MOUNT_POINT}" ]] && mount | grep -q "${MOUNT_POINT}"; then
+    hdiutil detach "${MOUNT_POINT}" -quiet >/dev/null 2>&1 || \
+    hdiutil detach "${MOUNT_POINT}" -force -quiet >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${MOUNT_POINT}" && -d "${MOUNT_POINT}" ]]; then
+    rmdir "${MOUNT_POINT}" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
 # Mount the DMG
 MOUNT_POINT=$(mktemp -d)
 echo "Mounting DMG to: ${MOUNT_POINT}"
 
-hdiutil attach "${DMG_PATH}" -mountpoint "${MOUNT_POINT}" -quiet
+if ! hdiutil attach "${DMG_PATH}" -mountpoint "${MOUNT_POINT}" -quiet; then
+  echo "Error: Failed to mount DMG" >&2
+  exit 1
+fi
 
 # Find the app bundle
 APP_BUNDLE=$(find "${MOUNT_POINT}" -name "*.app" -type d | head -n 1)
 
 if [[ -z "${APP_BUNDLE}" ]]; then
-  echo "Error: App bundle not found in DMG"
-  hdiutil detach "${MOUNT_POINT}" -quiet
-  rmdir "${MOUNT_POINT}"
+  echo "Error: App bundle not found in DMG" >&2
   exit 1
 fi
 
@@ -49,6 +64,7 @@ if [[ -n "${LOCKED_FILES}" ]]; then
   echo "${LOCKED_FILES}" | head -10 | sed 's/^/  /'
   echo ""
   echo "These files will cause installation errors!"
+  STATUS=1
 else
   echo "✓ No locked files found"
 fi
@@ -65,6 +81,8 @@ if [[ -n "${READONLY_FILES}" ]]; then
   echo ""
   echo "First 10 read-only files:"
   echo "${READONLY_FILES}" | head -10 | sed 's/^/  /'
+  # Treat read-only as failure as well, since Finder may refuse to overwrite them
+  STATUS=1
 else
   echo "✓ No read-only files found"
 fi
@@ -91,12 +109,18 @@ else
   echo "✓ No extended attributes found (or xattr not available)"
 fi
 
-# Unmount
 echo ""
 echo "Unmounting DMG..."
-hdiutil detach "${MOUNT_POINT}" -quiet
-rmdir "${MOUNT_POINT}"
+
+cleanup
+trap - EXIT
 
 echo ""
-echo "=== Check complete ==="
+if [[ "${STATUS}" -eq 0 ]]; then
+  echo "=== Check complete: PASS ==="
+else
+  echo "=== Check complete: FAIL ===" >&2
+fi
+
+exit "${STATUS}"
 

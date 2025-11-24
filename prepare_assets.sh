@@ -427,8 +427,9 @@ SIGNFIX
     echo "  Removing locked flags..."
     chflags -R nouchg "${APP_BUNDLE}" 2>/dev/null || true
     chflags -R noschg "${APP_BUNDLE}" 2>/dev/null || true
-    chflags -R noappnd "${APP_BUNDLE}" 2>/dev/null || true
-    chflags -R nouchg,noschg,noappnd "${APP_BUNDLE}" 2>/dev/null || true
+    chflags -R nouappnd "${APP_BUNDLE}" 2>/dev/null || true
+    chflags -R nosappnd "${APP_BUNDLE}" 2>/dev/null || true
+    chflags -R nouchg,noschg "${APP_BUNDLE}" 2>/dev/null || true
     
     # Step 2: Ensure all files are writable (not read-only)
     echo "  Ensuring files are writable..."
@@ -497,16 +498,36 @@ SIGNFIX
     if [[ -n "${APP_BUNDLE}" ]]; then
       APP_BUNDLE="${APP_BUNDLE#./}"
       echo "  Final unlock before DMG creation..."
-      # Remove any locked flags one more time before DMG creation
-      chflags -R nouchg,noschg,noappnd "${APP_BUNDLE}" 2>/dev/null || true
-      # Ensure writable
-      find "${APP_BUNDLE}" -type f ! -perm -u+w -exec chmod u+w {} \; 2>/dev/null || true
       
-      # Diagnostic: Check if any locked files remain
+      # CRITICAL: Remove ALL locked flags aggressively before DMG creation
+      # create-dmg will copy files, and we need to ensure no locked flags are preserved
+      chflags -R nouchg "${APP_BUNDLE}" 2>/dev/null || true
+      chflags -R noschg "${APP_BUNDLE}" 2>/dev/null || true
+      chflags -R nouappnd "${APP_BUNDLE}" 2>/dev/null || true
+      chflags -R nosappnd "${APP_BUNDLE}" 2>/dev/null || true
+      chflags -R nouchg,noschg "${APP_BUNDLE}" 2>/dev/null || true
+      
+      # Ensure all files are writable
+      find "${APP_BUNDLE}" -type f ! -perm -u+w -exec chmod u+w {} \; 2>/dev/null || true
+      find "${APP_BUNDLE}" -type d ! -perm -u+w -exec chmod u+w {} \; 2>/dev/null || true
+      
+      # Try sudo unlock if regular unlock didn't work
       LOCKED_BEFORE_DMG=$( find "${APP_BUNDLE}" -flags +uchg 2>/dev/null | wc -l | tr -d ' ' )
       if [[ "${LOCKED_BEFORE_DMG}" -gt 0 ]]; then
-        echo "  ⚠ WARNING: ${LOCKED_BEFORE_DMG} files still locked before DMG creation!"
-        echo "  This will likely cause installation errors"
+        echo "  ⚠ WARNING: ${LOCKED_BEFORE_DMG} files still locked - attempting sudo unlock..."
+        sudo chflags -R nouchg,noschg "${APP_BUNDLE}" 2>/dev/null || chflags -R nouchg,noschg "${APP_BUNDLE}" 2>/dev/null || true
+        
+        # Final check
+        LOCKED_BEFORE_DMG=$( find "${APP_BUNDLE}" -flags +uchg 2>/dev/null | wc -l | tr -d ' ' )
+        if [[ "${LOCKED_BEFORE_DMG}" -gt 0 ]]; then
+          echo "  ⚠ CRITICAL: ${LOCKED_BEFORE_DMG} files STILL locked before DMG creation!"
+          echo "  This will cause installation errors. Listing first 5:"
+          find "${APP_BUNDLE}" -flags +uchg 2>/dev/null | head -5 | sed 's/^/    /'
+        else
+          echo "  ✓ All locked flags removed with sudo"
+        fi
+      else
+        echo "  ✓ No locked files found before DMG creation"
       fi
     fi
     
@@ -518,12 +539,29 @@ SIGNFIX
     
     DMG_FILE=$( find . -maxdepth 1 -name "*.dmg" -type f | head -n 1 )
     if [[ -n "${DMG_FILE}" ]]; then
-      mv "${DMG_FILE}" "../assets/${APP_NAME}.${VSCODE_ARCH}.${RELEASE_VERSION}.dmg"
+      DEST_DMG="../assets/${APP_NAME}.${VSCODE_ARCH}.${RELEASE_VERSION}.dmg"
+      mv "${DMG_FILE}" "${DEST_DMG}"
       echo "  ✓ DMG created: ${APP_NAME}.${VSCODE_ARCH}.${RELEASE_VERSION}.dmg"
     else
       echo "  ⚠ Warning: DMG file not found after creation"
     fi
     popd
+
+    # Automatically verify DMG permissions (fail build if issues remain)
+    DMG_PATH="assets/${APP_NAME}.${VSCODE_ARCH}.${RELEASE_VERSION}.dmg"
+    if [[ -f "${DMG_PATH}" ]]; then
+      if command -v hdiutil >/dev/null 2>&1 && [[ -x "./check_dmg_permissions.sh" ]]; then
+        echo "  Verifying DMG permissions..."
+        if ./check_dmg_permissions.sh "${DMG_PATH}"; then
+          echo "  ✓ DMG permissions verified"
+        else
+          echo "  ✗ DMG permission verification failed" >&2
+          exit 1
+        fi
+      else
+        echo "  ⚠ Skipping DMG permission verification (missing hdiutil or check_dmg_permissions.sh)"
+      fi
+    fi
   fi
 
   if [[ "${SHOULD_BUILD_SRC}" == "yes" ]]; then

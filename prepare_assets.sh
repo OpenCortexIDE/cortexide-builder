@@ -8,6 +8,42 @@ APP_NAME_LC="$( echo "${APP_NAME}" | awk '{print tolower($0)}' )"
 mkdir -p assets
 
 if [[ "${OS_NAME}" == "osx" ]]; then
+  # CRITICAL FIX: Ensure all files in app bundle have correct permissions BEFORE signing
+  # macOS installer requires files to be writable and not locked
+  # This must happen BEFORE code signing to avoid invalidating the signature
+  echo "+ fixing file permissions for installation compatibility (before signing)"
+  cd "VSCode-darwin-${VSCODE_ARCH}" || { echo "Error: VSCode-darwin-${VSCODE_ARCH} directory not found"; exit 1; }
+  
+  # Find the app bundle
+  APP_BUNDLE=$( find . -maxdepth 1 -name "*.app" -type d | head -n 1 )
+  if [[ -n "${APP_BUNDLE}" ]]; then
+    APP_BUNDLE="${APP_BUNDLE#./}"
+    
+    # Remove any extended attributes that might cause issues (quarantine, locked, etc.)
+    echo "  Removing extended attributes..."
+    xattr -cr "${APP_BUNDLE}" 2>/dev/null || {
+      echo "  Warning: Failed to remove extended attributes (may not be available on this system)"
+    }
+    
+    # Ensure all files are readable and writable (remove read-only flags)
+    echo "  Fixing file permissions..."
+    find "${APP_BUNDLE}" -type f -exec chmod 644 {} \; 2>/dev/null || true
+    find "${APP_BUNDLE}" -type d -exec chmod 755 {} \; 2>/dev/null || true
+    
+    # Make executables actually executable
+    find "${APP_BUNDLE}/Contents/MacOS" -type f -exec chmod 755 {} \; 2>/dev/null || true
+    find "${APP_BUNDLE}/Contents/Resources/app/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
+    
+    # Remove any locked flags (uchg = user immutable flag)
+    chflags -R nouchg "${APP_BUNDLE}" 2>/dev/null || true
+    
+    echo "✓ File permissions fixed"
+  else
+    echo "Warning: App bundle not found, skipping permission fix"
+  fi
+  
+  cd ..
+
   if [[ -n "${CERTIFICATE_OSX_P12_DATA}" ]]; then
     if [[ "${CI_BUILD}" == "no" ]]; then
       RUNNER_TEMP="${TMPDIR}"

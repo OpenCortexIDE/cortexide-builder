@@ -96,6 +96,13 @@ else
   mkdir -p vscode
   cd vscode || { echo "'vscode' dir not found"; exit 1; }
   
+  # Remove any files that might conflict with checkout (e.g., build artifacts in .gitignore)
+  # This handles cases where files exist from previous runs
+  if [[ -f "build/win32/code.iss" ]]; then
+    echo "Removing conflicting file: build/win32/code.iss"
+    rm -f "build/win32/code.iss"
+  fi
+  
   git init -q
   
   # Use GITHUB_TOKEN if available for authentication (GitHub Actions provides this automatically)
@@ -114,10 +121,26 @@ else
     echo "Using explicit commit ${CORTEXIDE_COMMIT}"
     # Fetch just that commit to keep the clone shallow.
     git fetch --depth 1 origin "${CORTEXIDE_COMMIT}"
-    git checkout "${CORTEXIDE_COMMIT}"
+    # Remove any conflicting untracked files before checkout
+    # This handles cases where files in .gitignore exist in the working directory
+    git clean -fd 2>/dev/null || true
+    git checkout -f "${CORTEXIDE_COMMIT}" 2>&1 || {
+      # If checkout fails due to untracked files, remove them and try again
+      echo "Checkout failed, cleaning up conflicting files..."
+      git status --porcelain | grep '^??' | awk '{print $2}' | xargs rm -rf 2>/dev/null || true
+      git checkout -f "${CORTEXIDE_COMMIT}"
+    }
   else
     git fetch --depth 1 origin "${CORTEXIDE_BRANCH}"
-    git checkout FETCH_HEAD
+    # Remove any conflicting untracked files before checkout
+    # This handles cases where files in .gitignore exist in the working directory
+    git clean -fd 2>/dev/null || true
+    git checkout -f FETCH_HEAD 2>&1 || {
+      # If checkout fails due to untracked files, remove them and try again
+      echo "Checkout failed, cleaning up conflicting files..."
+      git status --porcelain | grep '^??' | awk '{print $2}' | xargs rm -rf 2>/dev/null || true
+      git checkout -f FETCH_HEAD
+    }
   fi
   
   MS_TAG=$( jq -r '.version' "package.json" 2>/dev/null || echo "" )

@@ -409,9 +409,82 @@ SIGNFIX
     cd ..
   fi
 
+  # CRITICAL: Final permission check before packaging
+  # Ensure app bundle is ready for installation before creating ZIP/DMG
+  # This is the LAST chance to fix permissions before the app is packaged
+  echo "+ final permission check before packaging"
+  cd "VSCode-darwin-${VSCODE_ARCH}"
+  
+  APP_BUNDLE=$( find . -maxdepth 1 -name "*.app" -type d | head -n 1 )
+  if [[ -n "${APP_BUNDLE}" ]]; then
+    APP_BUNDLE="${APP_BUNDLE#./}"
+    
+    # Final check and fix - be aggressive about removing any locked flags
+    echo "  Performing final permission fix..."
+    
+    # Step 1: Remove ALL locked flags (uchg, schg, uappnd, sappnd)
+    # Try multiple times with different approaches
+    echo "  Removing locked flags..."
+    chflags -R nouchg "${APP_BUNDLE}" 2>/dev/null || true
+    chflags -R noschg "${APP_BUNDLE}" 2>/dev/null || true
+    chflags -R noappnd "${APP_BUNDLE}" 2>/dev/null || true
+    chflags -R nouchg,noschg,noappnd "${APP_BUNDLE}" 2>/dev/null || true
+    
+    # Step 2: Ensure all files are writable (not read-only)
+    echo "  Ensuring files are writable..."
+    find "${APP_BUNDLE}" -type f ! -perm -u+w -exec chmod u+w {} \; 2>/dev/null || true
+    find "${APP_BUNDLE}" -type d ! -perm -u+w -exec chmod u+w {} \; 2>/dev/null || true
+    
+    # Step 3: Set standard permissions
+    echo "  Setting standard permissions..."
+    find "${APP_BUNDLE}" -type f -exec chmod 644 {} \; 2>/dev/null || true
+    find "${APP_BUNDLE}" -type d -exec chmod 755 {} \; 2>/dev/null || true
+    find "${APP_BUNDLE}/Contents/MacOS" -type f -exec chmod 755 {} \; 2>/dev/null || true
+    find "${APP_BUNDLE}/Contents/Resources/app/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
+    
+    # Step 4: Verify no locked files remain
+    echo "  Verifying no locked files remain..."
+    REMAINING_LOCKED=$( find "${APP_BUNDLE}" -flags +uchg 2>/dev/null | wc -l | tr -d ' ' )
+    if [[ "${REMAINING_LOCKED}" -gt 0 ]]; then
+      echo "  ⚠ Warning: ${REMAINING_LOCKED} files still have locked flags after fix"
+      echo "  Listing first 5 locked files:"
+      find "${APP_BUNDLE}" -flags +uchg 2>/dev/null | head -5 | sed 's/^/    /'
+      echo "  Attempting more aggressive fix with sudo..."
+      # Try with sudo if available (but don't fail if not)
+      sudo chflags -R nouchg,noschg "${APP_BUNDLE}" 2>/dev/null || chflags -R nouchg,noschg "${APP_BUNDLE}" 2>/dev/null || true
+      
+      # Final check
+      REMAINING_LOCKED=$( find "${APP_BUNDLE}" -flags +uchg 2>/dev/null | wc -l | tr -d ' ' )
+      if [[ "${REMAINING_LOCKED}" -gt 0 ]]; then
+        echo "  ⚠ ERROR: ${REMAINING_LOCKED} files STILL have locked flags - installation may fail!"
+        echo "  This is a critical issue that needs manual intervention"
+      else
+        echo "  ✓ All locked flags removed after sudo attempt"
+      fi
+    else
+      echo "  ✓ No locked files found"
+    fi
+    
+    # Step 5: Verify permissions are correct
+    READONLY_COUNT=$( find "${APP_BUNDLE}" -type f ! -perm -u+w 2>/dev/null | wc -l | tr -d ' ' )
+    if [[ "${READONLY_COUNT}" -gt 0 ]]; then
+      echo "  ⚠ Warning: ${READONLY_COUNT} files are still read-only"
+      find "${APP_BUNDLE}" -type f ! -perm -u+w -exec chmod u+w {} \; 2>/dev/null || true
+    else
+      echo "  ✓ All files are writable"
+    fi
+    
+    echo "✓ Final permission check complete"
+  else
+    echo "  ⚠ Warning: App bundle not found for final permission check"
+  fi
+  
+  cd ..
+
   if [[ "${SHOULD_BUILD_ZIP}" != "no" ]]; then
     echo "Building and moving ZIP"
     cd "VSCode-darwin-${VSCODE_ARCH}"
+    # Use zip with -X to avoid storing extended attributes that might cause issues
     zip -r -X -y "../assets/${APP_NAME}-darwin-${VSCODE_ARCH}-${RELEASE_VERSION}.zip" ./*.app
     cd ..
   fi
@@ -419,12 +492,37 @@ SIGNFIX
   if [[ "${SHOULD_BUILD_DMG}" != "no" ]]; then
     echo "Building and moving DMG"
     pushd "VSCode-darwin-${VSCODE_ARCH}"
+    # Final permission check right before DMG creation
+    APP_BUNDLE=$( find . -maxdepth 1 -name "*.app" -type d | head -n 1 )
+    if [[ -n "${APP_BUNDLE}" ]]; then
+      APP_BUNDLE="${APP_BUNDLE#./}"
+      echo "  Final unlock before DMG creation..."
+      # Remove any locked flags one more time before DMG creation
+      chflags -R nouchg,noschg,noappnd "${APP_BUNDLE}" 2>/dev/null || true
+      # Ensure writable
+      find "${APP_BUNDLE}" -type f ! -perm -u+w -exec chmod u+w {} \; 2>/dev/null || true
+      
+      # Diagnostic: Check if any locked files remain
+      LOCKED_BEFORE_DMG=$( find "${APP_BUNDLE}" -flags +uchg 2>/dev/null | wc -l | tr -d ' ' )
+      if [[ "${LOCKED_BEFORE_DMG}" -gt 0 ]]; then
+        echo "  ⚠ WARNING: ${LOCKED_BEFORE_DMG} files still locked before DMG creation!"
+        echo "  This will likely cause installation errors"
+      fi
+    fi
+    
     if [[ -n "${CODESIGN_IDENTITY}" ]]; then
       npx create-dmg ./*.app .
     else
       npx create-dmg --no-code-sign ./*.app .
     fi
-    mv ./*.dmg "../assets/${APP_NAME}.${VSCODE_ARCH}.${RELEASE_VERSION}.dmg"
+    
+    DMG_FILE=$( find . -maxdepth 1 -name "*.dmg" -type f | head -n 1 )
+    if [[ -n "${DMG_FILE}" ]]; then
+      mv "${DMG_FILE}" "../assets/${APP_NAME}.${VSCODE_ARCH}.${RELEASE_VERSION}.dmg"
+      echo "  ✓ DMG created: ${APP_NAME}.${VSCODE_ARCH}.${RELEASE_VERSION}.dmg"
+    else
+      echo "  ⚠ Warning: DMG file not found after creation"
+    fi
     popd
   fi
 

@@ -76,7 +76,7 @@ index 8a1ef669136..b3a91a7656f 100644
  
  export type UpdateErrorClassification = {
 diff --git a/src/vs/platform/update/electron-main/updateService.darwin.ts b/src/vs/platform/update/electron-main/updateService.darwin.ts
-index cf1dacfb344..603f2e1e7da 100644
+index cf1dacfb344..fc8343f0a32 100644
 --- a/src/vs/platform/update/electron-main/updateService.darwin.ts
 +++ b/src/vs/platform/update/electron-main/updateService.darwin.ts
 @@ -13,10 +13,12 @@ import { IEnvironmentMainService } from '../../environment/electron-main/environ
@@ -124,8 +124,8 @@ index cf1dacfb344..603f2e1e7da 100644
 +					return Promise.resolve(null);
 +				}
 +
-+				const fetchedVersion = /\d+\.\d+\.\d+\.\d+/.test(update.productVersion) ? update.productVersion.replace(/(\d+\.\d+\.\d+)\.\d+(\-\w+)?/, '$1$2') : update.productVersion.replace(/(\d+\.\d+\.)0+(\d+)(\-\w+)?/, '$1$2$3')
-+				const currentVersion = this.productService.version.replace(/(\d+\.\d+\.)0+(\d+)(\-\w+)?/, '$1$2$3')
++				const fetchedVersion = /\d+\.\d+\.\d+\.\d+/.test(update.productVersion) ? update.productVersion.replace(/(\d+\.\d+\.\d+)\.\d+(\-\w+)?/, '$1$2') : update.productVersion.replace(/(\d+\.\d+\.)0+(\d+)(\-\w+)?/, '$1$2$3');
++				const currentVersion = this.productService.version.replace(/(\d+\.\d+\.)0+(\d+)(\-\w+)?/, '$1$2$3');
 +
 +				if(semver.compareBuild(currentVersion, fetchedVersion) >= 0) {
 +					this.setState(State.Idle(UpdateType.Archive));

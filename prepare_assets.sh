@@ -618,6 +618,82 @@ INNOSETUPFIX
     7z.exe a -tzip "../assets/${APP_NAME}-win32-${VSCODE_ARCH}-${RELEASE_VERSION}.zip" -x!CodeSignSummary*.md -x!tools "../VSCode-win32-${VSCODE_ARCH}/*" -r
   fi
 
+  # CRITICAL FIX: Patch code.iss again before system-setup/user-setup tasks
+  # The inno-updater task may have regenerated or modified code.iss, so we need to patch it again
+  if [[ -f "build/win32/code.iss" ]]; then
+    echo "Patching InnoSetup code.iss again before system-setup/user-setup tasks..." >&2
+    node << 'POWERSHELLESCAPEFIX2' || {
+const fs = require('fs');
+const filePath = 'build/win32/code.iss';
+
+try {
+  let content = fs.readFileSync(filePath, 'utf8');
+  const originalContent = content;
+  let modified = false;
+
+  // Find [Run] section
+  const runSectionMatch = content.match(/\[Run\][\s\S]*?(?=\[|$)/m);
+  if (runSectionMatch) {
+    const runSection = runSectionMatch[0];
+    let newRunSection = runSection;
+    const originalRunSection = runSection;
+
+    // Step 1: Temporarily replace Inno Setup constants with placeholders
+    const constants = [
+      '{code:GetShellFolderPath|0}',
+      '{tmp}', '{app}', '{sys}', '{pf}', '{cf}', 
+      '{userdocs}', '{commondocs}', '{userappdata}', '{commonappdata}', '{localappdata}', 
+      '{sendto}', '{startmenu}', '{startup}', '{desktop}', '{fonts}', '{group}', '{reg}'
+    ];
+    const placeholders = {};
+    constants.forEach((constant, idx) => {
+      const placeholder = `__INNO_CONST_${idx}__`;
+      placeholders[placeholder] = constant;
+      const escaped = constant.replace(/[{}()\[\]\\^$.*+?|]/g, '\\$&');
+      const regex = new RegExp(escaped, 'g');
+      newRunSection = newRunSection.replace(regex, placeholder);
+    });
+
+    // Step 2: Escape all remaining { and } (these belong to PowerShell)
+    newRunSection = newRunSection.replace(/\{/g, '{{').replace(/\}/g, '}}');
+
+    // Step 3: Restore Inno Setup constants from placeholders
+    Object.keys(placeholders).reverse().forEach(placeholder => {
+      const constant = placeholders[placeholder];
+      const regex = new RegExp(placeholder.replace(/[()\[\]\\^$.*+?|]/g, '\\$&'), 'g');
+      newRunSection = newRunSection.replace(regex, constant);
+    });
+
+    if (newRunSection !== originalRunSection) {
+      content = content.replace(originalRunSection, newRunSection);
+      modified = true;
+      console.error('✓ Successfully escaped PowerShell curly braces in [Run] section (before system-setup)');
+    } else {
+      console.error('⚠ No changes made to [Run] section (may already be patched)');
+    }
+  } else {
+    console.error('⚠ [Run] section not found in code.iss');
+  }
+
+  if (modified) {
+    const hasCRLF = originalContent.includes('\r\n');
+    const lineEnding = hasCRLF ? '\r\n' : '\n';
+    if (!content.endsWith(lineEnding)) {
+      content += lineEnding;
+    }
+    fs.writeFileSync(filePath, content, 'utf8');
+    console.error('✓ Saved patched code.iss file (before system-setup)');
+  }
+} catch (error) {
+  console.error(`✗ ERROR: ${error.message}`);
+  console.error(error.stack);
+  process.exit(1);
+}
+POWERSHELLESCAPEFIX2
+      echo "Warning: Failed to patch code.iss before system-setup, continuing anyway..." >&2
+    }
+  fi
+
   if [[ "${SHOULD_BUILD_EXE_SYS}" != "no" ]]; then
     npm run gulp "vscode-win32-${VSCODE_ARCH}-system-setup"
   fi

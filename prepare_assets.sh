@@ -75,21 +75,21 @@ let content = fs.readFileSync(filePath, 'utf8');
 
 let modified = false;
 
-// Ensure sign.js uses graceful-fs to avoid EMFILE errors when walking large app bundles
-if (!content.includes('require("graceful-fs")')) {
-  const gracefulPatched = content.replace(
-    'const fs_1 = __importDefault(require("fs"));',
-    'const fs_1 = __importDefault(require("graceful-fs"));'
-  );
-  if (gracefulPatched !== content) {
-    content = gracefulPatched;
+// Ensure sign.js installs graceful-fs globally to prevent EMFILE bursts
+if (!content.includes('graceful_fs_1')) {
+  const gracefulInsert = `const path_1 = __importDefault(require("path"));
+const graceful_fs_1 = __importDefault(require("graceful-fs"));
+graceful_fs_1.default.gracefulify(require("fs"));`;
+  const originalPathImport = 'const path_1 = __importDefault(require("path"));';
+  if (content.includes(originalPathImport)) {
+    content = content.replace(originalPathImport, gracefulInsert);
     modified = true;
-    console.error('✓ Patched sign.js to use graceful-fs');
+    console.error('✓ Added graceful-fs global patch to sign.js');
   } else {
-    console.error('⚠ Warning: Could not patch sign.js to use graceful-fs (pattern not found)');
+    console.error('⚠ Warning: Could not find path import to insert graceful-fs patch');
   }
 } else {
-  console.error('sign.js already uses graceful-fs');
+  console.error('sign.js already includes graceful-fs patch');
 }
 
 // Check if already fixed

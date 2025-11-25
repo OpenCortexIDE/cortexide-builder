@@ -78,7 +78,26 @@ generateJson() {
 
   if [[ ! -f "assets/${ASSET_NAME}" ]]; then
     echo "Downloading asset '${ASSET_NAME}'"
-    gh release download --repo "${ASSETS_REPOSITORY}" "${RELEASE_VERSION}" --dir "assets" --pattern "${ASSET_NAME}*"
+    if ! gh release download --repo "${ASSETS_REPOSITORY}" "${RELEASE_VERSION}" --dir "assets" --pattern "${ASSET_NAME}*" 2>/dev/null; then
+      echo "Warning: Failed to download asset '${ASSET_NAME}' from release ${RELEASE_VERSION}"
+      echo "This is expected if the asset hasn't been uploaded yet. Checking if it exists locally..."
+      if [[ ! -f "assets/${ASSET_NAME}" ]]; then
+        echo "Error: Asset '${ASSET_NAME}' not found locally and download failed"
+        exit 1
+      fi
+    fi
+  fi
+
+  # Generate checksums if they don't exist (asset was just built locally)
+  if [[ -f "assets/${ASSET_NAME}" ]]; then
+    if [[ ! -f "assets/${ASSET_NAME}.sha1" ]]; then
+      echo "Generating SHA1 checksum for ${ASSET_NAME}"
+      sha1sum "assets/${ASSET_NAME}" > "assets/${ASSET_NAME}.sha1" || shasum -a 1 "assets/${ASSET_NAME}" > "assets/${ASSET_NAME}.sha1"
+    fi
+    if [[ ! -f "assets/${ASSET_NAME}.sha256" ]]; then
+      echo "Generating SHA256 checksum for ${ASSET_NAME}"
+      sha256sum "assets/${ASSET_NAME}" > "assets/${ASSET_NAME}.sha256" || shasum -a 256 "assets/${ASSET_NAME}" > "assets/${ASSET_NAME}.sha256"
+    fi
   fi
 
   sha1hash=$( awk '{ print $1 }' "assets/${ASSET_NAME}.sha1" )

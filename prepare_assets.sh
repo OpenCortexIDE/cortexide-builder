@@ -639,7 +639,11 @@ INNOSETUPFIX
   echo "Checking for code.iss before system-setup/user-setup tasks..." >&2
   if [[ -f "build/win32/code.iss" ]]; then
     echo "Found code.iss, patching PowerShell curly braces..." >&2
-    node << 'POWERSHELLESCAPEFIX2' || {
+    if ! node <<'POWERSHELLESCAPEFIX2'; then
+      echo "ERROR: Failed to patch code.iss before system-setup. This will cause InnoSetup to fail!" >&2
+      echo "Please check the error messages above." >&2
+      exit 1
+    fi
 const fs = require('fs');
 const path = require('path');
 const filePath = 'build/win32/code.iss';
@@ -764,11 +768,6 @@ try {
   process.exit(1);
 }
 POWERSHELLESCAPEFIX2
-    if [[ $? -ne 0 ]]; then
-      echo "ERROR: Failed to patch code.iss before system-setup. This will cause InnoSetup to fail!" >&2
-      echo "Please check the error messages above." >&2
-      exit 1
-    fi
   else
     echo "ERROR: code.iss not found at build/win32/code.iss before system-setup task!" >&2
     echo "This is required for the system-setup build. Cannot continue." >&2

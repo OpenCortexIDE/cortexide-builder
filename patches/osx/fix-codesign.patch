@@ -2,7 +2,59 @@ diff --git a/build/darwin/sign.js b/build/darwin/sign.js
 index dff30fd..df48bee 100644
 --- a/build/darwin/sign.js
 +++ b/build/darwin/sign.js
-@@ -56,5 +56,7 @@ async function main(buildDir) {
+@@ -38,6 +38,20 @@ function getEntitlementsForFile(filePath) {
+     return path_1.default.join(baseDir, 'azure-pipelines', 'darwin', 'app-entitlements.plist');
+ }
++async function retrySignOnKeychainError(fn, maxRetries = 3) {
++    let lastError;
++    for (let attempt = 1; attempt <= maxRetries; attempt++) {
++        try {
++            return await fn();
++        }
++        catch (error) {
++            lastError = error;
++            // Check if this is the specific keychain error we want to retry
++            const errorMessage = error instanceof Error ? error.message : String(error);
++            const isKeychainError = errorMessage.includes('The specified item could not be found in the keychain.');
++            const isTimestampError = errorMessage.includes('The timestamp service is not available');
++            // Timestamp errors should not be retried - they indicate a configuration issue
++            if (isTimestampError) {
++                console.error('Timestamp service error detected. This should not happen with timestamp: false.');
++                throw new Error(`Timestamp service error: ${errorMessage}. Please ensure timestamp: false is set in signing options.`);
++            }
++            if (!isKeychainError || attempt === maxRetries) {
++                throw error;
++            }
++            console.log(`Signing attempt ${attempt} failed with keychain error, retrying...`);
++            console.log(`Error: ${errorMessage}`);
++            const delay = 1000 * Math.pow(2, attempt - 1);
++            console.log(`Waiting ${Math.round(delay)}ms before retry ${attempt}/${maxRetries}...`);
++            await new Promise(resolve => setTimeout(resolve, delay));
++        }
++    }
++    throw lastError;
++}
+ async function main(buildDir) {
+     const tempDir = process.env['AGENT_TEMPDIRECTORY'];
+     const arch = process.env['VSCODE_ARCH'];
+@@ -47,8 +61,11 @@ async function main(buildDir) {
+     const appOpts = {
+         app: path_1.default.join(appRoot, appName),
+         platform: 'darwin',
+         optionsForFile: (filePath) => ({
+             entitlements: getEntitlementsForFile(filePath),
+             hardenedRuntime: true,
++            timestamp: false, // Disable timestamping to avoid timestamp service availability issues in CI
+         }),
+         preAutoEntitlements: false,
+         preEmbedProvisioningProfile: false,
+         keychain: path_1.default.join(tempDir, 'buildagent.keychain'),
+         version: getElectronVersion(),
+         identity,
++        timestamp: false, // Disable timestamping to avoid timestamp service availability issues in CI
+     };
+     // Only overwrite plist entries for x64 and arm64 builds,
+@@ -56,5 +73,7 @@ async function main(buildDir) {
          ignore: (filePath) => {
 +            const ext = path_1.default.extname(filePath);
              return filePath.includes(gpuHelperAppName) ||
@@ -15,15 +67,74 @@ diff --git a/build/darwin/sign.ts b/build/darwin/sign.ts
 index ecf1627..a414032 100644
 --- a/build/darwin/sign.ts
 +++ b/build/darwin/sign.ts
-@@ -60,6 +60,9 @@ async function main(buildDir?: string): Promise<void> {
+@@ -36,6 +36,20 @@ function getEntitlementsForFile(filePath: string): string {
+ 	return path.join(baseDir, 'azure-pipelines', 'darwin', 'app-entitlements.plist');
+ }
+ 
++async function retrySignOnKeychainError<T>(fn: () => Promise<T>, maxRetries: number = 3): Promise<T> {
++	let lastError: Error | undefined;
++
++	for (let attempt = 1; attempt <= maxRetries; attempt++) {
++		try {
++			return await fn();
++		} catch (error) {
++			lastError = error as Error;
++
++			// Check if this is the specific keychain error we want to retry
++			const errorMessage = error instanceof Error ? error.message : String(error);
++			const isKeychainError = errorMessage.includes('The specified item could not be found in the keychain.');
++			const isTimestampError = errorMessage.includes('The timestamp service is not available');
++
++			// Timestamp errors should not be retried - they indicate a configuration issue
++			if (isTimestampError) {
++				console.error('Timestamp service error detected. This should not happen with timestamp: false.');
++				throw new Error(`Timestamp service error: ${errorMessage}. Please ensure timestamp: false is set in signing options.`);
++			}
++
++			if (!isKeychainError || attempt === maxRetries) {
++				throw error;
++			}
++
++			console.log(`Signing attempt ${attempt} failed with keychain error, retrying...`);
++			console.log(`Error: ${errorMessage}`);
++
++			const delay = 1000 * Math.pow(2, attempt - 1);
++			console.log(`Waiting ${Math.round(delay)}ms before retry ${attempt}/${maxRetries}...`);
++			await new Promise(resolve => setTimeout(resolve, delay));
++		}
++	}
++
++	throw lastError;
++}
++
+ async function main(buildDir?: string): Promise<void> {
+ 	const tempDir = process.env['AGENT_TEMPDIRECTORY'];
+ 	const arch = process.env['VSCODE_ARCH'];
+@@ -60,6 +94,9 @@ async function main(buildDir?: string): Promise<void> {
+ 	const appOpts: SignOptions = {
+ 		app: path.join(appRoot, appName),
+ 		platform: 'darwin',
+ 		optionsForFile: (filePath) => ({
+ 			entitlements: getEntitlementsForFile(filePath),
+ 			hardenedRuntime: true,
++			timestamp: false, // Disable timestamping to avoid timestamp service availability issues in CI
+ 		}),
+ 		preAutoEntitlements: false,
+ 		preEmbedProvisioningProfile: false,
+ 		keychain: path.join(tempDir, 'buildagent.keychain'),
+ 		version: getElectronVersion(),
+ 		identity,
++		timestamp: false, // Disable timestamping to avoid timestamp service availability issues in CI
+ 	};
+ 
+ 	// Only overwrite plist entries for x64 and arm64 builds,
+@@ -60,6 +94,9 @@ async function main(buildDir?: string): Promise<void> {
  		ignore: (filePath: string) => {
--			return filePath.includes(gpuHelperAppName) ||
--				filePath.includes(rendererHelperAppName) ||
--				filePath.includes(pluginHelperAppName);
 +			const ext = path.extname(filePath);
-+            return filePath.includes(gpuHelperAppName) ||
-+                filePath.includes(rendererHelperAppName) ||
-+                filePath.includes(pluginHelperAppName) ||
+ 			return filePath.includes(gpuHelperAppName) ||
+ 				filePath.includes(rendererHelperAppName) ||
+-				filePath.includes(pluginHelperAppName);
++				filePath.includes(pluginHelperAppName) ||
 +				ext == '.asar' || ext == '.dat' || ext == '.gif' || ext == '.icns' || ext == '.ico' || ext == '.json' || ext == '.mp3' || ext == '.nib' || ext == '.pak' || ext == '.png' || ext == '.scpt' || ext == '.ttf' || ext == '.wasm' || ext == '.woff' || ext == '.woff2';
  		}
 +

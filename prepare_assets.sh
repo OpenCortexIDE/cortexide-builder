@@ -7,6 +7,25 @@ APP_NAME_LC="$( echo "${APP_NAME}" | awk '{print tolower($0)}' )"
 
 mkdir -p assets
 
+# Generate build identifier: short commit hash + timestamp
+# This helps identify which build includes which fixes
+BUILD_COMMIT_HASH=""
+if [[ -d ".git" ]]; then
+  BUILD_COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "")
+fi
+if [[ -z "${BUILD_COMMIT_HASH}" && -n "${GITHUB_SHA}" ]]; then
+  BUILD_COMMIT_HASH=$(echo "${GITHUB_SHA}" | cut -c1-7)
+fi
+BUILD_TIMESTAMP=$(date +"%Y%m%d-%H%M%S" 2>/dev/null || echo "")
+BUILD_ID=""
+if [[ -n "${BUILD_COMMIT_HASH}" ]]; then
+  BUILD_ID="-${BUILD_COMMIT_HASH}"
+fi
+if [[ -n "${BUILD_TIMESTAMP}" ]]; then
+  BUILD_ID="${BUILD_ID}-${BUILD_TIMESTAMP}"
+fi
+export BUILD_ID
+
 if [[ "${OS_NAME}" == "osx" ]]; then
   if [[ -n "${CERTIFICATE_OSX_P12_DATA}" ]]; then
     if [[ "${CI_BUILD}" == "no" ]]; then
@@ -344,7 +363,9 @@ SIGNFIX
   if [[ "${SHOULD_BUILD_ZIP}" != "no" ]]; then
     echo "Building and moving ZIP"
     cd "VSCode-darwin-${VSCODE_ARCH}"
-    zip -r -X -y "../assets/${APP_NAME}-darwin-${VSCODE_ARCH}-${RELEASE_VERSION}.zip" ./*.app
+    ZIP_NAME="${APP_NAME}-darwin-${VSCODE_ARCH}-${RELEASE_VERSION}${BUILD_ID}.zip"
+    echo "Creating ZIP: ${ZIP_NAME} (includes fixes from commit ${BUILD_COMMIT_HASH:-unknown})"
+    zip -r -X -y "../assets/${ZIP_NAME}" ./*.app
     cd ..
   fi
 
@@ -356,7 +377,9 @@ SIGNFIX
     else
       npx create-dmg --no-code-sign ./*.app .
     fi
-    mv ./*.dmg "../assets/${APP_NAME}.${VSCODE_ARCH}.${RELEASE_VERSION}.dmg"
+    DMG_NAME="${APP_NAME}.${VSCODE_ARCH}.${RELEASE_VERSION}${BUILD_ID}.dmg"
+    echo "Renaming DMG: ${DMG_NAME} (includes fixes from commit ${BUILD_COMMIT_HASH:-unknown})"
+    mv ./*.dmg "../assets/${DMG_NAME}"
     popd
   fi
 

@@ -47,13 +47,22 @@ if [[ "${OS_NAME}" == "osx" ]]; then
     echo "+ increasing file descriptor limit for signing..."
     CURRENT_LIMIT=$(ulimit -n)
     echo "  Current limit: ${CURRENT_LIMIT}"
-    # Set to a high value (10240) to handle large app bundles with many files
-    if ulimit -n 10240 2>/dev/null; then
-      NEW_LIMIT=$(ulimit -n)
-      echo "  ✓ Increased limit to: ${NEW_LIMIT}"
-    else
+    TARGET_LIMITS=(65536 32768 20480 10240)
+    LIMIT_SET="false"
+    for TARGET_LIMIT in "${TARGET_LIMITS[@]}"; do
+      if [[ "${TARGET_LIMIT}" -le "${CURRENT_LIMIT}" ]]; then
+        continue
+      fi
+      if ulimit -n "${TARGET_LIMIT}" 2>/dev/null; then
+        NEW_LIMIT=$(ulimit -n)
+        echo "  ✓ Increased limit to: ${NEW_LIMIT}"
+        LIMIT_SET="true"
+        break
+      fi
+    done
+    if [[ "${LIMIT_SET}" != "true" ]]; then
       echo "  ⚠ Warning: Could not increase file descriptor limit (may need sudo or system config)"
-      echo "  Current limit: $(ulimit -n)"
+      echo "  Continuing with limit: $(ulimit -n)"
     fi
 
     # Fix sign.js to use dynamic import for @electron/osx-sign (ESM-only module)

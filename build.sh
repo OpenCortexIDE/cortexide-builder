@@ -1941,6 +1941,17 @@ EOFPATCH2
     else
       echo "Warning: verify_bundle_files.sh not executable; skipping bundle verification script." >&2
     fi
+    
+    if [[ -x "./test_blank_screen.sh" ]]; then
+      echo "Running comprehensive blank screen prevention test..."
+      if ! ./test_blank_screen.sh "${APP_BUNDLE}"; then
+        echo "ERROR: Blank screen prevention test failed for ${APP_BUNDLE}" >&2
+        echo "  This bundle will likely show a blank screen when launched." >&2
+        exit 1
+      fi
+    else
+      echo "Warning: test_blank_screen.sh not executable; skipping blank screen test." >&2
+    fi
 
     echo ""
     echo "Note: If you encounter a blank screen after installation, run:"
@@ -2368,6 +2379,17 @@ POWERSHELLESCAPEFIX
       else
         echo "Warning: verify_bundle_files.sh not executable; skipping bundle verification script." >&2
       fi
+      
+      if [[ -x "./test_blank_screen.sh" ]]; then
+        echo "Running comprehensive blank screen prevention test for Windows package..."
+        if ! ./test_blank_screen.sh "${WIN_PACKAGE}"; then
+          echo "ERROR: Blank screen prevention test failed for ${WIN_PACKAGE}" >&2
+          echo "  This package will likely show a blank screen when launched." >&2
+          exit 1
+        fi
+      else
+        echo "Warning: test_blank_screen.sh not executable; skipping blank screen test." >&2
+      fi
 
       if [[ "${VSCODE_ARCH}" != "x64" ]]; then
         SHOULD_BUILD_REH="no"
@@ -2580,6 +2602,17 @@ POWERSHELLESCAPEFIX
         fi
       else
         echo "Warning: verify_bundle_files.sh not executable; skipping bundle verification script." >&2
+      fi
+      
+      if [[ -x "./test_blank_screen.sh" ]]; then
+        echo "Running comprehensive blank screen prevention test for Linux package..."
+        if ! ./test_blank_screen.sh "${LINUX_PACKAGE}"; then
+          echo "ERROR: Blank screen prevention test failed for ${LINUX_PACKAGE}" >&2
+          echo "  This package will likely show a blank screen when launched." >&2
+          exit 1
+        fi
+      else
+        echo "Warning: test_blank_screen.sh not executable; skipping blank screen test." >&2
       fi
 
       if ! . ../build_cli.sh; then

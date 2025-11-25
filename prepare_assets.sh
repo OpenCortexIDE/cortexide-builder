@@ -41,6 +41,21 @@ if [[ "${OS_NAME}" == "osx" ]]; then
     echo "+ signing"
     export CODESIGN_IDENTITY AGENT_TEMPDIRECTORY
 
+    # Increase file descriptor limit to prevent EMFILE errors during signing
+    # The app bundle contains many files (especially in node_modules within extensions)
+    # and electron-osx-sign needs to open many files simultaneously
+    echo "+ increasing file descriptor limit for signing..."
+    CURRENT_LIMIT=$(ulimit -n)
+    echo "  Current limit: ${CURRENT_LIMIT}"
+    # Set to a high value (10240) to handle large app bundles with many files
+    if ulimit -n 10240 2>/dev/null; then
+      NEW_LIMIT=$(ulimit -n)
+      echo "  ✓ Increased limit to: ${NEW_LIMIT}"
+    else
+      echo "  ⚠ Warning: Could not increase file descriptor limit (may need sudo or system config)"
+      echo "  Current limit: $(ulimit -n)"
+    fi
+
     # Fix sign.js to use dynamic import for @electron/osx-sign (ESM-only module)
     if [[ -f "vscode/build/darwin/sign.js" ]]; then
       echo "Fixing sign.js to use dynamic import for @electron/osx-sign..." >&2

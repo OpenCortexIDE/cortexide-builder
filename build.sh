@@ -1848,7 +1848,7 @@ EOFPATCH2
       
       for js_file in "${MISSING_FILE_LIST[@]}"; do
         dest_file="${APP_OUT_DIR}/${js_file}"
-        mkdir -p "$(dirname "${dest_file}")"
+          mkdir -p "$(dirname "${dest_file}")"
         COPIED_FILE=0
         for source_root in "out-vscode-min" "out-build" "out"; do
           source_file="${source_root}/${js_file}"
@@ -1898,21 +1898,21 @@ EOFPATCH2
         fi
         
         if rsync -a --include="vs/" --include="vs/**" --exclude="*" "${source_root}/" "${APP_OUT_DIR}/" 2>/dev/null; then
-          FINAL_COUNT=$(find "${APP_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+        FINAL_COUNT=$(find "${APP_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
           echo "  ✓ Copied VS modules from ${source_root} (${FINAL_COUNT} total .js files now in bundle)" >&2
-          COPIED_ANY=1
-        else
+        COPIED_ANY=1
+      else
           # Fallback: use cp -R if rsync isn't available
           if cp -R "${source_root}/vs" "${APP_OUT_DIR}/" 2>/dev/null; then
-            FINAL_COUNT=$(find "${APP_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+          FINAL_COUNT=$(find "${APP_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
             echo "  ✓ Copied VS modules from ${source_root} (${FINAL_COUNT} total .js files now in bundle)" >&2
-            COPIED_ANY=1
-          fi
+          COPIED_ANY=1
         fi
+      fi
       else
         if [[ "${source_root}" == "out-vscode-min" ]]; then
           echo "  ⚠ ${source_root}/vs directory not found, trying other build outputs..." >&2
-        fi
+    fi
       fi
     done
     
@@ -2101,9 +2101,9 @@ APPXFIX
       # Set PATCH_INNO_POWERSHELL=yes to re-enable once a safer implementation exists.
       PATCH_INNO_POWERSHELL="${PATCH_INNO_POWERSHELL:-no}"
       if [[ "${PATCH_INNO_POWERSHELL}" == "yes" ]]; then
-        if [[ -f "vscode/build/win32/code.iss" ]]; then
-          echo "Patching InnoSetup code.iss to escape PowerShell curly braces (after gulp task)..." >&2
-          node << 'POWERSHELLESCAPEFIX' || {
+      if [[ -f "vscode/build/win32/code.iss" ]]; then
+        echo "Patching InnoSetup code.iss to escape PowerShell curly braces (after gulp task)..." >&2
+        node << 'POWERSHELLESCAPEFIX' || {
 const fs = require('fs');
 const filePath = 'vscode/build/win32/code.iss';
 
@@ -2277,7 +2277,7 @@ POWERSHELLESCAPEFIX
         
         for js_file in "${MISSING_FILE_LIST[@]}"; do
           dest_file="${WIN_OUT_DIR}/${js_file}"
-          mkdir -p "$(dirname "${dest_file}")"
+            mkdir -p "$(dirname "${dest_file}")"
           COPIED_FILE=0
           for source_root in "out-vscode-min" "out-build" "out"; do
             source_file="${source_root}/${js_file}"
@@ -2324,22 +2324,22 @@ POWERSHELLESCAPEFIX
           else
             echo "  Also copying from ${source_root} to ensure all files are present..." >&2
           fi
-          
+        
           if rsync -a --include="vs/" --include="vs/**" --exclude="*" "${source_root}/" "${WIN_OUT_DIR}/" 2>/dev/null; then
-            FINAL_COUNT=$(find "${WIN_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+          FINAL_COUNT=$(find "${WIN_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
             echo "  ✓ Copied VS modules from ${source_root} (${FINAL_COUNT} total .js files now in package)" >&2
-            COPIED_ANY=1
-          else
+          COPIED_ANY=1
+        else
             if cp -R "${source_root}/vs" "${WIN_OUT_DIR}/" 2>/dev/null; then
-              FINAL_COUNT=$(find "${WIN_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+            FINAL_COUNT=$(find "${WIN_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
               echo "  ✓ Copied VS modules from ${source_root} (${FINAL_COUNT} total .js files now in package)" >&2
-              COPIED_ANY=1
-            fi
+            COPIED_ANY=1
           fi
+        fi
         else
           if [[ "${source_root}" == "out-vscode-min" ]]; then
             echo "  ⚠ ${source_root}/vs directory not found, trying other build outputs..." >&2
-          fi
+      fi
         fi
       done
       
@@ -2490,7 +2490,7 @@ POWERSHELLESCAPEFIX
         
         for js_file in "${MISSING_FILE_LIST[@]}"; do
           dest_file="${LINUX_OUT_DIR}/${js_file}"
-          mkdir -p "$(dirname "${dest_file}")"
+            mkdir -p "$(dirname "${dest_file}")"
           COPIED_FILE=0
           for source_root in "out-vscode-min" "out-build" "out"; do
             source_file="${source_root}/${js_file}"
@@ -2537,22 +2537,22 @@ POWERSHELLESCAPEFIX
           else
             echo "  Also copying from ${source_root} to ensure all files are present..." >&2
           fi
-          
+        
           if rsync -a --include="vs/" --include="vs/**" --exclude="*" "${source_root}/" "${LINUX_OUT_DIR}/" 2>/dev/null; then
-            FINAL_COUNT=$(find "${LINUX_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+          FINAL_COUNT=$(find "${LINUX_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
             echo "  ✓ Copied VS modules from ${source_root} (${FINAL_COUNT} total .js files now in package)" >&2
-            COPIED_ANY=1
-          else
+          COPIED_ANY=1
+        else
             if cp -R "${source_root}/vs" "${LINUX_OUT_DIR}/" 2>/dev/null; then
-              FINAL_COUNT=$(find "${LINUX_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+            FINAL_COUNT=$(find "${LINUX_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
               echo "  ✓ Copied VS modules from ${source_root} (${FINAL_COUNT} total .js files now in package)" >&2
-              COPIED_ANY=1
-            fi
+            COPIED_ANY=1
           fi
+        fi
         else
           if [[ "${source_root}" == "out-vscode-min" ]]; then
             echo "  ⚠ ${source_root}/vs directory not found, trying other build outputs..." >&2
-          fi
+      fi
         fi
       done
       

@@ -126,6 +126,63 @@ ensure_electron_cached() {
   return 1
 }
 
+# Copy a file from the various build output folders into a destination path.
+# This is used when packaging misses critical runtime files (e.g. main.js).
+copy_from_build_outputs() {
+  local relative_path="$1"
+  local destination="$2"
+  local label="${3:-$1}"
+  local -a search_roots=("out-vscode-min" "out-build" "out")
+
+  if [[ -z "${relative_path}" || -z "${destination}" ]]; then
+    return 1
+  fi
+
+  for source_root in "${search_roots[@]}"; do
+    local source_file="${source_root}/${relative_path}"
+    if [[ -f "${source_file}" ]]; then
+      mkdir -p "$(dirname "${destination}")"
+      if cp "${source_file}" "${destination}" 2>/dev/null; then
+        echo "  ✓ Copied ${label} from ${source_root}/${relative_path}" >&2
+        return 0
+      else
+        echo "  ✗ Failed to copy ${label} from ${source_root}" >&2
+      fi
+    fi
+  done
+
+  return 1
+}
+
+# Ensure a specific file exists inside the packaged app's out/ directory.
+# Arguments: 1=platform label, 2=out directory path, 3=relative file (e.g. main.js)
+ensure_bundle_out_file() {
+  local platform_label="$1"
+  local out_dir="$2"
+  local relative_path="$3"
+  local destination="${out_dir}/${relative_path}"
+
+  if [[ -z "${platform_label}" || -z "${out_dir}" || -z "${relative_path}" ]]; then
+    return 1
+  fi
+
+  if [[ -f "${destination}" ]]; then
+    return 0
+  fi
+
+  echo "ERROR: ${relative_path} is missing from ${platform_label}!" >&2
+  echo "  Expected at: ${destination}" >&2
+  echo "  Attempting to restore ${relative_path} from build outputs..." >&2
+
+  if copy_from_build_outputs "${relative_path}" "${destination}" "${relative_path}"; then
+    echo "  ✓ Restored ${relative_path} in ${platform_label}" >&2
+    return 0
+  fi
+
+  echo "  ✗ Could not restore ${relative_path} from out-vscode-min/out-build/out" >&2
+  return 1
+}
+
 # Validate required environment variables
 if [[ -z "${OS_NAME}" ]]; then
   echo "Warning: OS_NAME is not set. Defaulting based on system..." >&2
@@ -1695,7 +1752,6 @@ EOFPATCH2
     fi
     
     WORKBENCH_HTML="${APP_BUNDLE}/Contents/Resources/app/out/vs/code/electron-browser/workbench/workbench.html"
-    MAIN_JS="${APP_BUNDLE}/Contents/Resources/app/out/main.js"
     PRODUCT_JSON="${APP_BUNDLE}/Contents/Resources/app/product.json"
     
     if [[ ! -f "${WORKBENCH_HTML}" ]]; then
@@ -1720,13 +1776,6 @@ EOFPATCH2
       fi
     fi
     
-    if [[ ! -f "${MAIN_JS}" ]]; then
-      echo "ERROR: main.js is missing from app bundle!" >&2
-      echo "  Expected at: ${MAIN_JS}" >&2
-      echo "  App bundle: ${APP_BUNDLE}" >&2
-      exit 1
-    fi
-    
     # Verify product.json exists and has correct extensionsGallery
     if [[ ! -f "${PRODUCT_JSON}" ]]; then
       echo "ERROR: product.json is missing from app bundle!" >&2
@@ -1746,6 +1795,14 @@ EOFPATCH2
     # CRITICAL: Verify all required JS files are present in app bundle
     echo "Verifying required JS files in app bundle..."
     APP_OUT_DIR="${APP_BUNDLE}/Contents/Resources/app/out"
+
+    if ! ensure_bundle_out_file "macOS app bundle" "${APP_OUT_DIR}" "main.js"; then
+      exit 1
+    fi
+
+    if ! ensure_bundle_out_file "macOS app bundle" "${APP_OUT_DIR}" "cli.js"; then
+      exit 1
+    fi
     
     # First, check if the out directory exists and has files
     if [[ ! -d "${APP_OUT_DIR}" ]]; then
@@ -1874,6 +1931,17 @@ EOFPATCH2
     fi
     
     echo "✓ Critical files verified in app bundle: ${APP_BUNDLE}"
+
+    if [[ -x "./verify_bundle_files.sh" ]]; then
+      echo "Running verify_bundle_files.sh for macOS bundle..."
+      if ! ./verify_bundle_files.sh "${APP_BUNDLE}"; then
+        echo "ERROR: verify_bundle_files.sh detected missing files in ${APP_BUNDLE}" >&2
+        exit 1
+      fi
+    else
+      echo "Warning: verify_bundle_files.sh not executable; skipping bundle verification script." >&2
+    fi
+
     echo ""
     echo "Note: If you encounter a blank screen after installation, run:"
     echo "  ./fix_macos_blank_screen.sh"
@@ -2124,7 +2192,6 @@ POWERSHELLESCAPEFIX
       echo "Verifying critical files in Windows package..."
       WIN_PACKAGE="../VSCode-win32-${VSCODE_ARCH}"
       WORKBENCH_HTML="${WIN_PACKAGE}/resources/app/out/vs/code/electron-browser/workbench/workbench.html"
-      MAIN_JS="${WIN_PACKAGE}/resources/app/out/main.js"
       PRODUCT_JSON="${WIN_PACKAGE}/resources/app/product.json"
       
       if [[ ! -f "${WORKBENCH_HTML}" ]]; then
@@ -2138,12 +2205,6 @@ POWERSHELLESCAPEFIX
           echo "  workbench.html is also missing from out-build!" >&2
           echo "  The minify-vscode task may have failed silently." >&2
         fi
-        exit 1
-      fi
-      
-      if [[ ! -f "${MAIN_JS}" ]]; then
-        echo "ERROR: main.js is missing from Windows package!" >&2
-        echo "  Expected at: ${MAIN_JS}" >&2
         exit 1
       fi
       
@@ -2163,6 +2224,14 @@ POWERSHELLESCAPEFIX
       # CRITICAL: Verify all required JS files are present in Windows package
       echo "Verifying required JS files in Windows package..."
       WIN_OUT_DIR="${WIN_PACKAGE}/resources/app/out"
+
+      if ! ensure_bundle_out_file "Windows package" "${WIN_OUT_DIR}" "main.js"; then
+        exit 1
+      fi
+
+      if ! ensure_bundle_out_file "Windows package" "${WIN_OUT_DIR}" "cli.js"; then
+        exit 1
+      fi
       
       # First, check if the out directory exists and has files
       if [[ ! -d "${WIN_OUT_DIR}" ]]; then
@@ -2290,6 +2359,16 @@ POWERSHELLESCAPEFIX
       
       echo "✓ Critical files verified in Windows package"
 
+      if [[ -x "./verify_bundle_files.sh" ]]; then
+        echo "Running verify_bundle_files.sh for Windows package..."
+        if ! ./verify_bundle_files.sh "${WIN_PACKAGE}"; then
+          echo "ERROR: verify_bundle_files.sh detected missing files in ${WIN_PACKAGE}" >&2
+          exit 1
+        fi
+      else
+        echo "Warning: verify_bundle_files.sh not executable; skipping bundle verification script." >&2
+      fi
+
       if [[ "${VSCODE_ARCH}" != "x64" ]]; then
         SHOULD_BUILD_REH="no"
         SHOULD_BUILD_REH_WEB="no"
@@ -2326,7 +2405,6 @@ POWERSHELLESCAPEFIX
       echo "Verifying critical files in Linux package..."
       LINUX_PACKAGE="../VSCode-linux-${VSCODE_ARCH}"
       WORKBENCH_HTML="${LINUX_PACKAGE}/resources/app/out/vs/code/electron-browser/workbench/workbench.html"
-      MAIN_JS="${LINUX_PACKAGE}/resources/app/out/main.js"
       PRODUCT_JSON="${LINUX_PACKAGE}/resources/app/product.json"
       
       if [[ ! -f "${WORKBENCH_HTML}" ]]; then
@@ -2340,12 +2418,6 @@ POWERSHELLESCAPEFIX
           echo "  workbench.html is also missing from out-build!" >&2
           echo "  The minify-vscode task may have failed silently." >&2
         fi
-        exit 1
-      fi
-      
-      if [[ ! -f "${MAIN_JS}" ]]; then
-        echo "ERROR: main.js is missing from Linux package!" >&2
-        echo "  Expected at: ${MAIN_JS}" >&2
         exit 1
       fi
       
@@ -2369,6 +2441,14 @@ POWERSHELLESCAPEFIX
       # First, check if the out directory exists and has files
       if [[ ! -d "${LINUX_OUT_DIR}" ]]; then
         echo "ERROR: out directory does not exist in Linux package: ${LINUX_OUT_DIR}" >&2
+        exit 1
+      fi
+
+      if ! ensure_bundle_out_file "Linux package" "${LINUX_OUT_DIR}" "main.js"; then
+        exit 1
+      fi
+
+      if ! ensure_bundle_out_file "Linux package" "${LINUX_OUT_DIR}" "cli.js"; then
         exit 1
       fi
       
@@ -2491,6 +2571,16 @@ POWERSHELLESCAPEFIX
       fi
       
       echo "✓ Critical files verified in Linux package"
+
+      if [[ -x "./verify_bundle_files.sh" ]]; then
+        echo "Running verify_bundle_files.sh for Linux package..."
+        if ! ./verify_bundle_files.sh "${LINUX_PACKAGE}"; then
+          echo "ERROR: verify_bundle_files.sh detected missing files in ${LINUX_PACKAGE}" >&2
+          exit 1
+        fi
+      else
+        echo "Warning: verify_bundle_files.sh not executable; skipping bundle verification script." >&2
+      fi
 
       if ! . ../build_cli.sh; then
         echo "Error: CLI build failed for Linux. Check for:" >&2

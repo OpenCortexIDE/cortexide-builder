@@ -73,6 +73,25 @@ const fs = require('fs');
 const filePath = 'vscode/build/darwin/sign.js';
 let content = fs.readFileSync(filePath, 'utf8');
 
+let modified = false;
+
+// Ensure sign.js uses graceful-fs to avoid EMFILE errors when walking large app bundles
+if (!content.includes('require("graceful-fs")')) {
+  const gracefulPatched = content.replace(
+    'const fs_1 = __importDefault(require("fs"));',
+    'const fs_1 = __importDefault(require("graceful-fs"));'
+  );
+  if (gracefulPatched !== content) {
+    content = gracefulPatched;
+    modified = true;
+    console.error('✓ Patched sign.js to use graceful-fs');
+  } else {
+    console.error('⚠ Warning: Could not patch sign.js to use graceful-fs (pattern not found)');
+  }
+} else {
+  console.error('sign.js already uses graceful-fs');
+}
+
 // Check if already fixed
 if (content.includes('import("@electron/osx-sign")') || content.includes('const osx_sign_1 = await import')) {
   console.error('sign.js already uses dynamic import');
@@ -83,6 +102,7 @@ if (content.includes('import("@electron/osx-sign")') || content.includes('const 
     /const osx_sign_1 = require\("@electron\/osx-sign"\);?/g,
     'let osx_sign_1;'
   );
+  modified = true;
 
   // Find the main function and add dynamic import at the start
   // The main function is async, so we can use await
@@ -98,10 +118,14 @@ if (content.includes('import("@electron/osx-sign")') || content.includes('const 
   // The usage (0, osx_sign_1.sign) is fine - it's just calling the function
   // No need to change it since osx_sign_1 will have the sign property
 
-  fs.writeFileSync(filePath, content, 'utf8');
-  console.error('✓ Fixed sign.js to use dynamic import for @electron/osx-sign');
+  modified = true;
 } else {
   console.error('Could not find require("@electron/osx-sign") in sign.js');
+}
+
+if (modified) {
+  fs.writeFileSync(filePath, content, 'utf8');
+  console.error('✓ Fixed sign.js (graceful-fs + dynamic import)');
 }
 SIGNFIX
         echo "Warning: Failed to patch sign.js, trying to continue anyway..." >&2

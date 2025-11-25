@@ -1,4 +1,7 @@
 #define RootLicenseFileName FileExists(RepoDir + '\LICENSE.rtf') ? 'LICENSE.rtf' : 'LICENSE.txt'
+#ifndef InstallVcRedist
+#define InstallVcRedist "no"
+#endif
 #define LocalizedLanguageFile(Language = "") \
     DirExists(RepoDir + "\licenses") && Language != "" \
       ? ('; LicenseFile: "' + RepoDir + '\licenses\LICENSE-' + Language + '.rtf"') \
@@ -107,9 +110,11 @@ Name: "{autodesktop}\{#NameLong}"; Filename: "{app}\{#ExeBasename}.exe"; Tasks: 
 Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#NameLong}"; Filename: "{app}\{#ExeBasename}.exe"; Tasks: quicklaunchicon; AppUserModelID: "{#AppUserId}"
 
 [Run]
+#if "yes" == InstallVcRedist
 ; Automatically install Visual C++ Redistributables if not already installed (silent, no user interaction)
 Filename: "powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command ""$url='https://aka.ms/vs/17/release/vc_redist.x64.exe'; $out='{tmp}\vc_redist.x64.exe'; if (-not (Test-Path $out)) {{ [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing }}; Start-Process -FilePath $out -ArgumentList '/install','/quiet','/norestart' -Wait -NoNewWindow"""; StatusMsg: "Installing Visual C++ Redistributables..."; Check: (not IsVCRedistInstalled()) and IsX64Arch(); Flags: runhidden waituntilterminated
 Filename: "powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command ""$url='https://aka.ms/vs/17/release/vc_redist.arm64.exe'; $out='{tmp}\vc_redist.arm64.exe'; if (-not (Test-Path $out)) {{ [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing }}; Start-Process -FilePath $out -ArgumentList '/install','/quiet','/norestart' -Wait -NoNewWindow"""; StatusMsg: "Installing Visual C++ Redistributables..."; Check: (not IsVCRedistInstalled()) and IsArm64Arch(); Flags: runhidden waituntilterminated
+#endif
 Filename: "{app}\{#ExeBasename}.exe"; Description: "{cm:LaunchProgram,{#NameLong}}"; Tasks: runcode; Flags: nowait postinstall skipifdoesntexist; Check: ShouldRunAfterUpdate() and ExecutableExists()
 Filename: "{app}\{#ExeBasename}.exe"; Description: "{cm:LaunchProgram,{#NameLong}}"; Flags: nowait postinstall skipifdoesntexist; Check: (not WizardSilent()) and ExecutableExists()
 

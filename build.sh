@@ -2239,24 +2239,53 @@ POWERSHELLESCAPEFIX
       
       # CRITICAL FIX: Copy ALL vs/ module files from out-vscode-min to Windows package
       # workbench.desktop.main.js has ES module imports for individual files that must exist
+      # FALLBACK: If out-vscode-min doesn't have all files, also copy from out-build
       echo "Copying all vs/ module files from out-vscode-min to Windows package..." >&2
+      COPIED_ANY=0
+      
+      # First, try to copy from out-vscode-min
       if [[ -d "out-vscode-min/vs" ]]; then
         VS_FILES_COUNT=$(find "out-vscode-min/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
         echo "  Found ${VS_FILES_COUNT} .js files in out-vscode-min/vs" >&2
         
         if rsync -a --include="vs/" --include="vs/**" --exclude="*" "out-vscode-min/" "${WIN_OUT_DIR}/" 2>/dev/null; then
           COPIED_COUNT=$(find "${WIN_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-          echo "  ✓ Copied ${COPIED_COUNT} .js files to Windows package" >&2
+          echo "  ✓ Copied ${COPIED_COUNT} .js files from out-vscode-min to Windows package" >&2
+          COPIED_ANY=1
         else
           if cp -R "out-vscode-min/vs" "${WIN_OUT_DIR}/" 2>/dev/null; then
             COPIED_COUNT=$(find "${WIN_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-            echo "  ✓ Copied ${COPIED_COUNT} .js files to Windows package" >&2
-          else
-            echo "  ✗ WARNING: Failed to copy vs/ directory. Some imports may fail at runtime." >&2
+            echo "  ✓ Copied ${COPIED_COUNT} .js files from out-vscode-min to Windows package" >&2
+            COPIED_ANY=1
           fi
         fi
       else
-        echo "  ✗ WARNING: out-vscode-min/vs directory not found!" >&2
+        echo "  ⚠ out-vscode-min/vs directory not found, trying out-build..." >&2
+      fi
+      
+      # FALLBACK: Also copy from out-build to ensure all files are present
+      if [[ -d "out-build/vs" ]]; then
+        echo "  Also copying from out-build to ensure all files are present..." >&2
+        BUILD_FILES_COUNT=$(find "out-build/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+        echo "  Found ${BUILD_FILES_COUNT} .js files in out-build/vs" >&2
+        
+        if rsync -a --include="vs/" --include="vs/**" --exclude="*" "out-build/" "${WIN_OUT_DIR}/" 2>/dev/null; then
+          FINAL_COUNT=$(find "${WIN_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+          echo "  ✓ Merged files from out-build: ${FINAL_COUNT} total .js files in Windows package" >&2
+          COPIED_ANY=1
+        else
+          if cp -R "out-build/vs" "${WIN_OUT_DIR}/" 2>/dev/null; then
+            FINAL_COUNT=$(find "${WIN_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+            echo "  ✓ Merged files from out-build: ${FINAL_COUNT} total .js files in Windows package" >&2
+            COPIED_ANY=1
+          fi
+        fi
+      fi
+      
+      if [[ ${COPIED_ANY} -eq 0 ]]; then
+        echo "  ✗ ERROR: Failed to copy vs/ directory from both out-vscode-min and out-build!" >&2
+        echo "  This will cause ERR_FILE_NOT_FOUND errors at runtime." >&2
+        exit 1
       fi
       
       # Verify workbench.desktop.main.js exists (most critical file)

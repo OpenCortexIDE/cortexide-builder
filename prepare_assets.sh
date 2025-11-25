@@ -424,40 +424,80 @@ try {
     let newRunSection = runSection;
     const originalRunSection = runSection;
 
-    // Step 1: Temporarily replace Inno Setup constants with placeholders
-    // Process longer constants first to avoid partial matches
+    // CRITICAL FIX: First, normalize any already-escaped braces to prevent double-escaping
+    // Un-escape any existing {{ and }} to { and } so we can start fresh
+    newRunSection = newRunSection.replace(/\{\{/g, '{').replace(/\}\}/g, '}');
+    
+    // Step 1: Build comprehensive list of Inno Setup constants and functions
+    // Extract all Inno Setup function calls (pattern: {identifier:...})
+    const innoFunctionPattern = /\{[a-zA-Z_][a-zA-Z0-9_]*:[^}]*\}/g;
+    const innoFunctions = [];
+    let match;
+    while ((match = innoFunctionPattern.exec(newRunSection)) !== null) {
+      if (!innoFunctions.includes(match[0])) {
+        innoFunctions.push(match[0]);
+      }
+    }
+    
+    // Build complete list of constants (order matters - longer ones first)
     const constants = [
+      // Function calls (longer patterns first)
+      ...innoFunctions,
+      // Standard constants
       '{code:GetShellFolderPath|0}',
-      '{tmp}', '{app}', '{sys}', '{pf}', '{cf}', 
-      '{userdocs}', '{commondocs}', '{userappdata}', '{commonappdata}', '{localappdata}', 
-      '{sendto}', '{startmenu}', '{startup}', '{desktop}', '{fonts}', '{group}', '{reg}'
+      '{code:GetShellFolderPath}',
+      '{uninst:GetUninstallString}',
+      '{uninst:GetUninstallString|0}',
+      // Standard directory constants
+      '{tmp}', '{app}', '{sys}', '{pf}', '{cf}', '{cf32}', '{cf64}',
+      '{userdocs}', '{commondocs}', '{userappdata}', '{commonappdata}', 
+      '{localappdata}', '{sendto}', '{startmenu}', '{startup}', 
+      '{desktop}', '{fonts}', '{group}', '{reg}', '{autopf}', '{autoappdata}',
+      // Special constants
+      '{src}', '{sd}', '{drive}', '{computername}', '{username}', '{winsysdir}',
+      '{syswow64}', '{sysnative}', '{sysuserinfopath}', '{commonfiles}',
+      '{commonfiles32}', '{commonfiles64}', '{#VERSION}', '{#VERSION_MAJOR}',
+      '{#VERSION_MINOR}', '{#VERSION_BUILD}'
     ];
+    
+    // Remove duplicates while preserving order
+    const uniqueConstants = [];
+    const seen = new Set();
+    for (const constant of constants) {
+      if (!seen.has(constant)) {
+        seen.add(constant);
+        uniqueConstants.push(constant);
+      }
+    }
+    
+    // Step 2: Replace Inno Setup constants with placeholders
     const placeholders = {};
-    constants.forEach((constant, idx) => {
+    uniqueConstants.forEach((constant, idx) => {
       const placeholder = `__INNO_CONST_${idx}__`;
       placeholders[placeholder] = constant;
-      // Replace constants - escape special regex characters
+      // Escape special regex characters
       const escaped = constant.replace(/[{}()\[\]\\^$.*+?|]/g, '\\$&');
       const regex = new RegExp(escaped, 'g');
       const beforeReplace = newRunSection;
       newRunSection = newRunSection.replace(regex, placeholder);
       if (beforeReplace !== newRunSection) {
-        console.error(`  Replaced ${constant} with placeholder`);
+        console.error(`  Protected Inno Setup constant: ${constant}`);
       }
     });
 
-    // Step 2: Escape all remaining { and } (these belong to PowerShell)
+    // Step 3: Escape all remaining { and } (these belong to PowerShell)
     const beforeEscape = newRunSection;
     newRunSection = newRunSection.replace(/\{/g, '{{').replace(/\}/g, '}}');
     if (beforeEscape !== newRunSection) {
       console.error('  Escaped PowerShell curly braces');
     }
 
-    // Step 3: Restore Inno Setup constants from placeholders
-    // Process in reverse order to avoid conflicts
+    // Step 4: Restore Inno Setup constants from placeholders
+    // Process in reverse order to avoid conflicts with shorter patterns
     Object.keys(placeholders).reverse().forEach(placeholder => {
       const constant = placeholders[placeholder];
-      const regex = new RegExp(placeholder.replace(/[()\[\]\\^$.*+?|]/g, '\\$&'), 'g');
+      const escapedPlaceholder = placeholder.replace(/[()\[\]\\^$.*+?|]/g, '\\$&');
+      const regex = new RegExp(escapedPlaceholder, 'g');
       newRunSection = newRunSection.replace(regex, constant);
     });
 
@@ -728,85 +768,146 @@ try {
   let newRunSection = runSection;
   const originalRunSection = runSection;
 
-  // Check if already patched (has double curly braces for PowerShell)
-  // But we'll patch it anyway to be safe - the logic handles already-patched files
-  const hasDoubleBraces = runSection.includes('{{ [Net.ServicePointManager]') || runSection.includes('{{ [Net.SecurityProtocolType]');
-  if (hasDoubleBraces) {
-    console.error('✓ [Run] section appears to already have some double curly braces');
-  } else {
-    console.error('⚠ [Run] section needs patching (no double curly braces found)');
+  // CRITICAL FIX: First, normalize any already-escaped braces to prevent double-escaping
+  // Un-escape any existing {{ and }} to { and } so we can start fresh
+  newRunSection = newRunSection.replace(/\{\{/g, '{').replace(/\}\}/g, '}');
+  
+  // Step 1: Build comprehensive list of Inno Setup constants and functions
+  // This includes all standard constants plus function calls like {code:...}
+  // We need to match these patterns:
+  // - Simple constants: {app}, {tmp}, etc.
+  // - Function calls: {code:FunctionName|param}, {uninst:FunctionName|param}
+  // - Constants with parameters: {code:GetShellFolderPath|0}
+  
+  // First, extract all Inno Setup function calls (pattern: {identifier:...})
+  const innoFunctionPattern = /\{[a-zA-Z_][a-zA-Z0-9_]*:[^}]*\}/g;
+  const innoFunctions = [];
+  let match;
+  while ((match = innoFunctionPattern.exec(newRunSection)) !== null) {
+    if (!innoFunctions.includes(match[0])) {
+      innoFunctions.push(match[0]);
+    }
   }
   
-  // CRITICAL: Always patch, even if it looks patched, because the patch logic is idempotent
-  // The issue might be that some braces are escaped but not all
-
-  // Step 1: Temporarily replace Inno Setup constants with placeholders
+  // Build complete list of constants (order matters - longer ones first)
   const constants = [
+    // Function calls (longer patterns first)
+    ...innoFunctions,
+    // Standard constants
     '{code:GetShellFolderPath|0}',
-    '{tmp}', '{app}', '{sys}', '{pf}', '{cf}', 
-    '{userdocs}', '{commondocs}', '{userappdata}', '{commonappdata}', '{localappdata}', 
-    '{sendto}', '{startmenu}', '{startup}', '{desktop}', '{fonts}', '{group}', '{reg}'
+    '{code:GetShellFolderPath}',
+    '{uninst:GetUninstallString}',
+    '{uninst:GetUninstallString|0}',
+    // Standard directory constants
+    '{tmp}', '{app}', '{sys}', '{pf}', '{cf}', '{cf32}', '{cf64}',
+    '{userdocs}', '{commondocs}', '{userappdata}', '{commonappdata}', 
+    '{localappdata}', '{sendto}', '{startmenu}', '{startup}', 
+    '{desktop}', '{fonts}', '{group}', '{reg}', '{autopf}', '{autoappdata}',
+    // Special constants
+    '{src}', '{sd}', '{drive}', '{computername}', '{username}', '{winsysdir}',
+    '{syswow64}', '{sysnative}', '{sysuserinfopath}', '{commonfiles}',
+    '{commonfiles32}', '{commonfiles64}', '{#VERSION}', '{#VERSION_MAJOR}',
+    '{#VERSION_MINOR}', '{#VERSION_BUILD}'
   ];
+  
+  // Remove duplicates while preserving order
+  const uniqueConstants = [];
+  const seen = new Set();
+  for (const constant of constants) {
+    if (!seen.has(constant)) {
+      seen.add(constant);
+      uniqueConstants.push(constant);
+    }
+  }
+  
+  // Step 2: Replace Inno Setup constants with placeholders
   const placeholders = {};
-  constants.forEach((constant, idx) => {
+  uniqueConstants.forEach((constant, idx) => {
     const placeholder = `__INNO_CONST_${idx}__`;
     placeholders[placeholder] = constant;
+    // Escape special regex characters
     const escaped = constant.replace(/[{}()\[\]\\^$.*+?|]/g, '\\$&');
     const regex = new RegExp(escaped, 'g');
     const beforeReplace = newRunSection;
     newRunSection = newRunSection.replace(regex, placeholder);
     if (beforeReplace !== newRunSection) {
-      console.error(`  Replaced ${constant} with placeholder`);
+      console.error(`  Protected Inno Setup constant: ${constant}`);
     }
   });
 
-  // Step 2: Escape all remaining { and } (these belong to PowerShell)
+  // Step 3: Escape all remaining { and } (these belong to PowerShell)
   const beforeEscape = newRunSection;
   newRunSection = newRunSection.replace(/\{/g, '{{').replace(/\}/g, '}}');
   if (beforeEscape !== newRunSection) {
     console.error('  Escaped PowerShell curly braces');
   }
 
-  // Step 3: Restore Inno Setup constants from placeholders
+  // Step 4: Restore Inno Setup constants from placeholders
+  // Process in reverse order to avoid conflicts with shorter patterns
   Object.keys(placeholders).reverse().forEach(placeholder => {
     const constant = placeholders[placeholder];
-    const regex = new RegExp(placeholder.replace(/[()\[\]\\^$.*+?|]/g, '\\$&'), 'g');
+    const escapedPlaceholder = placeholder.replace(/[()\[\]\\^$.*+?|]/g, '\\$&');
+    const regex = new RegExp(escapedPlaceholder, 'g');
     newRunSection = newRunSection.replace(regex, constant);
   });
 
-  // Always save the file, even if no changes detected, to ensure it's in the correct state
+  // Check if we made changes
   if (newRunSection !== originalRunSection) {
     content = content.replace(originalRunSection, newRunSection);
     modified = true;
     console.error('✓ Successfully escaped PowerShell curly braces in [Run] section (before system-setup)');
   } else {
-    console.error('⚠ No changes detected, but verifying file is correct...');
-    // Even if no changes, verify the file is correct and save it to ensure consistency
-    modified = true; // Force save to ensure file is in correct state
+    console.error('⚠ No changes detected - file may already be correctly patched');
   }
   
   // Debug: Show line 114 if it exists (where the error occurs)
   const lines = content.split(/\r?\n/);
   if (lines.length >= 114) {
-    console.error(`  Line 114: ${lines[113].substring(0, 150)}...`);
+    const line114 = lines[113];
+    console.error(`  Line 114: ${line114.substring(0, 150)}...`);
     // Check if line 114 has proper escaping
-    if (lines[113].includes('{{') && lines[113].includes('}}')) {
+    if (line114.includes('{{') && line114.includes('}}')) {
       console.error('  ✓ Line 114 has proper PowerShell escaping');
-    } else if (lines[113].includes('{') || lines[113].includes('}')) {
-      console.error('  ⚠ Line 114 has single braces - may need escaping');
+    } else if (line114.includes('{') || line114.includes('}')) {
+      // Check if it's an Inno Setup constant (which should have single braces)
+      const hasInnoConstant = /\{[a-zA-Z_][a-zA-Z0-9_]*(:[^}]*)?\}/.test(line114);
+      if (hasInnoConstant) {
+        console.error('  ✓ Line 114 has Inno Setup constants (single braces are correct)');
+      } else {
+        console.error('  ⚠ Line 114 has single braces - may need escaping');
+        console.error(`    Full line: ${line114}`);
+      }
     }
   }
   
   // Validate PowerShell lines have proper escaping
-  const powershellLines = lines.filter((line, idx) => 
-    line.includes('powershell.exe') && line.includes('Parameters')
-  );
-  powershellLines.forEach((line, idx) => {
-    if (line.includes('{{ [Net.ServicePointManager]') || line.includes('{{ [Net.SecurityProtocolType]')) {
-      console.error(`  ✓ PowerShell line ${idx + 1} has proper escaping`);
-    } else if (line.includes('[Net.ServicePointManager]') || line.includes('[Net.SecurityProtocolType]')) {
-      console.error(`  ✗ ERROR: PowerShell line ${idx + 1} is missing double braces!`);
-      console.error(`    Line content: ${line.substring(0, 200)}...`);
+  const powershellLines = lines
+    .map((line, idx) => ({ line, idx: idx + 1 }))
+    .filter(({ line }) => 
+      line.includes('powershell.exe') && line.includes('Parameters')
+    );
+  
+  powershellLines.forEach(({ line, idx }) => {
+    // Check for PowerShell array syntax that needs escaping
+    const needsEscaping = /\[Net\.(ServicePointManager|SecurityProtocolType)\]/.test(line);
+    if (needsEscaping) {
+      if (line.includes('{{ [Net.ServicePointManager]') || line.includes('{{ [Net.SecurityProtocolType]')) {
+        console.error(`  ✓ PowerShell line ${idx} has proper escaping`);
+      } else {
+        console.error(`  ✗ ERROR: PowerShell line ${idx} is missing double braces!`);
+        console.error(`    Line content: ${line.substring(0, 200)}...`);
+        // Try to fix it
+        const fixedLine = line.replace(/(\{)\[Net\.(ServicePointManager|SecurityProtocolType)\]/g, '$1$1[Net.$2]');
+        if (fixedLine !== line) {
+          console.error(`    Attempting to fix line ${idx}...`);
+          const lineIndex = idx - 1;
+          lines[lineIndex] = fixedLine;
+          const hasCRLF = originalContent.includes('\r\n');
+          const lineEnding = hasCRLF ? '\r\n' : '\n';
+          content = lines.join(lineEnding);
+          modified = true;
+        }
+      }
     }
   });
 
@@ -818,6 +919,26 @@ try {
     }
     fs.writeFileSync(filePath, content, 'utf8');
     console.error('✓ Saved patched code.iss file (before system-setup)');
+    
+    // Final validation: check for syntax errors
+    const finalLines = content.split(/\r?\n/);
+    const runSectionFinal = content.match(/\[Run\][\s\S]*?(?=\[|$)/m);
+    if (runSectionFinal) {
+      // Check for unmatched braces (excluding Inno Setup constants)
+      const runContent = runSectionFinal[0];
+      const innoBraces = (runContent.match(/\{[a-zA-Z_][a-zA-Z0-9_]*(:[^}]*)?\}/g) || []).length;
+      const allBraces = (runContent.match(/\{/g) || []).length;
+      const allCloseBraces = (runContent.match(/\}/g) || []).length;
+      const escapedBraces = (runContent.match(/\{\{/g) || []).length;
+      const escapedCloseBraces = (runContent.match(/\}\}/g) || []).length;
+      
+      console.error(`  Validation: Found ${innoBraces} Inno Setup constants, ${escapedBraces} escaped PowerShell braces`);
+      if (allBraces !== allCloseBraces) {
+        console.error(`  ⚠ WARNING: Unmatched braces detected (${allBraces} open, ${allCloseBraces} close)`);
+      } else {
+        console.error('  ✓ Braces are balanced');
+      }
+    }
   } else {
     console.error('⚠ No modifications made - file may already be correctly patched');
   }
@@ -834,6 +955,81 @@ POWERSHELLESCAPEFIX2
       echo "Please check the error messages above." >&2
       exit 1
     fi
+    
+    # Final validation: Check that the file is readable and has valid structure
+    echo "Validating patched code.iss file..." >&2
+    if ! node << 'VALIDATEFIX' 2>&1; then
+const fs = require('fs');
+const filePath = 'build/win32/code.iss';
+
+try {
+  if (!fs.existsSync(filePath)) {
+    console.error('✗ ERROR: code.iss not found after patching');
+    process.exit(1);
+  }
+  
+  const content = fs.readFileSync(filePath, 'utf8');
+  const lines = content.split(/\r?\n/);
+  
+  // Check for [Run] section
+  const hasRunSection = /\[Run\]/.test(content);
+  if (!hasRunSection) {
+    console.error('✗ ERROR: [Run] section not found in code.iss');
+    process.exit(1);
+  }
+  
+  // Check line 114 specifically (where the error occurs)
+  if (lines.length >= 114) {
+    const line114 = lines[113];
+    console.error(`Line 114 content: ${line114.substring(0, 200)}`);
+    
+    // Check for obvious syntax errors
+    if (line114.includes('{{{{') || line114.includes('}}}}')) {
+      console.error('✗ ERROR: Double-escaped braces detected (quadruple braces) - this indicates a bug in the patching logic');
+      process.exit(1);
+    }
+    
+    // Check for unescaped PowerShell array syntax
+    if (line114.includes('powershell') && /\[Net\.(ServicePointManager|SecurityProtocolType)\]/.test(line114)) {
+      if (!line114.includes('{{ [Net.')) {
+        console.error('✗ ERROR: PowerShell array syntax not properly escaped on line 114');
+        console.error(`  Line: ${line114}`);
+        process.exit(1);
+      }
+    }
+  }
+  
+  // Check for balanced braces in [Run] section
+  const runSectionMatch = content.match(/\[Run\][\s\S]*?(?=\[|$)/m);
+  if (runSectionMatch) {
+    const runSection = runSectionMatch[0];
+    // Count Inno Setup constants (single braces)
+    const innoConstants = (runSection.match(/\{[a-zA-Z_][a-zA-Z0-9_]*(:[^}]*)?\}/g) || []).length;
+    // Count escaped PowerShell braces (double braces)
+    const escapedBraces = (runSection.match(/\{\{/g) || []).length;
+    const escapedCloseBraces = (runSection.match(/\}\}/g) || []).length;
+    
+    console.error(`Validation: Found ${innoConstants} Inno Setup constants, ${escapedBraces} escaped PowerShell braces`);
+    
+    if (escapedBraces !== escapedCloseBraces) {
+      console.error(`✗ ERROR: Unmatched escaped braces in [Run] section (${escapedBraces} open, ${escapedCloseBraces} close)`);
+      process.exit(1);
+    }
+  }
+  
+  console.error('✓ code.iss validation passed');
+  process.exit(0);
+} catch (error) {
+  console.error(`✗ ERROR during validation: ${error.message}`);
+  console.error(error.stack);
+  process.exit(1);
+}
+VALIDATEFIX
+      echo "ERROR: code.iss validation failed! The file may have syntax errors." >&2
+      echo "This will likely cause InnoSetup to fail with exit code 2." >&2
+      exit 1
+    fi
+    echo "✓ code.iss validation passed" >&2
 else
     echo "ERROR: code.iss not found at build/win32/code.iss before system-setup task!" >&2
     echo "This is required for the system-setup build. Cannot continue." >&2

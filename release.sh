@@ -18,6 +18,14 @@ REPOSITORY_NAME="${ASSETS_REPOSITORY/*\//}"
 
 npm install -g github-release-cli
 
+. ./utils.sh
+
+# Read BUILD_ID from assets/.build_id if it exists (added by prepare_assets.sh)
+BUILD_ID=""
+if [[ -f "assets/.build_id" ]]; then
+  BUILD_ID=$(cat "assets/.build_id" 2>/dev/null || echo "")
+fi
+
 if [[ $( gh release view "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" 2>&1 ) =~ "release not found" ]]; then
   echo "Creating release '${RELEASE_VERSION}'"
 
@@ -31,15 +39,7 @@ if [[ $( gh release view "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" 2>&1
   else
     gh release create "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --title "${CORTEX_VERSION}" --generate-notes --target "${TARGET_BRANCH}"
 
-    . ./utils.sh
-
     RELEASE_NOTES=$( gh release view "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --json "body" --jq ".body" )
-
-    # Read BUILD_ID from assets/.build_id if it exists (added by prepare_assets.sh)
-    BUILD_ID=""
-    if [[ -f "assets/.build_id" ]]; then
-      BUILD_ID=$(cat "assets/.build_id" 2>/dev/null || echo "")
-    fi
 
     replace "s|MS_TAG_SHORT|$( echo "${MS_TAG//./_}" | cut -d'_' -f 1,2 )|" release_notes.txt
     replace "s|MS_TAG|${MS_TAG}|" release_notes.txt
@@ -49,6 +49,22 @@ if [[ $( gh release view "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" 2>&1
     replace "s|RELEASE_NOTES|${RELEASE_NOTES//$'\n'/\\n}|" release_notes.txt
 
     gh release edit "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --notes-file release_notes.txt
+  fi
+else
+  echo "Release '${RELEASE_VERSION}' already exists, updating release notes..."
+  
+  if [[ "${VSCODE_QUALITY}" != "insider" ]]; then
+    RELEASE_NOTES=$( gh release view "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --json "body" --jq ".body" )
+
+    replace "s|MS_TAG_SHORT|$( echo "${MS_TAG//./_}" | cut -d'_' -f 1,2 )|" release_notes.txt
+    replace "s|MS_TAG|${MS_TAG}|" release_notes.txt
+    replace "s|RELEASE_VERSION|${RELEASE_VERSION}|g" release_notes.txt
+    replace "s|BUILD_ID|${BUILD_ID}|g" release_notes.txt
+    replace "s|CORTEX_VERSION|${CORTEX_VERSION}|g" release_notes.txt
+    replace "s|RELEASE_NOTES|${RELEASE_NOTES//$'\n'/\\n}|" release_notes.txt
+
+    gh release edit "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --notes-file release_notes.txt
+    echo "✓ Updated release notes for existing release"
   fi
 fi
 

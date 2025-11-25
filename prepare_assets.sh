@@ -768,7 +768,8 @@ try {
   process.exit(1);
 }
 POWERSHELLESCAPEFIX2
-  else
+  fi
+else
     echo "ERROR: code.iss not found at build/win32/code.iss before system-setup task!" >&2
     echo "This is required for the system-setup build. Cannot continue." >&2
     exit 1

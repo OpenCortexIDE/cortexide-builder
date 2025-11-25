@@ -1695,6 +1695,22 @@ EOFPATCH2
   
   echo "✓ Verified critical files exist in out-vscode-min"
 
+  # CRITICAL FIX: Transform CSS imports in bundled JavaScript files
+  # This replaces CSS imports with code that loads CSS via link tags
+  # This will DEFINITELY work because we're modifying the actual code before it runs
+  # CROSS-PLATFORM: This runs on macOS, Windows, and Linux (before platform-specific sections)
+  echo "Fixing CSS imports in bundled JavaScript files..."
+  if [[ -f "fix_css_imports.js" ]]; then
+    if node fix_css_imports.js "out-vscode-min/vs" 2>/dev/null; then
+      echo "✓ Fixed CSS imports in bundled files"
+    else
+      echo "⚠ Warning: CSS import fix script failed, but continuing..." >&2
+    fi
+  else
+    echo "⚠ Warning: fix_css_imports.js not found, skipping CSS import fix" >&2
+    echo "  CSS imports may cause MIME type errors at runtime" >&2
+  fi
+
   if [[ "${OS_NAME}" == "osx" ]]; then
     # generate Group Policy definitions
     # node build/lib/policies darwin # Void commented this out

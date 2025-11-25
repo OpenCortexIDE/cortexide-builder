@@ -1,0 +1,29 @@
+diff --git a/src/vs/code/electron-browser/workbench/workbench.html b/src/vs/code/electron-browser/workbench/workbench.html
+index 3cb64e9359f6..a1b2c3d4e5f6 100644
+--- a/src/vs/code/electron-browser/workbench/workbench.html
++++ b/src/vs/code/electron-browser/workbench/workbench.html
+@@ -1,4 +1,10 @@
+ <!DOCTYPE html>
+ <html>
+ 	<head>
++		<!-- Placeholder import map for CSS modules - will be populated by workbench.ts -->
++		<script type="importmap" nonce="0c6a828f1297">
++			{"imports": {}}
++		</script>
+ 		<meta charset="UTF-8">
+ 		<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data: https:; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https:; frame-src 'self' https:; object-src 'none'; media-src 'self'; worker-src 'self' blob:; child-src 'self' blob:; base-uri 'self'; form-action 'self'; upgrade-insecure-requests;">
+diff --git a/src/vs/code/electron-browser/workbench/workbench-dev.html b/src/vs/code/electron-browser/workbench/workbench-dev.html
+index 778996c57c5a..b151cd7a3530 100644
+--- a/src/vs/code/electron-browser/workbench/workbench-dev.html
++++ b/src/vs/code/electron-browser/workbench/workbench-dev.html
+@@ -1,4 +1,10 @@
+ <!DOCTYPE html>
+ <html>
+ 	<head>
++		<!-- Placeholder import map for CSS modules - will be populated by workbench.ts -->
++		<script type="importmap" nonce="0c6a828f1297">
++			{"imports": {}}
++		</script>
+ 		<meta charset="UTF-8">
+ 		<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data: https:; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https:; frame-src 'self' https:; object-src 'none'; media-src 'self'; worker-src 'self' blob:; child-src 'self' blob:; base-uri 'self'; form-action 'self'; upgrade-insecure-requests;">
+

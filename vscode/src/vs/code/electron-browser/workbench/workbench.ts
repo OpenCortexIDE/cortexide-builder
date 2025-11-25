@@ -597,7 +597,11 @@
 				const cssUrl = new URL(cssModule, baseUrl).href;
 				const jsSrc = `globalThis._VSCODE_CSS_LOAD('${cssUrl}');\n`;
 				const blob = new Blob([jsSrc], { type: "application/javascript" });
-				importMap.imports[cssModule] = URL.createObjectURL(blob);
+				const blobUrl = URL.createObjectURL(blob);
+				
+				// Map both relative path and absolute URL to handle different import styles
+				importMap.imports[cssModule] = blobUrl;
+				importMap.imports[cssUrl] = blobUrl;
 			}
 
 			performance.mark("code/didAddCssLoader");
@@ -805,7 +809,14 @@
 			// @ts-expect-error
 			importMapScript.textContent =
 				ttp?.createScript(importMapSrc) ?? importMapSrc;
-			window.document.head.appendChild(importMapScript);
+			// Insert at the beginning of head to ensure it's processed before any module imports
+			// Import maps must be present before modules that use them are loaded
+			const firstChild = window.document.head.firstChild;
+			if (firstChild) {
+				window.document.head.insertBefore(importMapScript, firstChild);
+			} else {
+				window.document.head.appendChild(importMapScript);
+			}
 		}
 	}
 

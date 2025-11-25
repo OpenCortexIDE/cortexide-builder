@@ -54,17 +54,22 @@ else
   echo "Release '${RELEASE_VERSION}' already exists, updating release notes..."
   
   if [[ "${VSCODE_QUALITY}" != "insider" ]]; then
-    RELEASE_NOTES=$( gh release view "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --json "body" --jq ".body" )
+    # Get fresh auto-generated notes from GitHub (for the RELEASE_NOTES placeholder)
+    RELEASE_NOTES=$( gh release view "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --json "body" --jq ".body" 2>/dev/null || echo "" )
 
+    # Process the template fresh (don't use old release notes content)
     replace "s|MS_TAG_SHORT|$( echo "${MS_TAG//./_}" | cut -d'_' -f 1,2 )|" release_notes.txt
     replace "s|MS_TAG|${MS_TAG}|" release_notes.txt
     replace "s|RELEASE_VERSION|${RELEASE_VERSION}|g" release_notes.txt
     replace "s|BUILD_ID|${BUILD_ID}|g" release_notes.txt
     replace "s|CORTEX_VERSION|${CORTEX_VERSION}|g" release_notes.txt
-    replace "s|RELEASE_NOTES|${RELEASE_NOTES//$'\n'/\\n}|" release_notes.txt
+    # Only replace RELEASE_NOTES if it exists in the template, otherwise leave it
+    if grep -q "RELEASE_NOTES" release_notes.txt; then
+      replace "s|RELEASE_NOTES|${RELEASE_NOTES//$'\n'/\\n}|" release_notes.txt
+    fi
 
     gh release edit "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --notes-file release_notes.txt
-    echo "✓ Updated release notes for existing release"
+    echo "✓ Updated release notes for existing release with BUILD_ID: ${BUILD_ID}"
   fi
 fi
 

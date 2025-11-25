@@ -1,6 +1,6 @@
 # CortexIDE CORTEX_VERSION
 
-See https://cortexide.com for CortexIDE's official download page.
+See https://opencortexide.com for CortexIDE's official download page.
 
 For maintainers: [`cortexide-builder/`](https://github.com/cortexide/cortexide-builder#readme)
 

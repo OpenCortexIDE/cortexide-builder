@@ -690,17 +690,17 @@ setpath_json() {
 # product.json
 cp product.json{,.bak}
 
-setpath "product" "checksumFailMoreInfoUrl" "https://cortexide.com"
-setpath "product" "documentationUrl" "https://cortexide.com"
-setpath "product" "introductoryVideosUrl" "https://cortexide.com"
-setpath "product" "keyboardShortcutsUrlLinux" "https://cortexide.com/docs"
-setpath "product" "keyboardShortcutsUrlMac" "https://cortexide.com/docs"
-setpath "product" "keyboardShortcutsUrlWin" "https://cortexide.com/docs"
+setpath "product" "checksumFailMoreInfoUrl" "https://opencortexide.com"
+setpath "product" "documentationUrl" "https://opencortexide.com"
+setpath "product" "introductoryVideosUrl" "https://opencortexide.com"
+setpath "product" "keyboardShortcutsUrlLinux" "https://opencortexide.com/docs"
+setpath "product" "keyboardShortcutsUrlMac" "https://opencortexide.com/docs"
+setpath "product" "keyboardShortcutsUrlWin" "https://opencortexide.com/docs"
 setpath "product" "licenseUrl" "https://github.com/cortexide/cortexide/blob/main/LICENSE.txt"
 setpath_json "product" "linkProtectionTrustedDomains" '["https://open-vsx.org", "https://opencortexide.com", "https://github.com/opencortexide"]'
 setpath "product" "reportIssueUrl" "https://github.com/cortexide/cortexide/issues/new"
 setpath "product" "requestFeatureUrl" "https://github.com/cortexide/cortexide/issues/new"
-setpath "product" "tipsAndTricksUrl" "https://cortexide.com/docs"
+setpath "product" "tipsAndTricksUrl" "https://opencortexide.com/docs"
 setpath "product" "twitterUrl" "https://x.com/cortexide"
 
 if [[ "${DISABLE_UPDATE}" != "yes" ]]; then
@@ -856,28 +856,28 @@ if [[ "${OS_NAME}" == "linux" ]]; then
   # fix the packages metadata
   # code.appdata.xml
   sed -i 's|Visual Studio Code|CortexIDE|g' resources/linux/code.appdata.xml
-  sed -i 's|https://code.visualstudio.com/docs/setup/linux|https://cortexide.com|' resources/linux/code.appdata.xml
-  sed -i 's|https://code.visualstudio.com/home/home-screenshot-linux-lg.png|https://cortexide.com/img/cortexide.png|' resources/linux/code.appdata.xml
-  sed -i 's|https://code.visualstudio.com|https://cortexide.com|' resources/linux/code.appdata.xml
+  sed -i 's|https://code.visualstudio.com/docs/setup/linux|https://opencortexide.com|' resources/linux/code.appdata.xml
+  sed -i 's|https://code.visualstudio.com/home/home-screenshot-linux-lg.png|https://opencortexide.com/img/cortexide.png|' resources/linux/code.appdata.xml
+  sed -i 's|https://code.visualstudio.com|https://opencortexide.com|' resources/linux/code.appdata.xml
 
   # control.template
-  sed -i 's|Microsoft Corporation <vscode-linux@microsoft.com>|CortexIDE Team <team@cortexide.com>|'  resources/linux/debian/control.template
+  sed -i 's|Microsoft Corporation <vscode-linux@microsoft.com>|CortexIDE Team <team@opencortexide.com>|'  resources/linux/debian/control.template
   sed -i 's|Visual Studio Code|CortexIDE|g' resources/linux/debian/control.template
-  sed -i 's|https://code.visualstudio.com/docs/setup/linux|https://cortexide.com|' resources/linux/debian/control.template
-  sed -i 's|https://code.visualstudio.com|https://cortexide.com|' resources/linux/debian/control.template
+  sed -i 's|https://code.visualstudio.com/docs/setup/linux|https://opencortexide.com|' resources/linux/debian/control.template
+  sed -i 's|https://code.visualstudio.com|https://opencortexide.com|' resources/linux/debian/control.template
 
   # code.spec.template
   sed -i 's|Microsoft Corporation|CortexIDE Team|' resources/linux/rpm/code.spec.template
-  sed -i 's|Visual Studio Code Team <vscode-linux@microsoft.com>|CortexIDE Team <team@cortexide.com>|' resources/linux/rpm/code.spec.template
+  sed -i 's|Visual Studio Code Team <vscode-linux@microsoft.com>|CortexIDE Team <team@opencortexide.com>|' resources/linux/rpm/code.spec.template
   sed -i 's|Visual Studio Code|CortexIDE|' resources/linux/rpm/code.spec.template
-  sed -i 's|https://code.visualstudio.com/docs/setup/linux|https://cortexide.com|' resources/linux/rpm/code.spec.template
-  sed -i 's|https://code.visualstudio.com|https://cortexide.com|' resources/linux/rpm/code.spec.template
+  sed -i 's|https://code.visualstudio.com/docs/setup/linux|https://opencortexide.com|' resources/linux/rpm/code.spec.template
+  sed -i 's|https://code.visualstudio.com|https://opencortexide.com|' resources/linux/rpm/code.spec.template
 
   # snapcraft.yaml
   sed -i 's|Visual Studio Code|CortexIDE|'  resources/linux/rpm/code.spec.template
 elif [[ "${OS_NAME}" == "windows" ]]; then
   # code.iss
-  sed -i 's|https://code.visualstudio.com|https://cortexide.com|' build/win32/code.iss
+  sed -i 's|https://code.visualstudio.com|https://opencortexide.com|' build/win32/code.iss
   sed -i 's|Microsoft Corporation|CortexIDE|' build/win32/code.iss
 fi
 

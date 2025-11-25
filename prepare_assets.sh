@@ -635,59 +635,95 @@ INNOSETUPFIX
 
   # CRITICAL FIX: Patch code.iss again before system-setup/user-setup tasks
   # The inno-updater task may have regenerated or modified code.iss, so we need to patch it again
+  # This is CRITICAL - without this patch, system-setup will fail with InnoSetup parsing errors
+  echo "Checking for code.iss before system-setup/user-setup tasks..." >&2
   if [[ -f "build/win32/code.iss" ]]; then
-    echo "Patching InnoSetup code.iss again before system-setup/user-setup tasks..." >&2
+    echo "Found code.iss, patching PowerShell curly braces..." >&2
     node << 'POWERSHELLESCAPEFIX2' || {
 const fs = require('fs');
+const path = require('path');
 const filePath = 'build/win32/code.iss';
 
 try {
+  if (!fs.existsSync(filePath)) {
+    console.error(`✗ ERROR: code.iss not found at ${filePath}`);
+    process.exit(1);
+  }
+
   let content = fs.readFileSync(filePath, 'utf8');
   const originalContent = content;
   let modified = false;
 
   // Find [Run] section
   const runSectionMatch = content.match(/\[Run\][\s\S]*?(?=\[|$)/m);
-  if (runSectionMatch) {
-    const runSection = runSectionMatch[0];
-    let newRunSection = runSection;
-    const originalRunSection = runSection;
+  if (!runSectionMatch) {
+    console.error('✗ ERROR: [Run] section not found in code.iss');
+    process.exit(1);
+  }
 
-    // Step 1: Temporarily replace Inno Setup constants with placeholders
-    const constants = [
-      '{code:GetShellFolderPath|0}',
-      '{tmp}', '{app}', '{sys}', '{pf}', '{cf}', 
-      '{userdocs}', '{commondocs}', '{userappdata}', '{commonappdata}', '{localappdata}', 
-      '{sendto}', '{startmenu}', '{startup}', '{desktop}', '{fonts}', '{group}', '{reg}'
-    ];
-    const placeholders = {};
-    constants.forEach((constant, idx) => {
-      const placeholder = `__INNO_CONST_${idx}__`;
-      placeholders[placeholder] = constant;
-      const escaped = constant.replace(/[{}()\[\]\\^$.*+?|]/g, '\\$&');
-      const regex = new RegExp(escaped, 'g');
-      newRunSection = newRunSection.replace(regex, placeholder);
-    });
+  const runSection = runSectionMatch[0];
+  let newRunSection = runSection;
+  const originalRunSection = runSection;
 
-    // Step 2: Escape all remaining { and } (these belong to PowerShell)
-    newRunSection = newRunSection.replace(/\{/g, '{{').replace(/\}/g, '}}');
+  // Check if already patched (has double curly braces for PowerShell)
+  if (runSection.includes('{{ [Net.ServicePointManager]') || runSection.includes('{{ [Net.SecurityProtocolType]')) {
+    console.error('✓ [Run] section already appears to be patched (has double curly braces)');
+  } else {
+    console.error('⚠ [Run] section needs patching (no double curly braces found)');
+  }
 
-    // Step 3: Restore Inno Setup constants from placeholders
-    Object.keys(placeholders).reverse().forEach(placeholder => {
-      const constant = placeholders[placeholder];
-      const regex = new RegExp(placeholder.replace(/[()\[\]\\^$.*+?|]/g, '\\$&'), 'g');
-      newRunSection = newRunSection.replace(regex, constant);
-    });
+  // Step 1: Temporarily replace Inno Setup constants with placeholders
+  const constants = [
+    '{code:GetShellFolderPath|0}',
+    '{tmp}', '{app}', '{sys}', '{pf}', '{cf}', 
+    '{userdocs}', '{commondocs}', '{userappdata}', '{commonappdata}', '{localappdata}', 
+    '{sendto}', '{startmenu}', '{startup}', '{desktop}', '{fonts}', '{group}', '{reg}'
+  ];
+  const placeholders = {};
+  constants.forEach((constant, idx) => {
+    const placeholder = `__INNO_CONST_${idx}__`;
+    placeholders[placeholder] = constant;
+    const escaped = constant.replace(/[{}()\[\]\\^$.*+?|]/g, '\\$&');
+    const regex = new RegExp(escaped, 'g');
+    const beforeReplace = newRunSection;
+    newRunSection = newRunSection.replace(regex, placeholder);
+    if (beforeReplace !== newRunSection) {
+      console.error(`  Replaced ${constant} with placeholder`);
+    }
+  });
 
-    if (newRunSection !== originalRunSection) {
-      content = content.replace(originalRunSection, newRunSection);
-      modified = true;
-      console.error('✓ Successfully escaped PowerShell curly braces in [Run] section (before system-setup)');
-    } else {
-      console.error('⚠ No changes made to [Run] section (may already be patched)');
+  // Step 2: Escape all remaining { and } (these belong to PowerShell)
+  const beforeEscape = newRunSection;
+  newRunSection = newRunSection.replace(/\{/g, '{{').replace(/\}/g, '}}');
+  if (beforeEscape !== newRunSection) {
+    console.error('  Escaped PowerShell curly braces');
+  }
+
+  // Step 3: Restore Inno Setup constants from placeholders
+  Object.keys(placeholders).reverse().forEach(placeholder => {
+    const constant = placeholders[placeholder];
+    const regex = new RegExp(placeholder.replace(/[()\[\]\\^$.*+?|]/g, '\\$&'), 'g');
+    newRunSection = newRunSection.replace(regex, constant);
+  });
+
+  if (newRunSection !== originalRunSection) {
+    content = content.replace(originalRunSection, newRunSection);
+    modified = true;
+    console.error('✓ Successfully escaped PowerShell curly braces in [Run] section (before system-setup)');
+    
+    // Debug: Show line 114 if it exists (where the error occurs)
+    const lines = content.split(/\r?\n/);
+    if (lines.length >= 114) {
+      console.error(`  Line 114: ${lines[113].substring(0, 150)}...`);
+      // Check if line 114 has proper escaping
+      if (lines[113].includes('{{') && lines[113].includes('}}')) {
+        console.error('  ✓ Line 114 has proper PowerShell escaping');
+      } else {
+        console.error('  ⚠ Line 114 may still need escaping');
+      }
     }
   } else {
-    console.error('⚠ [Run] section not found in code.iss');
+    console.error('⚠ No changes made to [Run] section (may already be patched)');
   }
 
   if (modified) {
@@ -698,6 +734,8 @@ try {
     }
     fs.writeFileSync(filePath, content, 'utf8');
     console.error('✓ Saved patched code.iss file (before system-setup)');
+  } else {
+    console.error('⚠ No modifications made - file may already be correctly patched');
   }
 } catch (error) {
   console.error(`✗ ERROR: ${error.message}`);
@@ -705,8 +743,15 @@ try {
   process.exit(1);
 }
 POWERSHELLESCAPEFIX2
-      echo "Warning: Failed to patch code.iss before system-setup, continuing anyway..." >&2
-    }
+    if [[ $? -ne 0 ]]; then
+      echo "ERROR: Failed to patch code.iss before system-setup. This will cause InnoSetup to fail!" >&2
+      echo "Please check the error messages above." >&2
+      exit 1
+    fi
+  else
+    echo "ERROR: code.iss not found at build/win32/code.iss before system-setup task!" >&2
+    echo "This is required for the system-setup build. Cannot continue." >&2
+    exit 1
   fi
 
   if [[ "${SHOULD_BUILD_EXE_SYS}" != "no" ]]; then

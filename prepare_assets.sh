@@ -851,8 +851,80 @@ try {
     newRunSection = newRunSection.replace(regex, constant);
   });
 
+  // CRITICAL FIX: After restoring constants, check for PowerShell code blocks that still need escaping
+  // The issue is that PowerShell code in Parameters fields has { } that need to be {{ }}
+  // but they might not have been caught if they're in complex quoted strings with Inno Setup constants
+  // We need to find PowerShell commands and ensure all braces in the PowerShell code are escaped
+  
+  // Find all PowerShell Parameters fields - handle escaped quotes ("" inside the string)
+  // Pattern: Parameters: "..." where ... can contain "" for escaped quotes
+  // The field ends with """; (triple quotes - escaped quote followed by semicolon)
+  const powershellParamsPattern = /(Parameters:\s*")((?:[^"]|"")*?)("";)/g;
+  let paramMatch;
+  let powershellFixed = false;
+  const fixedParams = [];
+  
+  while ((paramMatch = powershellParamsPattern.exec(newRunSection)) !== null) {
+    const fullMatch = paramMatch[0];
+    const prefix = paramMatch[1]; // "Parameters: \""
+    let paramContent = paramMatch[2]; // The actual PowerShell command (may contain "")
+    const suffix = paramMatch[3]; // "\";"
+    
+    // Check if this PowerShell command contains [Net.ServicePointManager] or [Net.SecurityProtocolType]
+    if (/\[Net\.(ServicePointManager|SecurityProtocolType)\]/.test(paramContent)) {
+      // This is a PowerShell command that needs special handling
+      // We need to escape braces in the PowerShell code, but NOT Inno Setup constants
+      
+      // First, protect Inno Setup constants in this parameter
+      const paramPlaceholders = {};
+      let paramContentProtected = paramContent;
+      uniqueConstants.forEach((constant, idx) => {
+        const placeholder = `__PARAM_INNO_${idx}__`;
+        paramPlaceholders[placeholder] = constant;
+        const escaped = constant.replace(/[{}()\[\]\\^$.*+?|]/g, '\\$&');
+        const regex = new RegExp(escaped, 'g');
+        paramContentProtected = paramContentProtected.replace(regex, placeholder);
+      });
+      
+      // Now escape all remaining braces in the PowerShell code
+      // Since we've already protected Inno Setup constants, all remaining braces are PowerShell
+      // Just double them: { -> {{ and } -> }}
+      // But first check if they're already escaped (avoid quadrupling)
+      const originalProtected = paramContentProtected;
+      // Replace single braces, but be smart about it
+      // Use a regex that matches { not followed by {, and } not followed by }
+      paramContentProtected = paramContentProtected.replace(/\{(?!\{)/g, '{{').replace(/\}(?!\})/g, '}}');
+      
+      // Restore Inno Setup constants
+      Object.keys(paramPlaceholders).reverse().forEach(placeholder => {
+        const constant = paramPlaceholders[placeholder];
+        const escapedPlaceholder = placeholder.replace(/[()\[\]\\^$.*+?|]/g, '\\$&');
+        const regex = new RegExp(escapedPlaceholder, 'g');
+        paramContentProtected = paramContentProtected.replace(regex, constant);
+      });
+      
+      // Check if we made changes
+      if (paramContentProtected !== paramContent) {
+        fixedParams.push({
+          original: fullMatch,
+          fixed: prefix + paramContentProtected + suffix
+        });
+        powershellFixed = true;
+        console.error(`  Fixed PowerShell escaping in Parameters field (contains [Net.ServicePointManager])`);
+      }
+    }
+  }
+  
+  // Apply all fixes
+  if (powershellFixed) {
+    fixedParams.forEach(({ original, fixed }) => {
+      newRunSection = newRunSection.replace(original, fixed);
+    });
+    modified = true;
+  }
+
   // Check if we made changes
-  if (newRunSection !== originalRunSection) {
+  if (newRunSection !== originalRunSection || powershellFixed) {
     content = content.replace(originalRunSection, newRunSection);
     modified = true;
     console.error('✓ Successfully escaped PowerShell curly braces in [Run] section (before system-setup)');
@@ -891,21 +963,19 @@ try {
     // Check for PowerShell array syntax that needs escaping
     const needsEscaping = /\[Net\.(ServicePointManager|SecurityProtocolType)\]/.test(line);
     if (needsEscaping) {
-      if (line.includes('{{ [Net.ServicePointManager]') || line.includes('{{ [Net.SecurityProtocolType]')) {
-        console.error(`  ✓ PowerShell line ${idx} has proper escaping`);
-      } else {
-        console.error(`  ✗ ERROR: PowerShell line ${idx} is missing double braces!`);
+      // Check if the brace before [Net. is properly escaped
+      const braceBeforeNet = /(\{+)\s*\[Net\.(ServicePointManager|SecurityProtocolType)\]/;
+      const match = line.match(braceBeforeNet);
+      if (match && match[1].length >= 2) {
+        console.error(`  ✓ PowerShell line ${idx} has proper escaping (${match[1].length} braces)`);
+      } else if (match && match[1].length === 1) {
+        console.error(`  ✗ ERROR: PowerShell line ${idx} has only single brace before [Net.`);
         console.error(`    Line content: ${line.substring(0, 200)}...`);
-        // Try to fix it
-        const fixedLine = line.replace(/(\{)\[Net\.(ServicePointManager|SecurityProtocolType)\]/g, '$1$1[Net.$2]');
-        if (fixedLine !== line) {
-          console.error(`    Attempting to fix line ${idx}...`);
-          const lineIndex = idx - 1;
-          lines[lineIndex] = fixedLine;
-          const hasCRLF = originalContent.includes('\r\n');
-          const lineEnding = hasCRLF ? '\r\n' : '\n';
-          content = lines.join(lineEnding);
-          modified = true;
+      } else {
+        // Check if it's inside a quoted string - might need different handling
+        const inQuotes = /Parameters:\s*"[^"]*\{[^}]*\[Net\./.test(line);
+        if (inQuotes) {
+          console.error(`  ⚠ PowerShell line ${idx} has [Net. inside quoted Parameters - checking...`);
         }
       }
     }

@@ -26,6 +26,11 @@ if [[ -n "${BUILD_TIMESTAMP}" ]]; then
 fi
 export BUILD_ID
 
+# Save BUILD_ID to a file for other scripts to use
+echo "${BUILD_ID}" > assets/.build_id
+echo "${BUILD_COMMIT_HASH}" > assets/.build_commit_hash
+echo "${BUILD_TIMESTAMP}" > assets/.build_timestamp
+
 if [[ "${OS_NAME}" == "osx" ]]; then
   if [[ -n "${CERTIFICATE_OSX_P12_DATA}" ]]; then
     if [[ "${CI_BUILD}" == "no" ]]; then
@@ -868,12 +873,16 @@ else
   if [[ "${VSCODE_ARCH}" == "ia32" || "${VSCODE_ARCH}" == "x64" ]]; then
     if [[ "${SHOULD_BUILD_MSI}" != "no" ]]; then
       echo "Moving MSI"
-      mv "build\\windows\\msi\\releasedir\\${APP_NAME}-${VSCODE_ARCH}-${RELEASE_VERSION}.msi" assets/
+      MSI_NAME="${APP_NAME}-${VSCODE_ARCH}-${RELEASE_VERSION}${BUILD_ID}.msi"
+      mv "build\\windows\\msi\\releasedir\\${APP_NAME}-${VSCODE_ARCH}-${RELEASE_VERSION}.msi" "assets/${MSI_NAME}"
+      echo "Renamed MSI: ${MSI_NAME} (includes fixes from commit ${BUILD_COMMIT_HASH:-unknown})"
     fi
 
     if [[ "${SHOULD_BUILD_MSI_NOUP}" != "no" ]]; then
       echo "Moving MSI with disabled updates"
-      mv "build\\windows\\msi\\releasedir\\${APP_NAME}-${VSCODE_ARCH}-updates-disabled-${RELEASE_VERSION}.msi" assets/
+      MSI_NAME="${APP_NAME}-${VSCODE_ARCH}-updates-disabled-${RELEASE_VERSION}${BUILD_ID}.msi"
+      mv "build\\windows\\msi\\releasedir\\${APP_NAME}-${VSCODE_ARCH}-updates-disabled-${RELEASE_VERSION}.msi" "assets/${MSI_NAME}"
+      echo "Renamed MSI: ${MSI_NAME} (includes fixes from commit ${BUILD_COMMIT_HASH:-unknown})"
     fi
   fi
 

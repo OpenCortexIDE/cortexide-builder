@@ -7,20 +7,20 @@ For maintainers: [`cortexide-builder/`](https://github.com/cortexide/cortexide-b
 # Binaries
 
 ## Windows
-- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDESetup-x64-RELEASE_VERSION.exe">Windows (x64)</a>
-- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDESetup-arm64-RELEASE_VERSION.exe">Windows (ARM)</a>
+- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDESetup-x64-RELEASE_VERSIONBUILD_ID.exe">Windows (x64)</a>
+- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDESetup-arm64-RELEASE_VERSIONBUILD_ID.exe">Windows (ARM)</a>
 
 ## Mac
-- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDE.x64.RELEASE_VERSION.dmg">Mac (x64 / Intel)</a>
-- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDE.arm64.RELEASE_VERSION.dmg">Mac (ARM / M Chip)</a>
+- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDE.x64.RELEASE_VERSIONBUILD_ID.dmg">Mac (x64 / Intel)</a>
+- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDE.arm64.RELEASE_VERSIONBUILD_ID.dmg">Mac (ARM / M Chip)</a>
 
 ## Linux
-- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-x64-RELEASE_VERSION.tar.gz">Linux .tar.gz (x64)</a>
-- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-arm64-RELEASE_VERSION.tar.gz">Linux .tar.gz (arm64)</a>
-- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-armhf-RELEASE_VERSION.tar.gz">Linux .tar.gz (armhf)</a>
-- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-loong64-RELEASE_VERSION.tar.gz">Linux .tar.gz (loong64)</a>
-- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-ppc64le-RELEASE_VERSION.tar.gz">Linux .tar.gz (ppc64le)</a>
-- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-riscv64-RELEASE_VERSION.tar.gz">Linux .tar.gz (riscv64)</a>
+- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-x64-RELEASE_VERSIONBUILD_ID.tar.gz">Linux .tar.gz (x64)</a>
+- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-arm64-RELEASE_VERSIONBUILD_ID.tar.gz">Linux .tar.gz (arm64)</a>
+- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-armhf-RELEASE_VERSIONBUILD_ID.tar.gz">Linux .tar.gz (armhf)</a>
+- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-loong64-RELEASE_VERSIONBUILD_ID.tar.gz">Linux .tar.gz (loong64)</a>
+- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-ppc64le-RELEASE_VERSIONBUILD_ID.tar.gz">Linux .tar.gz (ppc64le)</a>
+- <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/CortexIDE-linux-riscv64-RELEASE_VERSIONBUILD_ID.tar.gz">Linux .tar.gz (riscv64)</a>
 - <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/cortexide_RELEASE_VERSION_arm64.deb">Linux .deb (ARM)</a>
 - <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/cortexide_RELEASE_VERSION_amd64.deb">Linux .deb (AMD)</a>
 

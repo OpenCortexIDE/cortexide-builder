@@ -2028,12 +2028,14 @@ APPXFIX
         exit 1
       fi
 
-      # CRITICAL FIX: Patch InnoSetup code.iss to escape PowerShell curly braces AFTER gulp task
-      # The gulp task generates code.iss, so we must patch it AFTER, not before
-      # Inno Setup interprets { and } as its own constants, so PowerShell code blocks need escaping
-      if [[ -f "vscode/build/win32/code.iss" ]]; then
-        echo "Patching InnoSetup code.iss to escape PowerShell curly braces (after gulp task)..." >&2
-        node << 'POWERSHELLESCAPEFIX' || {
+      # Optional: Patch InnoSetup code.iss to escape PowerShell curly braces AFTER gulp task
+      # Disabled by default because the naive escaping was breaking other Run entries.
+      # Set PATCH_INNO_POWERSHELL=yes to re-enable once a safer implementation exists.
+      PATCH_INNO_POWERSHELL="${PATCH_INNO_POWERSHELL:-no}"
+      if [[ "${PATCH_INNO_POWERSHELL}" == "yes" ]]; then
+        if [[ -f "vscode/build/win32/code.iss" ]]; then
+          echo "Patching InnoSetup code.iss to escape PowerShell curly braces (after gulp task)..." >&2
+          node << 'POWERSHELLESCAPEFIX' || {
 const fs = require('fs');
 const filePath = 'vscode/build/win32/code.iss';
 
@@ -2113,6 +2115,9 @@ POWERSHELLESCAPEFIX
         }
       else
         echo "Warning: code.iss not found after gulp task, cannot patch for PowerShell escaping" >&2
+        fi
+      else
+        echo "Skipping PowerShell escaping patch (PATCH_INNO_POWERSHELL!=yes)" >&2
       fi
 
       # CRITICAL: Verify workbench.html exists in the built Windows package to prevent blank screen

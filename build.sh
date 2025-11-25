@@ -1787,36 +1787,28 @@ EOFPATCH2
     if [[ ${MISSING_JS_FILES} -gt 0 ]]; then
       echo "ERROR: ${MISSING_JS_FILES} required JS file(s) missing from app bundle!" >&2
       echo "  This will cause ERR_FILE_NOT_FOUND errors at runtime." >&2
-      echo "  Attempting to copy missing files from out-vscode-min..." >&2
+      echo "  Attempting to copy missing files from available build outputs..." >&2
       
       for js_file in "${MISSING_FILE_LIST[@]}"; do
-        source_file="out-vscode-min/${js_file}"
         dest_file="${APP_OUT_DIR}/${js_file}"
-        
-        if [[ -f "${source_file}" ]]; then
-          echo "  Copying ${js_file} from out-vscode-min..." >&2
-          mkdir -p "$(dirname "${dest_file}")"
-          if cp "${source_file}" "${dest_file}" 2>/dev/null; then
-            echo "  ✓ Copied ${js_file}" >&2
-            MISSING_JS_FILES=$((MISSING_JS_FILES - 1))
-          else
-            echo "  ✗ Failed to copy ${js_file}" >&2
-          fi
-        else
-          # Try out-build as fallback
-          source_file="out-build/${js_file}"
+        mkdir -p "$(dirname "${dest_file}")"
+        COPIED_FILE=0
+        for source_root in "out-vscode-min" "out-build" "out"; do
+          source_file="${source_root}/${js_file}"
           if [[ -f "${source_file}" ]]; then
-            echo "  Copying ${js_file} from out-build (fallback)..." >&2
-            mkdir -p "$(dirname "${dest_file}")"
+            echo "  Copying ${js_file} from ${source_root}..." >&2
             if cp "${source_file}" "${dest_file}" 2>/dev/null; then
-              echo "  ✓ Copied ${js_file} from out-build" >&2
+              echo "  ✓ Copied ${js_file} from ${source_root}" >&2
               MISSING_JS_FILES=$((MISSING_JS_FILES - 1))
+              COPIED_FILE=1
+              break
             else
-              echo "  ✗ Failed to copy ${js_file}" >&2
+              echo "  ✗ Failed to copy ${js_file} from ${source_root}" >&2
             fi
-          else
-            echo "  ✗ Source file not found: ${js_file} (checked out-vscode-min and out-build)" >&2
           fi
+        done
+        if [[ ${COPIED_FILE} -eq 0 ]]; then
+          echo "  ✗ Source file not found: ${js_file} (checked out-vscode-min, out-build, out)" >&2
         fi
       done
       
@@ -1835,57 +1827,40 @@ EOFPATCH2
     # CRITICAL FIX: Copy ALL vs/ module files from out-vscode-min to app bundle
     # workbench.desktop.main.js has ES module imports for individual files that must exist
     # The bundler should bundle these, but it's not working correctly, so we copy all files
-    # FALLBACK: If out-vscode-min doesn't have all files, also copy from out-build
-    echo "Copying all vs/ module files from out-vscode-min to app bundle..." >&2
+    # FALLBACK: If out-vscode-min doesn't have all files, also copy from out-build/out
+    echo "Copying all vs/ module files from build outputs to the app bundle..." >&2
     COPIED_ANY=0
     
-    # First, try to copy from out-vscode-min
-    if [[ -d "out-vscode-min/vs" ]]; then
-      VS_FILES_COUNT=$(find "out-vscode-min/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-      echo "  Found ${VS_FILES_COUNT} .js files in out-vscode-min/vs" >&2
-      
-      # Copy all vs/ directories and files
-      if rsync -a --include="vs/" --include="vs/**" --exclude="*" "out-vscode-min/" "${APP_OUT_DIR}/" 2>/dev/null; then
-        COPIED_COUNT=$(find "${APP_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-        echo "  ✓ Copied ${COPIED_COUNT} .js files from out-vscode-min to app bundle" >&2
-        COPIED_ANY=1
-      else
-        # Fallback: use cp -R if rsync is not available
-        echo "  rsync not available, using cp -R..." >&2
-        if cp -R "out-vscode-min/vs" "${APP_OUT_DIR}/" 2>/dev/null; then
-          COPIED_COUNT=$(find "${APP_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-          echo "  ✓ Copied ${COPIED_COUNT} .js files from out-vscode-min to app bundle" >&2
-          COPIED_ANY=1
+    for source_root in "out-vscode-min" "out-build" "out"; do
+      if [[ -d "${source_root}/vs" ]]; then
+        if [[ "${source_root}" == "out-vscode-min" ]]; then
+          VS_FILES_COUNT=$(find "${source_root}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+          echo "  Found ${VS_FILES_COUNT} .js files in ${source_root}/vs" >&2
+        else
+          echo "  Also copying from ${source_root} to ensure all files are present..." >&2
         fi
-      fi
-    else
-      echo "  ⚠ out-vscode-min/vs directory not found, trying out-build..." >&2
-    fi
-    
-    # FALLBACK: Also copy from out-build to ensure all files are present
-    # Some files might only exist in out-build if minification didn't copy them all
-    if [[ -d "out-build/vs" ]]; then
-      echo "  Also copying from out-build to ensure all files are present..." >&2
-      BUILD_FILES_COUNT=$(find "out-build/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-      echo "  Found ${BUILD_FILES_COUNT} .js files in out-build/vs" >&2
-      
-      # Use rsync to merge files (won't overwrite existing, but will add missing)
-      if rsync -a --include="vs/" --include="vs/**" --exclude="*" "out-build/" "${APP_OUT_DIR}/" 2>/dev/null; then
-        FINAL_COUNT=$(find "${APP_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-        echo "  ✓ Merged files from out-build: ${FINAL_COUNT} total .js files in app bundle" >&2
-        COPIED_ANY=1
-      else
-        # Fallback: use cp -R
-        if cp -R "out-build/vs" "${APP_OUT_DIR}/" 2>/dev/null; then
+        
+        if rsync -a --include="vs/" --include="vs/**" --exclude="*" "${source_root}/" "${APP_OUT_DIR}/" 2>/dev/null; then
           FINAL_COUNT=$(find "${APP_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-          echo "  ✓ Merged files from out-build: ${FINAL_COUNT} total .js files in app bundle" >&2
+          echo "  ✓ Copied VS modules from ${source_root} (${FINAL_COUNT} total .js files now in bundle)" >&2
           COPIED_ANY=1
+        else
+          # Fallback: use cp -R if rsync isn't available
+          if cp -R "${source_root}/vs" "${APP_OUT_DIR}/" 2>/dev/null; then
+            FINAL_COUNT=$(find "${APP_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+            echo "  ✓ Copied VS modules from ${source_root} (${FINAL_COUNT} total .js files now in bundle)" >&2
+            COPIED_ANY=1
+          fi
+        fi
+      else
+        if [[ "${source_root}" == "out-vscode-min" ]]; then
+          echo "  ⚠ ${source_root}/vs directory not found, trying other build outputs..." >&2
         fi
       fi
-    fi
+    done
     
     if [[ ${COPIED_ANY} -eq 0 ]]; then
-      echo "  ✗ ERROR: Failed to copy vs/ directory from both out-vscode-min and out-build!" >&2
+      echo "  ✗ ERROR: Failed to copy vs/ directory from out-vscode-min, out-build, or out!" >&2
       echo "  This will cause ERR_FILE_NOT_FOUND errors at runtime." >&2
       exit 1
     fi
@@ -2224,36 +2199,28 @@ POWERSHELLESCAPEFIX
       if [[ ${MISSING_JS_FILES} -gt 0 ]]; then
         echo "ERROR: ${MISSING_JS_FILES} required JS file(s) missing from Windows package!" >&2
         echo "  This will cause ERR_FILE_NOT_FOUND errors at runtime." >&2
-        echo "  Attempting to copy missing files from out-vscode-min..." >&2
+        echo "  Attempting to copy missing files from available build outputs..." >&2
         
         for js_file in "${MISSING_FILE_LIST[@]}"; do
-          source_file="out-vscode-min/${js_file}"
           dest_file="${WIN_OUT_DIR}/${js_file}"
-          
-          if [[ -f "${source_file}" ]]; then
-            echo "  Copying ${js_file} from out-vscode-min..." >&2
-            mkdir -p "$(dirname "${dest_file}")"
-            if cp "${source_file}" "${dest_file}" 2>/dev/null; then
-              echo "  ✓ Copied ${js_file}" >&2
-              MISSING_JS_FILES=$((MISSING_JS_FILES - 1))
-            else
-              echo "  ✗ Failed to copy ${js_file}" >&2
-            fi
-          else
-            # Try out-build as fallback
-            source_file="out-build/${js_file}"
+          mkdir -p "$(dirname "${dest_file}")"
+          COPIED_FILE=0
+          for source_root in "out-vscode-min" "out-build" "out"; do
+            source_file="${source_root}/${js_file}"
             if [[ -f "${source_file}" ]]; then
-              echo "  Copying ${js_file} from out-build (fallback)..." >&2
-              mkdir -p "$(dirname "${dest_file}")"
+              echo "  Copying ${js_file} from ${source_root}..." >&2
               if cp "${source_file}" "${dest_file}" 2>/dev/null; then
-                echo "  ✓ Copied ${js_file} from out-build" >&2
+                echo "  ✓ Copied ${js_file} from ${source_root}" >&2
                 MISSING_JS_FILES=$((MISSING_JS_FILES - 1))
+                COPIED_FILE=1
+                break
               else
-                echo "  ✗ Failed to copy ${js_file}" >&2
+                echo "  ✗ Failed to copy ${js_file} from ${source_root}" >&2
               fi
-            else
-              echo "  ✗ Source file not found: ${js_file} (checked out-vscode-min and out-build)" >&2
             fi
+          done
+          if [[ ${COPIED_FILE} -eq 0 ]]; then
+            echo "  ✗ Source file not found: ${js_file} (checked out-vscode-min, out-build, out)" >&2
           fi
         done
         
@@ -2271,51 +2238,39 @@ POWERSHELLESCAPEFIX
       
       # CRITICAL FIX: Copy ALL vs/ module files from out-vscode-min to Windows package
       # workbench.desktop.main.js has ES module imports for individual files that must exist
-      # FALLBACK: If out-vscode-min doesn't have all files, also copy from out-build
-      echo "Copying all vs/ module files from out-vscode-min to Windows package..." >&2
+      # FALLBACK: If out-vscode-min doesn't have all files, also copy from out-build/out
+      echo "Copying all vs/ module files from build outputs to Windows package..." >&2
       COPIED_ANY=0
       
-      # First, try to copy from out-vscode-min
-      if [[ -d "out-vscode-min/vs" ]]; then
-        VS_FILES_COUNT=$(find "out-vscode-min/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-        echo "  Found ${VS_FILES_COUNT} .js files in out-vscode-min/vs" >&2
-        
-        if rsync -a --include="vs/" --include="vs/**" --exclude="*" "out-vscode-min/" "${WIN_OUT_DIR}/" 2>/dev/null; then
-          COPIED_COUNT=$(find "${WIN_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-          echo "  ✓ Copied ${COPIED_COUNT} .js files from out-vscode-min to Windows package" >&2
-          COPIED_ANY=1
-        else
-          if cp -R "out-vscode-min/vs" "${WIN_OUT_DIR}/" 2>/dev/null; then
-            COPIED_COUNT=$(find "${WIN_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-            echo "  ✓ Copied ${COPIED_COUNT} .js files from out-vscode-min to Windows package" >&2
-            COPIED_ANY=1
+      for source_root in "out-vscode-min" "out-build" "out"; do
+        if [[ -d "${source_root}/vs" ]]; then
+          if [[ "${source_root}" == "out-vscode-min" ]]; then
+            VS_FILES_COUNT=$(find "${source_root}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+            echo "  Found ${VS_FILES_COUNT} .js files in ${source_root}/vs" >&2
+          else
+            echo "  Also copying from ${source_root} to ensure all files are present..." >&2
           fi
-        fi
-      else
-        echo "  ⚠ out-vscode-min/vs directory not found, trying out-build..." >&2
-      fi
-      
-      # FALLBACK: Also copy from out-build to ensure all files are present
-      if [[ -d "out-build/vs" ]]; then
-        echo "  Also copying from out-build to ensure all files are present..." >&2
-        BUILD_FILES_COUNT=$(find "out-build/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-        echo "  Found ${BUILD_FILES_COUNT} .js files in out-build/vs" >&2
-        
-        if rsync -a --include="vs/" --include="vs/**" --exclude="*" "out-build/" "${WIN_OUT_DIR}/" 2>/dev/null; then
-          FINAL_COUNT=$(find "${WIN_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-          echo "  ✓ Merged files from out-build: ${FINAL_COUNT} total .js files in Windows package" >&2
-          COPIED_ANY=1
-        else
-          if cp -R "out-build/vs" "${WIN_OUT_DIR}/" 2>/dev/null; then
+          
+          if rsync -a --include="vs/" --include="vs/**" --exclude="*" "${source_root}/" "${WIN_OUT_DIR}/" 2>/dev/null; then
             FINAL_COUNT=$(find "${WIN_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-            echo "  ✓ Merged files from out-build: ${FINAL_COUNT} total .js files in Windows package" >&2
+            echo "  ✓ Copied VS modules from ${source_root} (${FINAL_COUNT} total .js files now in package)" >&2
             COPIED_ANY=1
+          else
+            if cp -R "${source_root}/vs" "${WIN_OUT_DIR}/" 2>/dev/null; then
+              FINAL_COUNT=$(find "${WIN_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+              echo "  ✓ Copied VS modules from ${source_root} (${FINAL_COUNT} total .js files now in package)" >&2
+              COPIED_ANY=1
+            fi
+          fi
+        else
+          if [[ "${source_root}" == "out-vscode-min" ]]; then
+            echo "  ⚠ ${source_root}/vs directory not found, trying other build outputs..." >&2
           fi
         fi
-      fi
+      done
       
       if [[ ${COPIED_ANY} -eq 0 ]]; then
-        echo "  ✗ ERROR: Failed to copy vs/ directory from both out-vscode-min and out-build!" >&2
+        echo "  ✗ ERROR: Failed to copy vs/ directory from out-vscode-min, out-build, or out!" >&2
         echo "  This will cause ERR_FILE_NOT_FOUND errors at runtime." >&2
         exit 1
       fi
@@ -2446,36 +2401,28 @@ POWERSHELLESCAPEFIX
       if [[ ${MISSING_JS_FILES} -gt 0 ]]; then
         echo "ERROR: ${MISSING_JS_FILES} required JS file(s) missing from Linux package!" >&2
         echo "  This will cause ERR_FILE_NOT_FOUND errors at runtime." >&2
-        echo "  Attempting to copy missing files from out-vscode-min..." >&2
+        echo "  Attempting to copy missing files from available build outputs..." >&2
         
         for js_file in "${MISSING_FILE_LIST[@]}"; do
-          source_file="out-vscode-min/${js_file}"
           dest_file="${LINUX_OUT_DIR}/${js_file}"
-          
-          if [[ -f "${source_file}" ]]; then
-            echo "  Copying ${js_file} from out-vscode-min..." >&2
-            mkdir -p "$(dirname "${dest_file}")"
-            if cp "${source_file}" "${dest_file}" 2>/dev/null; then
-              echo "  ✓ Copied ${js_file}" >&2
-              MISSING_JS_FILES=$((MISSING_JS_FILES - 1))
-            else
-              echo "  ✗ Failed to copy ${js_file}" >&2
-            fi
-          else
-            # Try out-build as fallback
-            source_file="out-build/${js_file}"
+          mkdir -p "$(dirname "${dest_file}")"
+          COPIED_FILE=0
+          for source_root in "out-vscode-min" "out-build" "out"; do
+            source_file="${source_root}/${js_file}"
             if [[ -f "${source_file}" ]]; then
-              echo "  Copying ${js_file} from out-build (fallback)..." >&2
-              mkdir -p "$(dirname "${dest_file}")"
+              echo "  Copying ${js_file} from ${source_root}..." >&2
               if cp "${source_file}" "${dest_file}" 2>/dev/null; then
-                echo "  ✓ Copied ${js_file} from out-build" >&2
+                echo "  ✓ Copied ${js_file} from ${source_root}" >&2
                 MISSING_JS_FILES=$((MISSING_JS_FILES - 1))
+                COPIED_FILE=1
+                break
               else
-                echo "  ✗ Failed to copy ${js_file}" >&2
+                echo "  ✗ Failed to copy ${js_file} from ${source_root}" >&2
               fi
-            else
-              echo "  ✗ Source file not found: ${js_file} (checked out-vscode-min and out-build)" >&2
             fi
+          done
+          if [[ ${COPIED_FILE} -eq 0 ]]; then
+            echo "  ✗ Source file not found: ${js_file} (checked out-vscode-min, out-build, out)" >&2
           fi
         done
         
@@ -2493,51 +2440,39 @@ POWERSHELLESCAPEFIX
       
       # CRITICAL FIX: Copy ALL vs/ module files from out-vscode-min to Linux package
       # workbench.desktop.main.js has ES module imports for individual files that must exist
-      # FALLBACK: If out-vscode-min doesn't have all files, also copy from out-build
-      echo "Copying all vs/ module files from out-vscode-min to Linux package..." >&2
+      # FALLBACK: If out-vscode-min doesn't have all files, also copy from out-build/out
+      echo "Copying all vs/ module files from build outputs to Linux package..." >&2
       COPIED_ANY=0
       
-      # First, try to copy from out-vscode-min
-      if [[ -d "out-vscode-min/vs" ]]; then
-        VS_FILES_COUNT=$(find "out-vscode-min/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-        echo "  Found ${VS_FILES_COUNT} .js files in out-vscode-min/vs" >&2
-        
-        if rsync -a --include="vs/" --include="vs/**" --exclude="*" "out-vscode-min/" "${LINUX_OUT_DIR}/" 2>/dev/null; then
-          COPIED_COUNT=$(find "${LINUX_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-          echo "  ✓ Copied ${COPIED_COUNT} .js files from out-vscode-min to Linux package" >&2
-          COPIED_ANY=1
-        else
-          if cp -R "out-vscode-min/vs" "${LINUX_OUT_DIR}/" 2>/dev/null; then
-            COPIED_COUNT=$(find "${LINUX_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-            echo "  ✓ Copied ${COPIED_COUNT} .js files from out-vscode-min to Linux package" >&2
-            COPIED_ANY=1
+      for source_root in "out-vscode-min" "out-build" "out"; do
+        if [[ -d "${source_root}/vs" ]]; then
+          if [[ "${source_root}" == "out-vscode-min" ]]; then
+            VS_FILES_COUNT=$(find "${source_root}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+            echo "  Found ${VS_FILES_COUNT} .js files in ${source_root}/vs" >&2
+          else
+            echo "  Also copying from ${source_root} to ensure all files are present..." >&2
           fi
-        fi
-      else
-        echo "  ⚠ out-vscode-min/vs directory not found, trying out-build..." >&2
-      fi
-      
-      # FALLBACK: Also copy from out-build to ensure all files are present
-      if [[ -d "out-build/vs" ]]; then
-        echo "  Also copying from out-build to ensure all files are present..." >&2
-        BUILD_FILES_COUNT=$(find "out-build/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-        echo "  Found ${BUILD_FILES_COUNT} .js files in out-build/vs" >&2
-        
-        if rsync -a --include="vs/" --include="vs/**" --exclude="*" "out-build/" "${LINUX_OUT_DIR}/" 2>/dev/null; then
-          FINAL_COUNT=$(find "${LINUX_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-          echo "  ✓ Merged files from out-build: ${FINAL_COUNT} total .js files in Linux package" >&2
-          COPIED_ANY=1
-        else
-          if cp -R "out-build/vs" "${LINUX_OUT_DIR}/" 2>/dev/null; then
+          
+          if rsync -a --include="vs/" --include="vs/**" --exclude="*" "${source_root}/" "${LINUX_OUT_DIR}/" 2>/dev/null; then
             FINAL_COUNT=$(find "${LINUX_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-            echo "  ✓ Merged files from out-build: ${FINAL_COUNT} total .js files in Linux package" >&2
+            echo "  ✓ Copied VS modules from ${source_root} (${FINAL_COUNT} total .js files now in package)" >&2
             COPIED_ANY=1
+          else
+            if cp -R "${source_root}/vs" "${LINUX_OUT_DIR}/" 2>/dev/null; then
+              FINAL_COUNT=$(find "${LINUX_OUT_DIR}/vs" -type f -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+              echo "  ✓ Copied VS modules from ${source_root} (${FINAL_COUNT} total .js files now in package)" >&2
+              COPIED_ANY=1
+            fi
+          fi
+        else
+          if [[ "${source_root}" == "out-vscode-min" ]]; then
+            echo "  ⚠ ${source_root}/vs directory not found, trying other build outputs..." >&2
           fi
         fi
-      fi
+      done
       
       if [[ ${COPIED_ANY} -eq 0 ]]; then
-        echo "  ✗ ERROR: Failed to copy vs/ directory from both out-vscode-min and out-build!" >&2
+        echo "  ✗ ERROR: Failed to copy vs/ directory from out-vscode-min, out-build, or out!" >&2
         echo "  This will cause ERR_FILE_NOT_FOUND errors at runtime." >&2
         exit 1
       fi

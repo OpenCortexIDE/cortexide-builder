@@ -54,7 +54,10 @@ else
   echo "Release '${RELEASE_VERSION}' already exists, updating release notes..."
   
   if [[ "${VSCODE_QUALITY}" != "insider" ]]; then
-    # Get fresh auto-generated notes from GitHub (for the RELEASE_NOTES placeholder)
+    # Reset template to ensure we're using the latest version (in case it was modified)
+    git checkout release_notes.txt 2>/dev/null || true
+    
+    # Get fresh auto-generated notes from GitHub (for the RELEASE_NOTES placeholder, if used)
     RELEASE_NOTES=$( gh release view "${RELEASE_VERSION}" --repo "${ASSETS_REPOSITORY}" --json "body" --jq ".body" 2>/dev/null || echo "" )
 
     # Process the template fresh (don't use old release notes content)

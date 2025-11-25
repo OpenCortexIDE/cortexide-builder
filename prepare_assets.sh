@@ -666,11 +666,16 @@ try {
   const originalRunSection = runSection;
 
   // Check if already patched (has double curly braces for PowerShell)
-  if (runSection.includes('{{ [Net.ServicePointManager]') || runSection.includes('{{ [Net.SecurityProtocolType]')) {
-    console.error('✓ [Run] section already appears to be patched (has double curly braces)');
+  // But we'll patch it anyway to be safe - the logic handles already-patched files
+  const hasDoubleBraces = runSection.includes('{{ [Net.ServicePointManager]') || runSection.includes('{{ [Net.SecurityProtocolType]');
+  if (hasDoubleBraces) {
+    console.error('✓ [Run] section appears to already have some double curly braces');
   } else {
     console.error('⚠ [Run] section needs patching (no double curly braces found)');
   }
+  
+  // CRITICAL: Always patch, even if it looks patched, because the patch logic is idempotent
+  // The issue might be that some braces are escaped but not all
 
   // Step 1: Temporarily replace Inno Setup constants with placeholders
   const constants = [
@@ -706,25 +711,41 @@ try {
     newRunSection = newRunSection.replace(regex, constant);
   });
 
+  // Always save the file, even if no changes detected, to ensure it's in the correct state
   if (newRunSection !== originalRunSection) {
     content = content.replace(originalRunSection, newRunSection);
     modified = true;
     console.error('✓ Successfully escaped PowerShell curly braces in [Run] section (before system-setup)');
-    
-    // Debug: Show line 114 if it exists (where the error occurs)
-    const lines = content.split(/\r?\n/);
-    if (lines.length >= 114) {
-      console.error(`  Line 114: ${lines[113].substring(0, 150)}...`);
-      // Check if line 114 has proper escaping
-      if (lines[113].includes('{{') && lines[113].includes('}}')) {
-        console.error('  ✓ Line 114 has proper PowerShell escaping');
-      } else {
-        console.error('  ⚠ Line 114 may still need escaping');
-      }
-    }
   } else {
-    console.error('⚠ No changes made to [Run] section (may already be patched)');
+    console.error('⚠ No changes detected, but verifying file is correct...');
+    // Even if no changes, verify the file is correct and save it to ensure consistency
+    modified = true; // Force save to ensure file is in correct state
   }
+  
+  // Debug: Show line 114 if it exists (where the error occurs)
+  const lines = content.split(/\r?\n/);
+  if (lines.length >= 114) {
+    console.error(`  Line 114: ${lines[113].substring(0, 150)}...`);
+    // Check if line 114 has proper escaping
+    if (lines[113].includes('{{') && lines[113].includes('}}')) {
+      console.error('  ✓ Line 114 has proper PowerShell escaping');
+    } else if (lines[113].includes('{') || lines[113].includes('}')) {
+      console.error('  ⚠ Line 114 has single braces - may need escaping');
+    }
+  }
+  
+  // Validate PowerShell lines have proper escaping
+  const powershellLines = lines.filter((line, idx) => 
+    line.includes('powershell.exe') && line.includes('Parameters')
+  );
+  powershellLines.forEach((line, idx) => {
+    if (line.includes('{{ [Net.ServicePointManager]') || line.includes('{{ [Net.SecurityProtocolType]')) {
+      console.error(`  ✓ PowerShell line ${idx + 1} has proper escaping`);
+    } else if (line.includes('[Net.ServicePointManager]') || line.includes('[Net.SecurityProtocolType]')) {
+      console.error(`  ✗ ERROR: PowerShell line ${idx + 1} is missing double braces!`);
+      console.error(`    Line content: ${line.substring(0, 200)}...`);
+    }
+  });
 
   if (modified) {
     const hasCRLF = originalContent.includes('\r\n');

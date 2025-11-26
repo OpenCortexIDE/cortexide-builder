@@ -2269,11 +2269,18 @@ POWERSHELLESCAPEFIX
         if [[ -f "out-build/vs/code/electron-browser/workbench/workbench.html" ]]; then
           echo "  workbench.html exists in out-build but wasn't copied to package!" >&2
           echo "  This indicates a packaging issue in gulpfile.vscode.js" >&2
+          echo "  Attempting to manually copy workbench.html..." >&2
+          mkdir -p "$(dirname "${WORKBENCH_HTML}")"
+          cp "out-build/vs/code/electron-browser/workbench/workbench.html" "${WORKBENCH_HTML}" || {
+            echo "  Failed to copy workbench.html!" >&2
+            exit 1
+          }
+          echo "  ✓ Manually copied workbench.html to Windows package" >&2
         else
           echo "  workbench.html is also missing from out-build!" >&2
           echo "  The minify-vscode task may have failed silently." >&2
+          exit 1
         fi
-        exit 1
       fi
       
       # Verify product.json exists and has correct extensionsGallery
@@ -2519,11 +2526,18 @@ POWERSHELLESCAPEFIX
         if [[ -f "out-build/vs/code/electron-browser/workbench/workbench.html" ]]; then
           echo "  workbench.html exists in out-build but wasn't copied to package!" >&2
           echo "  This indicates a packaging issue in gulpfile.vscode.js" >&2
+          echo "  Attempting to manually copy workbench.html..." >&2
+          mkdir -p "$(dirname "${WORKBENCH_HTML}")"
+          cp "out-build/vs/code/electron-browser/workbench/workbench.html" "${WORKBENCH_HTML}" || {
+            echo "  Failed to copy workbench.html!" >&2
+            exit 1
+          }
+          echo "  ✓ Manually copied workbench.html to Linux package" >&2
         else
           echo "  workbench.html is also missing from out-build!" >&2
           echo "  The minify-vscode task may have failed silently." >&2
+          exit 1
         fi
-        exit 1
       fi
       
       # Verify product.json exists and has correct extensionsGallery

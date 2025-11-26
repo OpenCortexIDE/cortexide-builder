@@ -218,8 +218,12 @@ build_application() {
     log_info "Compiling TypeScript..."
     export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=12288}"
     
-    # Try compile-build first (doesn't include extensions)
-    if npm run compile-build 2>/dev/null; then
+    # Use compile-build-without-mangling to avoid mangler hanging issues
+    # The mangler can sometimes hang on large codebases
+    log_info "Using compile-build-without-mangling (faster, more reliable)..."
+    if npm run gulp compile-build-without-mangling 2>/dev/null; then
+      log_success "Application built successfully"
+    elif npm run compile-build 2>/dev/null; then
       log_success "Application built successfully"
     elif npm run gulp compile 2>/dev/null; then
       log_success "Application built successfully"

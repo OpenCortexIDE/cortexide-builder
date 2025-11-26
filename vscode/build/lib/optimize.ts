@@ -195,8 +195,9 @@ const ${varName} = {};`;
 						const sideEffectPattern = /import\s+['"]([^'"]*\.css)['"]\s*;?/g;
 						newContents = newContents.replace(sideEffectPattern, (match, cssPath) => {
 							// Skip if already handled by static import pattern
-							const matchIndex = newContents.indexOf(match);
-							const afterMatch = newContents.substring(matchIndex + match.length, matchIndex + match.length + 20);
+							// Check in original contents, not modified newContents
+							const matchIndex = contents.indexOf(match);
+							const afterMatch = contents.substring(matchIndex + match.length, matchIndex + match.length + 20);
 							if (afterMatch.trim().startsWith('from')) {
 								return match;
 							}

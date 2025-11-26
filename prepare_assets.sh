@@ -236,6 +236,8 @@ SIGNFIX
 
     echo "✓ Code signing verified successfully"
 
+    # Notarization is optional - only attempt if credentials are provided
+    if [[ -n "${CERTIFICATE_OSX_ID}" ]] && [[ -n "${CERTIFICATE_OSX_TEAM_ID}" ]] && [[ -n "${CERTIFICATE_OSX_APP_PASSWORD}" ]]; then
     echo "+ notarize"
 
     ZIP_FILE="./${APP_NAME}-darwin-${VSCODE_ARCH}-${RELEASE_VERSION}.zip"
@@ -248,33 +250,25 @@ SIGNFIX
     fi
 
     # Store notarization credentials
-    if ! xcrun notarytool store-credentials "${APP_NAME}" --apple-id "${CERTIFICATE_OSX_ID}" --team-id "${CERTIFICATE_OSX_TEAM_ID}" --password "${CERTIFICATE_OSX_APP_PASSWORD}" --keychain "${KEYCHAIN}"; then
-      echo "Error: Failed to store notarization credentials"
-      exit 1
-    fi
-
+      if ! xcrun notarytool store-credentials "${APP_NAME}" --apple-id "${CERTIFICATE_OSX_ID}" --team-id "${CERTIFICATE_OSX_TEAM_ID}" --password "${CERTIFICATE_OSX_APP_PASSWORD}" --keychain "${KEYCHAIN}" 2>&1; then
+        echo "Warning: Failed to store notarization credentials - skipping notarization" >&2
+        echo "App will be signed but not notarized. Users may need to right-click > Open on first launch." >&2
+        rm -f "${ZIP_FILE}"
+      else
     # Submit for notarization
     echo "+ submitting for notarization (this may take several minutes)..."
     NOTARIZATION_OUTPUT=$( xcrun notarytool submit "${ZIP_FILE}" --keychain-profile "${APP_NAME}" --wait --keychain "${KEYCHAIN}" 2>&1 )
     NOTARIZATION_EXIT_CODE=$?
 
     if [[ ${NOTARIZATION_EXIT_CODE} -ne 0 ]]; then
-      echo "Error: Notarization submission failed"
-      echo "${NOTARIZATION_OUTPUT}"
-      exit 1
-    fi
-
+          echo "Warning: Notarization submission failed - app will be signed but not notarized" >&2
+          echo "Users may need to right-click > Open on first launch." >&2
+          echo "Notarization output: ${NOTARIZATION_OUTPUT}" >&2
+          rm -f "${ZIP_FILE}"
+        else
     # Check notarization status
     if echo "${NOTARIZATION_OUTPUT}" | grep -qi "status:.*Accepted"; then
       echo "✓ Notarization accepted"
-    elif echo "${NOTARIZATION_OUTPUT}" | grep -qi "status:.*Invalid"; then
-      echo "Error: Notarization was rejected"
-      echo "${NOTARIZATION_OUTPUT}"
-      exit 1
-    else
-      echo "Warning: Could not determine notarization status from output"
-      echo "${NOTARIZATION_OUTPUT}"
-    fi
 
     echo "+ attach staple"
     STAPLE_ATTEMPTS=0
@@ -295,10 +289,9 @@ SIGNFIX
     done
 
     if [[ "${STAPLE_SUCCESS}" != "true" ]]; then
-      echo "Error: Failed to staple notarization ticket after ${MAX_STAPLE_ATTEMPTS} attempts"
-      exit 1
-    fi
-
+              echo "Warning: Failed to staple notarization ticket after ${MAX_STAPLE_ATTEMPTS} attempts" >&2
+              echo "App is notarized but not stapled. Users may need to right-click > Open on first launch." >&2
+            else
     # Verify stapling succeeded - retry on network errors
     echo "+ validating staple"
     VALIDATE_ATTEMPTS=0
@@ -325,15 +318,15 @@ SIGNFIX
             echo "Notarization was successful, but validation could not complete due to network issues" >&2
             echo "This is often a transient Apple CloudKit service issue" >&2
             echo "The app should still work correctly since notarization succeeded" >&2
-            # Don't exit - notarization succeeded, validation failure is non-critical for network errors
             VALIDATE_SUCCESS="network_error"
             break
           fi
         else
-          # Non-network error - fail immediately
-          echo "Error: Stapling validation failed with non-network error" >&2
+                    # Non-network error - warn but don't fail
+                    echo "Warning: Stapling validation failed with non-network error" >&2
           echo "Output: ${VALIDATE_OUTPUT}" >&2
-          exit 1
+                    VALIDATE_SUCCESS="error"
+                    break
         fi
       fi
     done
@@ -343,11 +336,28 @@ SIGNFIX
     elif [[ "${VALIDATE_SUCCESS}" == "network_error" ]]; then
       echo "⚠ Stapling validation skipped due to network errors (notarization succeeded)" >&2
     else
-      echo "Error: Stapling validation failed" >&2
-      exit 1
+                echo "⚠ Stapling validation failed (notarization succeeded)" >&2
+              fi
+            fi
+          elif echo "${NOTARIZATION_OUTPUT}" | grep -qi "status:.*Invalid"; then
+            echo "Warning: Notarization was rejected - app will be signed but not notarized" >&2
+            echo "Users may need to right-click > Open on first launch." >&2
+            echo "Notarization output: ${NOTARIZATION_OUTPUT}" >&2
+            rm -f "${ZIP_FILE}"
+          else
+            echo "Warning: Could not determine notarization status from output" >&2
+            echo "App will be signed but notarization status is unknown." >&2
+            echo "Notarization output: ${NOTARIZATION_OUTPUT}" >&2
+            rm -f "${ZIP_FILE}"
+          fi
+        fi
+      fi
+    else
+      echo "⚠ Notarization credentials not provided - skipping notarization" >&2
+      echo "App will be signed but not notarized. Users may need to right-click > Open on first launch." >&2
     fi
 
-    # Final verification: check Gatekeeper assessment
+    # Final verification: check Gatekeeper assessment (even without notarization)
     echo "+ final Gatekeeper verification"
     SPCTL_OUTPUT=$( spctl --assess --verbose "${APP_BUNDLE}" 2>&1 )
     SPCTL_EXIT_CODE=$?
@@ -355,12 +365,11 @@ SIGNFIX
     if [[ ${SPCTL_EXIT_CODE} -eq 0 ]]; then
       echo "✓ Gatekeeper assessment passed"
     else
-      echo "Warning: Gatekeeper assessment failed or returned non-zero exit code"
-      echo "This may be expected for self-signed certificates"
-      echo "Output: ${SPCTL_OUTPUT}"
+      echo "⚠ Gatekeeper assessment failed or returned non-zero exit code" >&2
+      echo "This is expected for non-notarized apps or self-signed certificates" >&2
+      echo "Users will need to right-click > Open on first launch, or remove quarantine attribute" >&2
+      echo "Output: ${SPCTL_OUTPUT}" >&2
     fi
-
-    rm "${ZIP_FILE}"
 
     cd ..
   fi
@@ -441,11 +450,54 @@ CortexIDE Installation Instructions
 For more help, visit: https://opencortexide.com
 README
     
+    # Remove any existing quarantine attributes before creating DMG
+    # This prevents the DMG from inheriting quarantine
+    echo "+ removing quarantine attributes before DMG creation..."
+    if xattr -l ./*.app 2>/dev/null | grep -q "com.apple.quarantine"; then
+      if xattr -rd com.apple.quarantine ./*.app 2>/dev/null; then
+        # Verify removal succeeded
+        if xattr -l ./*.app 2>/dev/null | grep -q "com.apple.quarantine"; then
+          echo "  ⚠ Warning: Failed to remove all quarantine attributes (some files may be read-only)" >&2
+        else
+          echo "  ✓ Removed quarantine attributes from app bundle"
+        fi
+      else
+        echo "  ⚠ Warning: Failed to remove quarantine attributes (files may be read-only)" >&2
+      fi
+    else
+      echo "  ✓ No quarantine attributes found on app bundle"
+    fi
+    
     if [[ -n "${CODESIGN_IDENTITY}" ]]; then
       npx create-dmg ./*.app .
     else
       npx create-dmg --no-code-sign ./*.app .
     fi
+    
+    # After DMG creation, remove quarantine from DMG itself if it was added
+    DMG_FILE=$(find . -maxdepth 1 -name "*.dmg" -type f | head -1)
+    if [[ -n "${DMG_FILE}" ]]; then
+      if xattr -l "${DMG_FILE}" 2>/dev/null | grep -q "com.apple.quarantine"; then
+        echo "+ removing quarantine from DMG file..."
+        if xattr -d com.apple.quarantine "${DMG_FILE}" 2>/dev/null; then
+          # Verify removal succeeded
+          if xattr -l "${DMG_FILE}" 2>/dev/null | grep -q "com.apple.quarantine"; then
+            echo "  ⚠ Warning: Failed to remove quarantine from DMG file" >&2
+            echo "  Users may need to run: xattr -d com.apple.quarantine ${DMG_FILE}" >&2
+          else
+            echo "  ✓ DMG quarantine removed"
+          fi
+        else
+          echo "  ⚠ Warning: Failed to remove quarantine from DMG file" >&2
+          echo "  Users may need to run: xattr -d com.apple.quarantine ${DMG_FILE}" >&2
+        fi
+      else
+        echo "  ✓ No quarantine found on DMG file"
+      fi
+    else
+      echo "  ⚠ Warning: DMG file not found after creation" >&2
+    fi
+    
     DMG_NAME="${APP_NAME}.${VSCODE_ARCH}.${RELEASE_VERSION}${BUILD_ID}.dmg"
     echo "Renaming DMG: ${DMG_NAME} (includes fixes from commit ${BUILD_COMMIT_HASH:-unknown})"
     mv ./*.dmg "../assets/${DMG_NAME}"

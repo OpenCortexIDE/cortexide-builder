@@ -1742,11 +1742,23 @@ EOFPATCH2
     if [[ -d "${APP_BUNDLE}" ]]; then
       APP_OUT_DIR="${APP_BUNDLE}/Contents/Resources/app/out/vs"
       if [[ -d "${APP_OUT_DIR}" ]] && [[ -f "fix_css_imports.js" ]]; then
-        if node fix_css_imports.js "${APP_OUT_DIR}" 2>/dev/null; then
+        # Make files writable before fixing
+        echo "Making app bundle files writable..."
+        chmod -R u+w "${APP_OUT_DIR}" 2>/dev/null || {
+          echo "⚠ Warning: Cannot make files writable, trying anyway..." >&2
+        }
+        # Run the fix and show output
+        if node fix_css_imports.js "${APP_OUT_DIR}"; then
           echo "✓ Fixed CSS imports in app bundle"
         else
-          echo "⚠ Warning: CSS import fix script failed on app bundle, but continuing..." >&2
+          echo "✗ ERROR: CSS import fix script failed on app bundle!" >&2
+          echo "  This will cause MIME type errors at runtime!" >&2
+          exit 1
         fi
+      else
+        echo "⚠ Warning: Cannot fix CSS imports - app bundle or fix script not found" >&2
+        echo "  APP_OUT_DIR: ${APP_OUT_DIR}" >&2
+        echo "  fix_css_imports.js exists: $([ -f "fix_css_imports.js" ] && echo "yes" || echo "no")" >&2
       fi
     fi
 
@@ -2239,10 +2251,12 @@ POWERSHELLESCAPEFIX
       WIN_PACKAGE="../VSCode-win32-${VSCODE_ARCH}"
       WIN_OUT_DIR="${WIN_PACKAGE}/resources/app/out/vs"
       if [[ -d "${WIN_OUT_DIR}" ]] && [[ -f "fix_css_imports.js" ]]; then
-        if node fix_css_imports.js "${WIN_OUT_DIR}" 2>/dev/null; then
+        chmod -R u+w "${WIN_OUT_DIR}" 2>/dev/null || true
+        if node fix_css_imports.js "${WIN_OUT_DIR}"; then
           echo "✓ Fixed CSS imports in Windows package"
         else
-          echo "⚠ Warning: CSS import fix script failed on Windows package, but continuing..." >&2
+          echo "✗ ERROR: CSS import fix script failed on Windows package!" >&2
+          exit 1
         fi
       fi
 
@@ -2474,10 +2488,12 @@ POWERSHELLESCAPEFIX
       LINUX_PACKAGE="../VSCode-linux-${VSCODE_ARCH}"
       LINUX_OUT_DIR="${LINUX_PACKAGE}/resources/app/out/vs"
       if [[ -d "${LINUX_OUT_DIR}" ]] && [[ -f "fix_css_imports.js" ]]; then
-        if node fix_css_imports.js "${LINUX_OUT_DIR}" 2>/dev/null; then
+        chmod -R u+w "${LINUX_OUT_DIR}" 2>/dev/null || true
+        if node fix_css_imports.js "${LINUX_OUT_DIR}"; then
           echo "✓ Fixed CSS imports in Linux package"
         else
-          echo "⚠ Warning: CSS import fix script failed on Linux package, but continuing..." >&2
+          echo "✗ ERROR: CSS import fix script failed on Linux package!" >&2
+          exit 1
         fi
       fi
 

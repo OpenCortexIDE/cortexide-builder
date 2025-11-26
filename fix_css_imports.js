@@ -27,6 +27,13 @@ console.log(`Directory: ${bundleDir}`);
 let fixedCount = 0;
 
 function fixCSSImports(filePath) {
+    // Try to make file writable first
+    try {
+        fs.chmodSync(filePath, 0o644);
+    } catch (error) {
+        // If we can't make it writable, try to write anyway (might work on some systems)
+    }
+    
     let content = fs.readFileSync(filePath, 'utf8');
     let modified = false;
     let cssImportCounter = 0;

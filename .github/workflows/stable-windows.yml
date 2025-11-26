@@ -135,6 +135,40 @@ jobs:
         run: ./get_repo.sh
         if: env.SHOULD_BUILD == 'yes'
 
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        id: cache-node-modules
+        with:
+          path: vscode/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('vscode/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
+        if: env.SHOULD_BUILD == 'yes'
+
+      - name: Cache Electron binaries
+        uses: actions/cache@v4
+        id: cache-electron
+        with:
+          path: |
+            vscode/.electron-cache
+            ~/.cache/electron
+          key: ${{ runner.os }}-electron-x64-${{ hashFiles('vscode/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-x64-
+        if: env.SHOULD_BUILD == 'yes'
+
+      - name: Cache TypeScript build outputs
+        uses: actions/cache@v4
+        id: cache-ts-build
+        with:
+          path: |
+            vscode/out
+            vscode/out-build
+          key: ${{ runner.os }}-ts-build-${{ github.sha }}-x64
+          restore-keys: |
+            ${{ runner.os }}-ts-build-
+        if: env.SHOULD_BUILD == 'yes'
+
       - name: Build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -148,25 +148,48 @@ install_dependencies() {
     exit 1
   }
   
-  # Check if node_modules exists
-  if [[ ! -d "node_modules" ]] || [[ "${CLEAN_INSTALL:-no}" == "yes" ]]; then
+  # Check if node_modules exists and is valid
+  local should_install="yes"
+  if [[ -d "node_modules" ]] && [[ "${CLEAN_INSTALL:-no}" != "yes" ]]; then
+    # Check if package-lock.json exists and node_modules is not empty
+    if [[ -f "package-lock.json" ]] && [[ -n "$(ls -A node_modules 2>/dev/null)" ]]; then
+      should_install="no"
+      log_info "node_modules exists, checking if update is needed..."
+      
+      # Quick check: compare package-lock.json modification time with node_modules
+      if [[ "package-lock.json" -nt "node_modules" ]]; then
+        log_info "package-lock.json is newer than node_modules, updating..."
+        should_install="yes"
+      fi
+    fi
+  fi
+  
+  if [[ "${should_install}" == "yes" ]]; then
     log_info "Running npm install..."
     
     # Set Node.js options
     export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
     
     # Install dependencies
-    if npm ci --prefer-offline --no-audit; then
-      log_success "Dependencies installed"
+    if [[ -f "package-lock.json" ]]; then
+      if npm ci --prefer-offline --no-audit; then
+        log_success "Dependencies installed (npm ci)"
+      else
+        log_warning "npm ci failed, trying npm install..."
+        npm install --prefer-offline --no-audit || {
+          log_error "Failed to install dependencies"
+          exit 1
+        }
+      fi
     else
-      log_warning "npm ci failed, trying npm install..."
+      log_info "No package-lock.json found, using npm install..."
       npm install --prefer-offline --no-audit || {
         log_error "Failed to install dependencies"
         exit 1
       }
     fi
   else
-    log_info "Dependencies already installed, skipping"
+    log_success "Dependencies already installed and up-to-date, skipping"
   fi
 }
 
@@ -252,6 +275,60 @@ build_application() {
   build_electron_app
 }
 
+# Ensure Electron binaries are cached
+ensure_electron_cached() {
+  local os_name="$1"
+  local vscode_arch="$2"
+  
+  # Map OS names to Electron platform names
+  local electron_platform=""
+  case "${os_name}" in
+    osx) electron_platform="darwin" ;;
+    linux) electron_platform="linux" ;;
+    windows) electron_platform="win32" ;;
+    *) return 0 ;; # Skip if unknown
+  esac
+  
+  # Set up Electron cache directory
+  local cache_dir="${ELECTRON_DOWNLOAD_CACHE:-$(pwd)/.electron-cache}"
+  mkdir -p "${cache_dir}"
+  export ELECTRON_DOWNLOAD_CACHE="${cache_dir}"
+  
+  # Try to detect Electron version from package.json
+  local electron_version=""
+  if [[ -f "package.json" ]]; then
+    electron_version=$(node -p "require('./package.json').electronVersion || (require('./package.json').engines && require('./package.json').engines.electron) || ''" 2>/dev/null || echo "")
+    # Remove '^' or '~' prefix if present
+    electron_version="${electron_version#^}"
+    electron_version="${electron_version#~}"
+  fi
+  
+  if [[ -n "${electron_version}" ]]; then
+    log_info "Electron version detected: ${electron_version}"
+    log_info "Electron cache directory: ${cache_dir}"
+    
+    # Check if cached
+    local artifact_arch="${vscode_arch}"
+    if [[ "${electron_platform}" == "linux" && "${vscode_arch}" == "armhf" ]]; then
+      artifact_arch="armv7l"
+    fi
+    
+    local artifact="electron-v${electron_version}-${electron_platform}-${artifact_arch}.zip"
+    local destination="${cache_dir}/${artifact}"
+    
+    if [[ -f "${destination}" && -s "${destination}" ]]; then
+      log_success "Electron binary already cached: ${artifact}"
+      return 0
+    else
+      log_info "Electron binary not cached, will be downloaded during build"
+    fi
+  else
+    log_info "Could not detect Electron version, will use default download"
+  fi
+  
+  return 0
+}
+
 # Build Electron app bundle
 build_electron_app() {
   log_info "Building Electron app bundle..."
@@ -279,6 +356,11 @@ build_electron_app() {
   fi
   
   log_info "Building for ${os_name} (${vscode_arch})..."
+  
+  # Ensure Electron is cached (non-fatal)
+  ensure_electron_cached "${os_name}" "${vscode_arch}" || {
+    log_warning "Electron cache check failed, continuing anyway..."
+  }
   
   # Get app name from product.json
   local app_name="CortexIDE"

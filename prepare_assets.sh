@@ -946,7 +946,7 @@ try {
       if (hasInnoConstant) {
         console.error('  ✓ Line 114 has Inno Setup constants (single braces are correct)');
       } else {
-        console.error('  ⚠ Line 114 has single braces - may need escaping');
+      console.error('  ⚠ Line 114 has single braces - may need escaping');
         console.error(`    Full line: ${line114}`);
       }
     }
@@ -956,8 +956,8 @@ try {
   const powershellLines = lines
     .map((line, idx) => ({ line, idx: idx + 1 }))
     .filter(({ line }) => 
-      line.includes('powershell.exe') && line.includes('Parameters')
-    );
+    line.includes('powershell.exe') && line.includes('Parameters')
+  );
   
   powershellLines.forEach(({ line, idx }) => {
     // Check for PowerShell array syntax that needs escaping
@@ -970,7 +970,7 @@ try {
         console.error(`  ✓ PowerShell line ${idx} has proper escaping (${match[1].length} braces)`);
       } else if (match && match[1].length === 1) {
         console.error(`  ✗ ERROR: PowerShell line ${idx} has only single brace before [Net.`);
-        console.error(`    Line content: ${line.substring(0, 200)}...`);
+      console.error(`    Line content: ${line.substring(0, 200)}...`);
       } else {
         // Check if it's inside a quoted string - might need different handling
         const inQuotes = /Parameters:\s*"[^"]*\{[^}]*\[Net\./.test(line);

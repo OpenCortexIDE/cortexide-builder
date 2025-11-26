@@ -20,6 +20,18 @@
 		document.readyState,
 	);
 
+	// CRITICAL: Set up CSS loader function IMMEDIATELY before any modules load
+	// This must happen synchronously at the top level, not in an async function
+	if (typeof globalThis._VSCODE_CSS_LOAD === "undefined") {
+		globalThis._VSCODE_CSS_LOAD = function (url: string) {
+			const link = document.createElement("link");
+			link.setAttribute("rel", "stylesheet");
+			link.setAttribute("type", "text/css");
+			link.setAttribute("href", url);
+			document.head.appendChild(link);
+		};
+	}
+
 	type ISandboxConfiguration =
 		import("../../../base/parts/sandbox/common/sandboxTypes.js").ISandboxConfiguration;
 	type ILoadResult<
@@ -372,6 +384,9 @@
 		console.log("[Renderer] load: esModule:", esModule);
 
 		// Dev only: CSS import map tricks
+		// CRITICAL: This must be called BEFORE any module imports
+		// The import map placeholder should already be in workbench.html (via patch)
+		// We populate it with CSS module mappings here
 		setupCSSImportMaps<T>(configuration, baseUrl);
 
 		// ESM Import
@@ -593,8 +608,15 @@
 				window.document.head.appendChild(link);
 			};
 
+			// CRITICAL: Pre-load all CSS files immediately via link tags
+			// This ensures CSS is loaded even if import map doesn't work
 			for (const cssModule of configuration.cssModules) {
 				const cssUrl = new URL(cssModule, baseUrl).href;
+				
+				// Pre-load CSS immediately via link tag (works regardless of import map)
+				globalThis._VSCODE_CSS_LOAD(cssUrl);
+				
+				// Also add to import map as fallback (though it may not work if updated dynamically)
 				const jsSrc = `globalThis._VSCODE_CSS_LOAD('${cssUrl}');\n`;
 				const blob = new Blob([jsSrc], { type: "application/javascript" });
 				const blobUrl = URL.createObjectURL(blob);
@@ -803,19 +825,50 @@
 				},
 			);
 			const importMapSrc = JSON.stringify(importMap, undefined, 2);
-			const importMapScript = document.createElement("script");
-			importMapScript.type = "importmap";
-			importMapScript.setAttribute("nonce", "0c6a828f1297");
-			// @ts-expect-error
-			importMapScript.textContent =
-				ttp?.createScript(importMapSrc) ?? importMapSrc;
-			// Insert at the beginning of head to ensure it's processed before any module imports
-			// Import maps must be present before modules that use them are loaded
-			const firstChild = window.document.head.firstChild;
-			if (firstChild) {
-				window.document.head.insertBefore(importMapScript, firstChild);
+			
+			// CRITICAL: Import maps are processed once at page load and can't be updated.
+			// However, in Electron, we can try replacing the script element.
+			// The placeholder import map should already be in the HTML (via patch).
+			const existingScript = document.querySelector('script[type="importmap"]') as HTMLScriptElement;
+			
+			if (existingScript) {
+				// Try to update the existing script's content
+				// Note: This may not work in all browsers, but Electron might handle it differently
+				try {
+					// @ts-expect-error
+					existingScript.textContent = ttp?.createScript(importMapSrc) ?? importMapSrc;
+					console.log("[Renderer] Updated existing import map with CSS modules");
+				} catch (e) {
+					// If updating doesn't work, replace the script element
+					console.log("[Renderer] Failed to update import map, replacing script element");
+					existingScript.remove();
+					const importMapScript = document.createElement("script");
+					importMapScript.type = "importmap";
+					importMapScript.setAttribute("nonce", "0c6a828f1297");
+					// @ts-expect-error
+					importMapScript.textContent = ttp?.createScript(importMapSrc) ?? importMapSrc;
+					// Insert at the beginning of head
+					const firstChild = window.document.head.firstChild;
+					if (firstChild) {
+						window.document.head.insertBefore(importMapScript, firstChild);
+					} else {
+						window.document.head.appendChild(importMapScript);
+					}
+				}
 			} else {
-				window.document.head.appendChild(importMapScript);
+				// No existing import map, create new one
+				const importMapScript = document.createElement("script");
+				importMapScript.type = "importmap";
+				importMapScript.setAttribute("nonce", "0c6a828f1297");
+				// @ts-expect-error
+				importMapScript.textContent = ttp?.createScript(importMapSrc) ?? importMapSrc;
+				// Insert at the beginning of head
+				const firstChild = window.document.head.firstChild;
+				if (firstChild) {
+					window.document.head.insertBefore(importMapScript, firstChild);
+				} else {
+					window.document.head.appendChild(importMapScript);
+				}
 			}
 		}
 	}

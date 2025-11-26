@@ -23,13 +23,21 @@ echo "Fixing CSS imports in installed app: ${APP_PATH}"
 echo "This requires write permissions to the app bundle..."
 
 if [[ -f "fix_css_imports.js" ]]; then
-    # Make files writable
-    echo "Making files writable..."
-    chmod -R u+w "${APP_OUT_DIR}" 2>/dev/null || {
-        echo "Error: Cannot make files writable. You may need to run:"
-        echo "  sudo chmod -R u+w ${APP_OUT_DIR}"
-        exit 1
-    }
+    # Make files writable - macOS app bundles are code-signed and protected
+    echo "Making files writable (this may require sudo)..."
+    if ! chmod -R u+w "${APP_OUT_DIR}" 2>/dev/null; then
+        echo "Regular chmod failed, trying with sudo..."
+        if sudo chmod -R u+w "${APP_OUT_DIR}" 2>/dev/null; then
+            echo "✓ Files made writable with sudo"
+        else
+            echo "Error: Cannot make files writable even with sudo."
+            echo "The app bundle may be protected by System Integrity Protection (SIP)."
+            echo "Try: sudo chmod -R u+w ${APP_OUT_DIR}"
+            exit 1
+        fi
+    else
+        echo "✓ Files made writable"
+    fi
     
     # Run the fix
     if node fix_css_imports.js "${APP_OUT_DIR}"; then

@@ -377,6 +377,70 @@ SIGNFIX
   if [[ "${SHOULD_BUILD_DMG}" != "no" ]]; then
     echo "Building and moving DMG"
     pushd "VSCode-darwin-${VSCODE_ARCH}"
+    
+    # Create a Gatekeeper fix script that users can run if they see "damaged" error
+    cat > "Fix Gatekeeper Issue.command" << 'GATEKEEPER_FIX'
+#!/bin/bash
+# Quick fix for "CortexIDE is damaged" error
+# This removes the macOS Gatekeeper quarantine attribute
+
+echo "Fixing Gatekeeper issue..."
+APP_NAME=$(find . -maxdepth 1 -name "*.app" -type d | head -1 | xargs basename)
+
+if [[ -z "${APP_NAME}" ]]; then
+    echo "Error: App bundle not found in this directory"
+    exit 1
+fi
+
+APP_PATH="./${APP_NAME}"
+
+if [[ ! -d "${APP_PATH}" ]]; then
+    echo "Error: App bundle not found: ${APP_PATH}"
+    exit 1
+fi
+
+echo "Removing quarantine attribute from ${APP_NAME}..."
+if xattr -l "${APP_PATH}" 2>/dev/null | grep -q "com.apple.quarantine"; then
+    xattr -rd com.apple.quarantine "${APP_PATH}" 2>/dev/null || {
+        echo "Note: You may need to enter your password"
+        sudo xattr -rd com.apple.quarantine "${APP_PATH}" || {
+            echo "Error: Failed to remove quarantine attribute"
+            echo ""
+            echo "Alternative: Right-click the app and select 'Open'"
+            exit 1
+        }
+    }
+    echo "✓ Quarantine attribute removed"
+else
+    echo "No quarantine attribute found (app may already be allowed)"
+fi
+
+echo ""
+echo "✓ Done! You can now open ${APP_NAME}"
+echo ""
+echo "If you still see 'damaged' error:"
+echo "  1. Right-click the app > Open"
+echo "  2. Or go to System Settings > Privacy & Security > Allow app"
+GATEKEEPER_FIX
+    chmod +x "Fix Gatekeeper Issue.command"
+    
+    # Create a README with instructions
+    cat > "README.txt" << 'README'
+CortexIDE Installation Instructions
+====================================
+
+1. Drag CortexIDE.app to your Applications folder
+
+2. If you see "CortexIDE is damaged and can't be opened":
+   - Double-click "Fix Gatekeeper Issue.command" in this window, OR
+   - Right-click CortexIDE.app > Open, OR
+   - Run: xattr -rd com.apple.quarantine /Applications/CortexIDE.app
+
+3. Launch CortexIDE from Applications
+
+For more help, visit: https://opencortexide.com
+README
+    
     if [[ -n "${CODESIGN_IDENTITY}" ]]; then
       npx create-dmg ./*.app .
     else

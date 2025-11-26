@@ -1627,6 +1627,45 @@ EOFPATCH2
     fi
   done
   
+  # CRITICAL FIX: Transform CSS imports in out-build BEFORE minification
+  # This ensures all files that get copied later already have fixed CSS imports
+  # This is MORE RELIABLE than fixing after copying because files are definitely writable here
+  echo "Fixing CSS imports in out-build (before minification)..."
+  FIX_SCRIPT="../fix_css_imports.js"
+  if [[ -f "${FIX_SCRIPT}" ]] && [[ -d "out-build/vs" ]]; then
+    # Count CSS imports before fix
+    CSS_IMPORT_COUNT_BEFORE=$(grep -r --include="*.js" "import.*\.css" "out-build/vs" 2>/dev/null | grep -v "CSS import replaced" | wc -l | tr -d ' ' || echo "0")
+    echo "  Found ${CSS_IMPORT_COUNT_BEFORE} CSS import(s) in out-build/vs before fix"
+    
+    if [[ ${CSS_IMPORT_COUNT_BEFORE} -gt 0 ]]; then
+      # Make files writable
+      chmod -R u+w "out-build/vs" 2>/dev/null || true
+      
+      # Count JS files to process
+      JS_FILE_COUNT=$(find "out-build/vs" -name "*.js" -type f 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+      echo "  Processing ${JS_FILE_COUNT} JavaScript file(s) in out-build/vs..."
+      
+      # Run the fix
+      if node "${FIX_SCRIPT}" "out-build/vs"; then
+        # Verify fix worked
+        CSS_IMPORT_COUNT_AFTER=$(grep -r --include="*.js" "import.*\.css" "out-build/vs" 2>/dev/null | grep -v "CSS import replaced" | wc -l | tr -d ' ' || echo "0")
+        echo "  Found ${CSS_IMPORT_COUNT_AFTER} CSS import(s) after fix"
+        if [[ ${CSS_IMPORT_COUNT_AFTER} -gt 0 ]]; then
+          echo "⚠ Warning: ${CSS_IMPORT_COUNT_AFTER} CSS import(s) still present in out-build/vs" >&2
+          echo "  Will retry fix after copying to app bundle..." >&2
+        else
+          echo "✓ Fixed ${CSS_IMPORT_COUNT_BEFORE} CSS import(s) in out-build/vs"
+        fi
+      else
+        echo "⚠ Warning: CSS import fix failed on out-build/vs, will retry after copying..." >&2
+      fi
+    else
+      echo "  No CSS imports found in out-build/vs (may have been fixed already or not present)"
+    fi
+  else
+    echo "⚠ Warning: Cannot fix CSS imports in out-build - fix script or directory not found" >&2
+  fi
+  
   echo "Minifying VS Code..."
   if ! npm run gulp minify-vscode; then
     echo "Error: minify-vscode failed. Check for:" >&2

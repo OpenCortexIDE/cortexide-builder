@@ -560,7 +560,17 @@ EOFTS
     fi
     # Verify CSS fix is in the compiled file
     # Check for multiple patterns since compilation may transform the code
-    if ! grep -qE "CSS Import Transformer|CSS import transformed|document\.createElement\(['\"]link['\"]\)|createElement.*link" "build/lib/optimize.js" 2>/dev/null; then
+    # Use simpler patterns that are more reliable
+    CSS_FIX_FOUND=false
+    if grep -q "CSS Import Transformer" "build/lib/optimize.js" 2>/dev/null; then
+      CSS_FIX_FOUND=true
+    elif grep -qE "createElement.*link" "build/lib/optimize.js" 2>/dev/null; then
+      CSS_FIX_FOUND=true
+    elif grep -q "CSS import transformed" "build/lib/optimize.js" 2>/dev/null; then
+      CSS_FIX_FOUND=true
+    fi
+    
+    if [[ "${CSS_FIX_FOUND}" != "true" ]]; then
       echo "ERROR: CSS import transformation is missing from optimize.js!" >&2
       echo "  The build/lib/optimize.ts file contains the fix, but it wasn't compiled." >&2
       echo "  This will cause CSS MIME type errors at runtime." >&2
@@ -570,8 +580,14 @@ EOFTS
       if [[ -f "node_modules/.bin/tsc" ]]; then
         ./node_modules/.bin/tsc build/lib/optimize.ts --outDir build/lib --module commonjs --target es2020 --esModuleInterop --skipLibCheck --noEmit false >/dev/null 2>&1 || true
       fi
-      # Check again
-      if ! grep -q "CSS Import Transformer\|document.createElement('link')" "build/lib/optimize.js" 2>/dev/null; then
+      # Check again with simpler patterns
+      CSS_FIX_FOUND=false
+      if grep -q "CSS Import Transformer" "build/lib/optimize.js" 2>/dev/null; then
+        CSS_FIX_FOUND=true
+      elif grep -qE "createElement.*link" "build/lib/optimize.js" 2>/dev/null; then
+        CSS_FIX_FOUND=true
+      fi
+      if [[ "${CSS_FIX_FOUND}" != "true" ]]; then
         echo "  ERROR: Force recompilation failed - CSS fix still missing!" >&2
         echo "  Please ensure optimize.ts is manually compiled or the build system is fixed." >&2
         exit 1

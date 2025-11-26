@@ -150,7 +150,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SHOULD_BUILD_REH: 'no'
           SHOULD_BUILD_REH_WEB: 'no'
-        run: ./build.sh
+        run: ./build-new.sh
         if: env.SHOULD_BUILD == 'yes'
 
       - name: Compress vscode artifact

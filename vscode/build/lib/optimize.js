@@ -106,6 +106,102 @@ function bundleESMTask(opts) {
                         if (mapper) {
                             newContents = await mapper(newContents);
                         }
+                        // CSS Import Transformer: Transform CSS imports into link tag injection code
+                        // This fixes MIME type errors when CSS files are imported as JavaScript modules
+                        if (/import\s+.*['"]\.[^'"]*\.css['"]|from\s+['"]\.[^'"]*\.css['"]/.test(newContents)) {
+                            let cssImportCounter = 0;
+                            const originalContents = newContents;
+                            // Pattern 1: Static imports with 'from': import styles from './file.css'
+                            const staticImportPattern = /import\s+([^'"\n]*?)\s+from\s+['"]([^'"]*\.css)['"]/g;
+                            newContents = newContents.replace(staticImportPattern, (match, importName, cssPath) => {
+                                cssImportCounter++;
+                                let varName = importName.trim();
+                                if (!varName || varName === '*') {
+                                    varName = `__css_module_${cssImportCounter}`;
+                                } else if (varName.startsWith('* as ')) {
+                                    varName = varName.substring(5).trim();
+                                } else if (varName.includes(',')) {
+                                    varName = varName.split(',')[0].trim();
+                                }
+                                const safeCssPath = cssPath.replace(/'/g, "\\'");
+                                return `// CSS import transformed: ${cssPath}
+(function() {
+	if (typeof document === 'undefined') return;
+	const link = document.createElement('link');
+	link.rel = 'stylesheet';
+	link.type = 'text/css';
+	try {
+		link.href = typeof import.meta !== 'undefined' && import.meta.url 
+			? new URL('${safeCssPath}', import.meta.url).href 
+			: '${safeCssPath}';
+	} catch (e) {
+		link.href = '${safeCssPath}';
+	}
+	const cssFileName = '${safeCssPath}'.split('/').pop();
+	const existing = document.querySelector('link[href*="' + cssFileName + '"]');
+	if (!existing) {
+		document.head.appendChild(link);
+	}
+})();
+const ${varName} = {};`;
+                            });
+                            // Pattern 2: Side-effect imports: import './file.css'
+                            const sideEffectPattern = /import\s+['"]([^'"]*\.css)['"]\s*;?/g;
+                            newContents = newContents.replace(sideEffectPattern, (match, cssPath) => {
+                                // Skip if already handled by static import pattern
+                                const matchIndex = originalContents.indexOf(match);
+                                const afterMatch = originalContents.substring(matchIndex + match.length, matchIndex + match.length + 20);
+                                if (afterMatch.trim().startsWith('from')) {
+                                    return match;
+                                }
+                                cssImportCounter++;
+                                const safeCssPath = cssPath.replace(/'/g, "\\'");
+                                return `// CSS import transformed: ${cssPath}
+(function() {
+	if (typeof document === 'undefined') return;
+	const link = document.createElement('link');
+	link.rel = 'stylesheet';
+	link.type = 'text/css';
+	try {
+		link.href = typeof import.meta !== 'undefined' && import.meta.url 
+			? new URL('${safeCssPath}', import.meta.url).href 
+			: '${safeCssPath}';
+	} catch (e) {
+		link.href = '${safeCssPath}';
+	}
+	const cssFileName = '${safeCssPath}'.split('/').pop();
+	const existing = document.querySelector('link[href*="' + cssFileName + '"]');
+	if (!existing) {
+		document.head.appendChild(link);
+	}
+})();`;
+                            });
+                            // Pattern 3: Dynamic imports: import('./file.css')
+                            const dynamicImportPattern = /import\s*\(\s*['"]([^'"]*\.css)['"]\s*\)/g;
+                            newContents = newContents.replace(dynamicImportPattern, (match, cssPath) => {
+                                cssImportCounter++;
+                                const safeCssPath = cssPath.replace(/'/g, "\\'");
+                                return `Promise.resolve((function() {
+	if (typeof document === 'undefined') return {};
+	const link = document.createElement('link');
+	link.rel = 'stylesheet';
+	link.type = 'text/css';
+	try {
+		link.href = typeof import.meta !== 'undefined' && import.meta.url 
+			? new URL('${safeCssPath}', import.meta.url).href 
+			: '${safeCssPath}';
+	} catch (e) {
+		link.href = '${safeCssPath}';
+	}
+	const cssFileName = '${safeCssPath}'.split('/').pop();
+	const existing = document.querySelector('link[href*="' + cssFileName + '"]');
+	if (!existing) {
+		document.head.appendChild(link);
+	}
+	return {};
+})())`;
+                            });
+                        }
                         return { contents: newContents };
                     });
                 }

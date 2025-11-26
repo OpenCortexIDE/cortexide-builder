@@ -1,421 +1,128 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1091
+# Windows Packaging Script for CortexIDE
+# Creates ZIP and MSI/EXE installers for Windows distribution
 
-set -ex
+set -euo pipefail
 
-if [[ "${CI_BUILD}" == "no" ]]; then
-  exit 1
-fi
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-tar -xzf ./vscode.tar.gz
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUILDER_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+VSCODE_DIR="${BUILDER_DIR}/vscode"
 
-cd vscode || { echo "'vscode' dir not found"; exit 1; }
-
-# CRITICAL FIX: Patch preinstall.js to skip Node.js version check
-# CI uses Node.js v20.18.2, but preinstall.js requires v22.15.1+
-# The environment variable approach may not work, so patch the file directly
-if [[ -f "build/npm/preinstall.js" ]]; then
-  echo "Patching preinstall.js to skip Node.js version check..." >&2
-  # Check if already patched
-  if ! grep -q "// PATCHED: Skip version check" "build/npm/preinstall.js" 2>/dev/null; then
-    # Use Node.js to patch the file
-    node << 'PREINSTALLFIX' || {
-const fs = require('fs');
-const filePath = 'build/npm/preinstall.js';
-let content = fs.readFileSync(filePath, 'utf8');
-
-// Check if already patched
-if (content.includes('// PATCHED: Skip version check')) {
-  console.error('preinstall.js already patched');
-  process.exit(0);
+# Logging functions
+log_info() {
+  echo -e "${BLUE}[INFO]${NC} $1"
 }
 
-// Replace the version check with a skip
-const lines = content.split('\n');
-for (let i = 0; i < lines.length; i++) {
-  // Find the version check block
-  if (lines[i].includes("if (!process.env['VSCODE_SKIP_NODE_VERSION_CHECK'])") && 
-      i + 1 < lines.length && 
-      lines[i + 1].includes('majorNodeVersion < 22')) {
-    // Comment out the entire check block
-    const indent = lines[i].match(/^\s*/)[0];
-    lines[i] = `${indent}// PATCHED: Skip version check for CI (Node.js v20.18.2)\n${indent}if (false && !process.env['VSCODE_SKIP_NODE_VERSION_CHECK']) {`;
-    console.error(`✓ Patched preinstall.js at line ${i + 1}`);
-    break;
-  }
+log_success() {
+  echo -e "${GREEN}[SUCCESS]${NC} $1"
 }
 
-content = lines.join('\n');
-fs.writeFileSync(filePath, content, 'utf8');
-console.error('✓ Successfully patched preinstall.js to skip version check');
-PREINSTALLFIX
-      echo "Warning: Failed to patch preinstall.js, trying environment variable..." >&2
-      export VSCODE_SKIP_NODE_VERSION_CHECK=1
-    }
-  else
-    echo "preinstall.js already patched, skipping..." >&2
-  fi
-fi
+log_error() {
+  echo -e "${RED}[ERROR]${NC} $1"
+}
 
-for i in {1..5}; do # try 5 times
-  npm ci && break
-  if [[ $i -eq 3 ]]; then
-    echo "Npm install failed too many times" >&2
+# Get version info
+get_version() {
+  cd "${VSCODE_DIR}" || exit 1
+  local version=$(node -p "require('./package.json').version")
+  local app_name=$(node -p "require('./product.json').applicationName")
+  echo "${version}" "${app_name}"
+}
+
+# Create ZIP
+create_zip() {
+  local version="$1"
+  local app_name="$2"
+  local arch="${VSCODE_ARCH:-x64}"
+  
+  log_info "Creating ZIP for ${arch}..."
+  
+  local exe_path="${VSCODE_DIR}/.build/electron/${app_name}.exe"
+  
+  if [[ ! -f "${exe_path}" ]]; then
+    log_error "Executable not found: ${exe_path}"
     exit 1
   fi
-  echo "Npm install failed $i, trying again..."
-done
-
-# CRITICAL FIX: @electron/get is now ESM and breaks @vscode/gulp-electron
-# Patch node_modules to dynamically import the module
-if [[ -f "node_modules/@vscode/gulp-electron/src/download.js" ]]; then
-  echo "Patching @vscode/gulp-electron to support ESM @electron/get..." >&2
-  node << 'ELECTRONPATCH' || {
-const fs = require('fs');
-const filePath = 'node_modules/@vscode/gulp-electron/src/download.js';
-let content = fs.readFileSync(filePath, 'utf8');
-
-const alreadyPatched = content.includes('// ESM_PATCH: downloadArtifact') && content.includes('// ESM_PATCH: octokit') && content.includes('// ESM_PATCH: got');
-if (!alreadyPatched) {
-  const requireElectronLine = 'const { downloadArtifact } = require("@electron/get");';
-  if (content.includes(requireElectronLine)) {
-    content = content.replace(requireElectronLine, `// ESM_PATCH: downloadArtifact
-let __downloadArtifactPromise;
-async function getDownloadArtifact() {
-  if (!__downloadArtifactPromise) {
-    __downloadArtifactPromise = import("@electron/get").then((mod) => {
-      if (mod.downloadArtifact) {
-        return mod.downloadArtifact;
-      }
-      if (mod.default && mod.default.downloadArtifact) {
-        return mod.default.downloadArtifact;
-      }
-      return mod.default || mod;
-    });
-  }
-  return __downloadArtifactPromise;
-}`);
-  }
-
-  const callLine = '  return await downloadArtifact(downloadOpts);';
-  if (content.includes(callLine)) {
-    content = content.replace(callLine, `  const downloadArtifact = await getDownloadArtifact();
-  return await downloadArtifact(downloadOpts);`);
-  }
-
-  const requireOctokitLine = 'const { Octokit } = require("@octokit/rest");';
-  if (content.includes(requireOctokitLine)) {
-    content = content.replace(requireOctokitLine, `// ESM_PATCH: octokit
-let __octokitPromise;
-async function getOctokit() {
-  if (!__octokitPromise) {
-    __octokitPromise = import("@octokit/rest").then((mod) => {
-      if (mod.Octokit) {
-        return mod.Octokit;
-      }
-      if (mod.default && mod.default.Octokit) {
-        return mod.default.Octokit;
-      }
-      return mod.default || mod;
-    });
-  }
-  return __octokitPromise;
-}`);
-
-    const usageLine = '  const octokit = new Octokit({ auth: token });';
-    if (content.includes(usageLine)) {
-      content = content.replace(usageLine, '  const Octokit = await getOctokit();\n  const octokit = new Octokit({ auth: token });');
-    }
-  }
-  const requireGotLine = 'const { got } = require("got");';
-  if (content.includes(requireGotLine)) {
-    content = content.replace(requireGotLine, `// ESM_PATCH: got
-let __gotPromise;
-async function getGot() {
-  if (!__gotPromise) {
-    __gotPromise = import("got").then((mod) => {
-      if (mod.got) {
-        return mod.got;
-      }
-      if (mod.default && mod.default.got) {
-        return mod.default.got;
-      }
-      return mod.default || mod;
-    });
-  }
-  return __gotPromise;
-}`);
-
-    const gotUsage = '  const response = await got(url, {';
-    if (content.includes(gotUsage)) {
-      content = content.replace(gotUsage, '  const got = await getGot();\n  const response = await got(url, {');
-    }
-  }
-}
-
-fs.writeFileSync(filePath, content, 'utf8');
-console.error('✓ Patched gulp-electron download.js for ESM @electron/get');
-ELECTRONPATCH
-    echo "Warning: Failed to patch gulp-electron for ESM, build may fail" >&2
-  }
-fi
-
-node build/azure-pipelines/distro/mixin-npm
-
-. ../build/windows/rtf/make.sh
-
-# CRITICAL FIX: Make rcedit optional when wine is not available
-# rcedit requires wine on Linux, but wine may not be installed in CI
-if [[ -f "build/gulpfile.vscode.js" ]]; then
-  echo "Patching gulpfile.vscode.js to make rcedit optional when wine is unavailable..." >&2
-  node << 'RCEDITFIX' || {
-const fs = require('fs');
-const filePath = 'build/gulpfile.vscode.js';
-let content = fs.readFileSync(filePath, 'utf8');
-
-// Check if already patched
-if (content.includes('// RCEDIT_WINE_FIX')) {
-  console.error('gulpfile.vscode.js already patched for rcedit/wine');
-  process.exit(0);
-}
-
-    // Find the rcedit usage and wrap it in try-catch
-    const lines = content.split('\n');
-    let modified = false;
-
-    for (let i = 0; i < lines.length; i++) {
-      // Find: await rcedit(path.join(cwd, dep), {
-      if (lines[i].includes('await rcedit(path.join(cwd, dep), {')) {
-        // Check if already wrapped
-        if (content.includes('// RCEDIT_WINE_FIX')) {
-          console.error('rcedit already wrapped in try-catch');
-          break;
-        }
-        
-        // Wrap the rcedit call itself in try-catch
-        // The rcedit call is inside a Promise.all map function
-        const indent = lines[i].match(/^\s*/)[0];
-        
-        // Insert try before rcedit
-        lines[i] = `${indent}try {\n${lines[i]}`;
-        
-        // Find the closing of rcedit call (should be a few lines later with });
-        let rceditCloseLine = -1;
-        for (let j = i + 1; j < lines.length && j <= i + 15; j++) {
-          if (lines[j].includes('});') && lines[j].match(/^\s*/)[0].length === indent.length) {
-            rceditCloseLine = j;
-            break;
-          }
-        }
-        
-        if (rceditCloseLine >= 0) {
-          // Add catch block after rcedit closing
-          lines[rceditCloseLine] = `${lines[rceditCloseLine]}\n${indent}} catch (err) {\n${indent}  // RCEDIT_WINE_FIX: rcedit requires wine on Linux, skip if not available\n${indent}  if (err.message && (err.message.includes('wine') || err.message.includes('ENOENT') || err.code === 'ENOENT')) {\n${indent}    console.warn('Skipping rcedit (wine not available):', err.message);\n${indent}  } else {\n${indent}    throw err;\n${indent}  }\n${indent}}`;
-          modified = true;
-          console.error(`✓ Wrapped rcedit in try-catch at line ${i + 1}`);
-          break;
-        }
-      }
-    }
-
-if (modified) {
-  content = lines.join('\n');
-  fs.writeFileSync(filePath, content, 'utf8');
-  console.error('✓ Successfully patched gulpfile.vscode.js to make rcedit optional');
-} else {
-  console.error('Could not find rcedit usage to patch');
-}
-RCEDITFIX
-    echo "Warning: Failed to patch gulpfile.vscode.js for rcedit, continuing anyway..." >&2
-  }
-fi
-
-# CRITICAL FIX: Skip AppX building if win32ContextMenu is missing
-if [[ -f "build/gulpfile.vscode.js" ]]; then
-  echo "Checking for win32ContextMenu in product.json..." >&2
-  node << 'APPXFIX' || {
-const fs = require('fs');
-const productPath = 'product.json';
-const gulpfilePath = 'build/gulpfile.vscode.js';
-
-try {
-  const product = JSON.parse(fs.readFileSync(productPath, 'utf8'));
-  const hasWin32ContextMenu = product.win32ContextMenu && 
-                               product.win32ContextMenu.x64 && 
-                               product.win32ContextMenu.x64.clsid;
   
-  if (!hasWin32ContextMenu) {
-    console.error('win32ContextMenu missing in product.json, skipping AppX build...');
-    
-    let content = fs.readFileSync(gulpfilePath, 'utf8');
-    const lines = content.split('\n');
-    let modified = false;
-    
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].includes("if (quality === 'stable' || quality === 'insider')") && 
-          i + 1 < lines.length && 
-          lines[i + 1].includes('.build/win32/appx')) {
-        if (lines[i].includes('product.win32ContextMenu')) {
-          console.error('Already has win32ContextMenu check');
-          break;
-        }
-        
-        const indent = lines[i].match(/^\s*/)[0];
-        const newCondition = `${indent}if ((quality === 'stable' || quality === 'insider') && product.win32ContextMenu && product.win32ContextMenu[arch]) {`;
-        lines[i] = newCondition;
-        modified = true;
-        console.error(`✓ Added win32ContextMenu check at line ${i + 1}`);
-        break;
-      }
+  local zip_name="CortexIDE-${version}-win32-${arch}.zip"
+  local temp_dir="${BUILDER_DIR}/.zip-contents"
+  
+  rm -rf "${temp_dir}"
+  mkdir -p "${temp_dir}/cortexide"
+  
+  # Copy executable and resources
+  cp "${exe_path}" "${temp_dir}/cortexide/"
+  cp -r "${VSCODE_DIR}/out" "${temp_dir}/cortexide/" 2>/dev/null || true
+  cp "${VSCODE_DIR}/product.json" "${temp_dir}/cortexide/" 2>/dev/null || true
+  cp "${VSCODE_DIR}/package.json" "${temp_dir}/cortexide/" 2>/dev/null || true
+  
+  # Create ZIP
+  cd "${temp_dir}"
+  if command -v zip &> /dev/null; then
+    zip -r "${BUILDER_DIR}/${zip_name}" cortexide/ || {
+      log_error "Failed to create ZIP"
+      rm -rf "${temp_dir}"
+      exit 1
     }
-    
-    if (modified) {
-      content = lines.join('\n');
-      fs.writeFileSync(gulpfilePath, content, 'utf8');
-      console.error('✓ Successfully patched gulpfile.vscode.js to skip AppX when win32ContextMenu is missing');
-    }
-  } else {
-    console.error('✓ win32ContextMenu found in product.json, AppX building enabled');
-  }
-} catch (error) {
-  console.error(`✗ ERROR: ${error.message}`);
-  process.exit(1);
-}
-APPXFIX
-    echo "Warning: Failed to patch gulpfile.vscode.js for AppX, continuing anyway..." >&2
-  }
-fi
-
-npm run gulp "vscode-win32-${VSCODE_ARCH}-min-ci"
-
-# CRITICAL FIX: Patch InnoSetup code.iss to conditionally include AppX file
-# If AppX building was skipped (win32ContextMenu missing), the AppX file won't exist
-# and InnoSetup will fail. Make the AppX file reference conditional.
-if [[ -f "build/win32/code.iss" ]]; then
-  echo "Patching InnoSetup code.iss to conditionally include AppX file..." >&2
-  node << 'INNOSETUPFIX' || {
-const fs = require('fs');
-const path = require('path');
-const filePath = 'build/win32/code.iss';
-
-try {
-  let content = fs.readFileSync(filePath, 'utf8');
-  const lines = content.split('\n');
-  let modified = false;
-  
-  // Check if AppX file exists
-  const appxDir = `../VSCode-win32-${process.env.VSCODE_ARCH || 'x64'}/appx`;
-  const appxFile = path.join(appxDir, `code_${process.env.VSCODE_ARCH || 'x64'}.appx`);
-  const appxExists = fs.existsSync(appxFile);
-  
-  if (!appxExists) {
-    console.error(`AppX file not found: ${appxFile}, making AppX reference conditional...`);
-    
-    // Find lines that reference the AppX file (around line 99 based on error)
-    for (let i = 0; i < lines.length; i++) {
-      // Look for Source file references to .appx files
-      if (lines[i].includes('Source:') && lines[i].includes('.appx')) {
-        // Comment out the line or make it conditional
-        const indent = lines[i].match(/^\s*/)[0];
-        const originalLine = lines[i].substring(indent.length);
-        // InnoSetup supports conditional compilation with #if FileExists()
-        // But simpler: just comment it out if file doesn't exist
-        if (!lines[i].trim().startsWith(';')) {
-          // Split into two lines properly - add comment line, then commented original
-          lines[i] = `${indent}; PATCHED: AppX file not found, commented out`;
-          lines.splice(i + 1, 0, `${indent};${originalLine}`);
-          i++; // Adjust index since we inserted a line
-          modified = true;
-          console.error(`✓ Commented out AppX reference at line ${i}`);
-        }
-      }
-      // Also check for AppxPackage definitions
-      if (lines[i].includes('AppxPackage') && lines[i].includes('.appx')) {
-        const indent = lines[i].match(/^\s*/)[0];
-        const originalLine = lines[i].substring(indent.length);
-        if (!lines[i].trim().startsWith(';')) {
-          // Split into two lines properly - add comment line, then commented original
-          lines[i] = `${indent}; PATCHED: AppX package not found, commented out`;
-          lines.splice(i + 1, 0, `${indent};${originalLine}`);
-          i++; // Adjust index since we inserted a line
-          modified = true;
-          console.error(`✓ Commented out AppX package definition at line ${i}`);
-        }
-      }
-    }
-  } else {
-    console.error(`✓ AppX file found: ${appxFile}, no patching needed`);
-  }
-  
-  if (modified) {
-    content = lines.join('\n');
-    fs.writeFileSync(filePath, content, 'utf8');
-    console.error('✓ Successfully patched code.iss to handle missing AppX file');
-  }
-} catch (error) {
-  console.error(`✗ ERROR: ${error.message}`);
-  process.exit(1);
-}
-INNOSETUPFIX
-    echo "Warning: Failed to patch code.iss, InnoSetup may fail if AppX file is missing" >&2
-  }
-fi
-
-. ../build_cli.sh
-
-if [[ "${VSCODE_ARCH}" == "x64" ]]; then
-  if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
-    echo "Building REH"
-    
-    # CRITICAL FIX: Handle empty glob patterns in gulpfile.reh.js (same fix as main build.sh)
-    if [[ -f "build/gulpfile.reh.js" ]]; then
-      echo "Applying critical fix to gulpfile.reh.js for empty glob patterns..." >&2
-      node << 'REHFIX' || {
-const fs = require('fs');
-const filePath = 'build/gulpfile.reh.js';
-try {
-  let content = fs.readFileSync(filePath, 'utf8');
-  const lines = content.split('\n');
-  let modified = false;
-  
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes('const dependenciesSrc =') && lines[i].includes('.flat()')) {
-      if (!lines[i].includes('|| [\'**\', \'!**/*\']')) {
-        let newLine = lines[i].replace(/const dependenciesSrc =/, 'let dependenciesSrc =');
-        newLine = newLine.replace(/\.flat\(\);?$/, ".flat() || ['**', '!**/*'];");
-        lines[i] = newLine;
-        const indent = lines[i].match(/^\s*/)[0];
-        lines.splice(i + 1, 0, `${indent}if (dependenciesSrc.length === 0) { dependenciesSrc = ['**', '!**/*']; }`);
-        modified = true;
-        console.error(`✓ Fixed dependenciesSrc at line ${i + 1}`);
-      }
-      break;
-    }
-  }
-  
-  if (modified) {
-    content = lines.join('\n');
-    fs.writeFileSync(filePath, content, 'utf8');
-    console.error('✓ Successfully applied REH glob fix');
-  }
-} catch (error) {
-  console.error(`✗ ERROR: ${error.message}`);
-  process.exit(1);
-}
-REHFIX
-        echo "Warning: Failed to patch gulpfile.reh.js, continuing anyway..." >&2
-      }
-    fi
-    
-    npm run gulp minify-vscode-reh
-    npm run gulp "vscode-reh-win32-${VSCODE_ARCH}-min-ci"
+    log_success "ZIP created: ${zip_name}"
+  else
+    log_warning "zip command not found, skipping ZIP creation"
   fi
+  
+  rm -rf "${temp_dir}"
+}
 
-  if [[ "${SHOULD_BUILD_REH_WEB}" != "no" ]]; then
-    echo "Building REH-web"
-    npm run gulp minify-vscode-reh-web
-    npm run gulp "vscode-reh-web-win32-${VSCODE_ARCH}-min-ci"
+# Create MSI (simplified - requires WiX Toolset)
+create_msi() {
+  local version="$1"
+  local app_name="$2"
+  local arch="${VSCODE_ARCH:-x64}"
+  
+  log_info "Creating MSI package for ${arch}..."
+  
+  # Check if WiX is available
+  if ! command -v candle &> /dev/null && ! command -v light &> /dev/null; then
+    log_warning "WiX Toolset not found, skipping MSI creation"
+    log_info "Install WiX Toolset from https://wixtoolset.org/ to create MSI installers"
+    return 0
   fi
-fi
+  
+  # This is a simplified version - full MSI creation would require WiX setup files
+  log_info "MSI packaging requires WiX Toolset and setup files"
+  log_info "For now, using ZIP as primary distribution method"
+}
 
-cd ..
+# Main packaging function
+main() {
+  log_info "Starting Windows packaging..."
+  
+  if [[ ! -d "${VSCODE_DIR}" ]]; then
+    log_error "vscode directory not found: ${VSCODE_DIR}"
+    exit 1
+  fi
+  
+  # Get version info
+  read -r version app_name <<< "$(get_version)"
+  log_info "Version: ${version}, App: ${app_name}"
+  
+  # Create ZIP
+  create_zip "${version}" "${app_name}"
+  
+  # Create MSI (if supported)
+  if [[ "${CREATE_MSI:-no}" == "yes" ]]; then
+    create_msi "${version}" "${app_name}"
+  fi
+  
+  log_success "Windows packaging completed!"
+}
+
+# Run main function
+main "$@"

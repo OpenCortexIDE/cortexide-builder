@@ -109,7 +109,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-        run: ./build.sh
+        run: ./build-new.sh
         if: env.SHOULD_BUILD == 'yes'
 
       - name: Prepare assets

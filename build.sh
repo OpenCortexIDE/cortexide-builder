@@ -1731,6 +1731,25 @@ EOFPATCH2
 
     find "../VSCode-darwin-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
 
+    # CRITICAL FIX: Transform CSS imports in the packaged app bundle
+    # This must run AFTER packaging because files are copied from multiple sources
+    echo "Fixing CSS imports in packaged app bundle..."
+    APP_BUNDLE_NAME=$( node -p "require('./product.json').nameShort || 'CortexIDE'" )
+    if [[ -z "${APP_BUNDLE_NAME}" || "${APP_BUNDLE_NAME}" == "null" || "${APP_BUNDLE_NAME}" == "undefined" ]]; then
+      APP_BUNDLE_NAME="${APP_NAME:-CortexIDE}"
+    fi
+    APP_BUNDLE="../VSCode-darwin-${VSCODE_ARCH}/${APP_BUNDLE_NAME}.app"
+    if [[ -d "${APP_BUNDLE}" ]]; then
+      APP_OUT_DIR="${APP_BUNDLE}/Contents/Resources/app/out/vs"
+      if [[ -d "${APP_OUT_DIR}" ]] && [[ -f "fix_css_imports.js" ]]; then
+        if node fix_css_imports.js "${APP_OUT_DIR}" 2>/dev/null; then
+          echo "✓ Fixed CSS imports in app bundle"
+        else
+          echo "⚠ Warning: CSS import fix script failed on app bundle, but continuing..." >&2
+        fi
+      fi
+    fi
+
     # CRITICAL: Verify workbench.html exists in the built app to prevent blank screen
     echo "Verifying critical files in macOS app bundle..."
     # Get the actual app bundle name from product.json (nameShort), not APP_NAME
@@ -2215,9 +2234,20 @@ POWERSHELLESCAPEFIX
         echo "Skipping PowerShell escaping patch (PATCH_INNO_POWERSHELL!=yes)" >&2
       fi
 
+      # CRITICAL FIX: Transform CSS imports in the packaged Windows app
+      echo "Fixing CSS imports in Windows package..."
+      WIN_PACKAGE="../VSCode-win32-${VSCODE_ARCH}"
+      WIN_OUT_DIR="${WIN_PACKAGE}/resources/app/out/vs"
+      if [[ -d "${WIN_OUT_DIR}" ]] && [[ -f "fix_css_imports.js" ]]; then
+        if node fix_css_imports.js "${WIN_OUT_DIR}" 2>/dev/null; then
+          echo "✓ Fixed CSS imports in Windows package"
+        else
+          echo "⚠ Warning: CSS import fix script failed on Windows package, but continuing..." >&2
+        fi
+      fi
+
       # CRITICAL: Verify workbench.html exists in the built Windows package to prevent blank screen
       echo "Verifying critical files in Windows package..."
-      WIN_PACKAGE="../VSCode-win32-${VSCODE_ARCH}"
       WORKBENCH_HTML="${WIN_PACKAGE}/resources/app/out/vs/code/electron-browser/workbench/workbench.html"
       PRODUCT_JSON="${WIN_PACKAGE}/resources/app/product.json"
       
@@ -2439,9 +2469,20 @@ POWERSHELLESCAPEFIX
 
       find "../VSCode-linux-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
 
+      # CRITICAL FIX: Transform CSS imports in the packaged Linux app
+      echo "Fixing CSS imports in Linux package..."
+      LINUX_PACKAGE="../VSCode-linux-${VSCODE_ARCH}"
+      LINUX_OUT_DIR="${LINUX_PACKAGE}/resources/app/out/vs"
+      if [[ -d "${LINUX_OUT_DIR}" ]] && [[ -f "fix_css_imports.js" ]]; then
+        if node fix_css_imports.js "${LINUX_OUT_DIR}" 2>/dev/null; then
+          echo "✓ Fixed CSS imports in Linux package"
+        else
+          echo "⚠ Warning: CSS import fix script failed on Linux package, but continuing..." >&2
+        fi
+      fi
+
       # CRITICAL: Verify workbench.html exists in the built Linux package to prevent blank screen
       echo "Verifying critical files in Linux package..."
-      LINUX_PACKAGE="../VSCode-linux-${VSCODE_ARCH}"
       WORKBENCH_HTML="${LINUX_PACKAGE}/resources/app/out/vs/code/electron-browser/workbench/workbench.html"
       PRODUCT_JSON="${LINUX_PACKAGE}/resources/app/product.json"
       

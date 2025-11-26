@@ -40,10 +40,12 @@ function fixCSSImports(filePath) {
         cssImportCounter++;
         // Handle different import name patterns
         let varName = importName.trim();
-        if (!varName || varName === '*') {
+        if (!varName) {
+            varName = `__css_module_${cssImportCounter}`;
+        } else if (varName === '*') {
             varName = `__css_module_${cssImportCounter}`;
         } else if (varName.startsWith('* as ')) {
-            varName = varName.substring(5); // Remove '* as ' prefix
+            varName = varName.substring(5).trim(); // Remove '* as ' prefix, e.g., '* as styles' -> 'styles'
         } else if (varName.includes(',')) {
             // Handle: import defaultStyle, { named } from './file.css'
             varName = varName.split(',')[0].trim();
@@ -163,15 +165,32 @@ const ${varName} = {};`;
 // Uses Node.js path.join() which is cross-platform (handles Windows/Unix paths)
 function findJSFiles(dir) {
     const files = [];
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    let entries;
+    try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (error) {
+        // Skip directories we can't read (permission errors, etc.)
+        if (error.code === 'EACCES' || error.code === 'EPERM') {
+            return files;
+        }
+        throw error;
+    }
     
     for (const entry of entries) {
-        // Use path.join() for cross-platform compatibility (Windows/Unix)
-        const fullPath = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-            files.push(...findJSFiles(fullPath));
-        } else if (entry.isFile() && entry.name.endsWith('.js')) {
-            files.push(fullPath);
+        try {
+            // Use path.join() for cross-platform compatibility (Windows/Unix)
+            const fullPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                files.push(...findJSFiles(fullPath));
+            } else if (entry.isFile() && entry.name.endsWith('.js')) {
+                files.push(fullPath);
+            }
+        } catch (error) {
+            // Skip files/directories we can't access
+            if (error.code === 'EACCES' || error.code === 'EPERM') {
+                continue;
+            }
+            throw error;
         }
     }
     

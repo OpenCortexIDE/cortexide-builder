@@ -76,44 +76,39 @@ validate_environment() {
 get_repository() {
   log_info "Preparing source repository..."
   
-  # If vscode directory doesn't exist, use get_repo.sh (handles both local and CI)
-  if [[ ! -d "${BUILDER_DIR}/vscode" ]]; then
-    if [[ -d "${CORTEXIDE_DIR}" ]]; then
-      log_info "Copying CortexIDE repository to vscode directory..."
-      
-      # Use rsync to copy efficiently, excluding build artifacts
-      rsync -a --delete \
-        --exclude ".git" \
-        --exclude "node_modules" \
-        --exclude "out" \
-        --exclude "out-*" \
-        --exclude ".build" \
-        --exclude ".vscode" \
-        --exclude "**/.vscode" \
-        --exclude "**/node_modules" \
-        "${CORTEXIDE_DIR}/" "${BUILDER_DIR}/vscode/" || {
-        log_error "Failed to copy CortexIDE repository"
-        exit 1
-      }
-      
-      log_success "Repository copied"
-    else
-      log_info "CortexIDE directory not found locally, using get_repo.sh to clone..."
-      # Use get_repo.sh which handles cloning from GitHub in CI
-      cd "${BUILDER_DIR}"
-      if [[ -f "get_repo.sh" ]]; then
-        . get_repo.sh || {
-          log_error "get_repo.sh failed"
-          exit 1
-        }
-        log_success "Repository cloned via get_repo.sh"
-      else
-        log_error "get_repo.sh not found and CortexIDE directory doesn't exist"
-        exit 1
-      fi
-    fi
+  # In CI, get_repo.sh runs before this and creates vscode/ directory
+  # So if vscode exists, we're good - just skip
+  if [[ -d "${BUILDER_DIR}/vscode" ]]; then
+    log_info "vscode directory already exists (from get_repo.sh or previous run)"
+    return 0
+  fi
+  
+  # For local development, copy from ../cortexide if it exists
+  if [[ -d "${CORTEXIDE_DIR}" ]]; then
+    log_info "Copying CortexIDE repository to vscode directory..."
+    
+    # Use rsync to copy efficiently, excluding build artifacts
+    rsync -a --delete \
+      --exclude ".git" \
+      --exclude "node_modules" \
+      --exclude "out" \
+      --exclude "out-*" \
+      --exclude ".build" \
+      --exclude ".vscode" \
+      --exclude "**/.vscode" \
+      --exclude "**/node_modules" \
+      "${CORTEXIDE_DIR}/" "${BUILDER_DIR}/vscode/" || {
+      log_error "Failed to copy CortexIDE repository"
+      exit 1
+    }
+    
+    log_success "Repository copied"
   else
-    log_info "vscode directory already exists, skipping copy"
+    log_warning "Neither vscode/ nor ../cortexide found"
+    log_info "In CI, get_repo.sh should create vscode/ before build-new.sh runs"
+    log_info "For local dev, ensure ../cortexide exists or run get_repo.sh first"
+    # Don't exit - in CI, get_repo.sh step should have already created vscode/
+    # If it didn't, the build will fail later which is fine
   fi
 }
 

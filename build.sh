@@ -1735,39 +1735,6 @@ EOFPATCH2
 
     find "../VSCode-darwin-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
 
-    # CRITICAL FIX: Transform CSS imports in the packaged app bundle
-    # This must run AFTER packaging because files are copied from multiple sources
-    echo "Fixing CSS imports in packaged app bundle..."
-    APP_BUNDLE_NAME=$( node -p "require('./product.json').nameShort || 'CortexIDE'" )
-    if [[ -z "${APP_BUNDLE_NAME}" || "${APP_BUNDLE_NAME}" == "null" || "${APP_BUNDLE_NAME}" == "undefined" ]]; then
-      APP_BUNDLE_NAME="${APP_NAME:-CortexIDE}"
-    fi
-    APP_BUNDLE="../VSCode-darwin-${VSCODE_ARCH}/${APP_BUNDLE_NAME}.app"
-    if [[ -d "${APP_BUNDLE}" ]]; then
-      APP_OUT_DIR="${APP_BUNDLE}/Contents/Resources/app/out/vs"
-      # fix_css_imports.js is in the builder root, but we're in vscode directory
-      FIX_SCRIPT="../fix_css_imports.js"
-      if [[ -d "${APP_OUT_DIR}" ]] && [[ -f "${FIX_SCRIPT}" ]]; then
-        # Make files writable before fixing
-        echo "Making app bundle files writable..."
-        chmod -R u+w "${APP_OUT_DIR}" 2>/dev/null || {
-          echo "⚠ Warning: Cannot make files writable, trying anyway..." >&2
-        }
-        # Run the fix and show output
-        if node "${FIX_SCRIPT}" "${APP_OUT_DIR}"; then
-          echo "✓ Fixed CSS imports in app bundle"
-        else
-          echo "✗ ERROR: CSS import fix script failed on app bundle!" >&2
-          echo "  This will cause MIME type errors at runtime!" >&2
-          exit 1
-        fi
-      else
-        echo "⚠ Warning: Cannot fix CSS imports - app bundle or fix script not found" >&2
-        echo "  APP_OUT_DIR: ${APP_OUT_DIR}" >&2
-        echo "  fix_css_imports.js exists: $([ -f "${FIX_SCRIPT}" ] && echo "yes" || echo "no")" >&2
-      fi
-    fi
-
     # CRITICAL: Verify workbench.html exists in the built app to prevent blank screen
     echo "Verifying critical files in macOS app bundle..."
     # Get the actual app bundle name from product.json (nameShort), not APP_NAME
@@ -1984,6 +1951,44 @@ EOFPATCH2
     fi
     
     echo "✓ Critical files verified in app bundle: ${APP_BUNDLE}"
+
+    # CRITICAL FIX: Transform CSS imports in the packaged app bundle
+    # This MUST run AFTER all files are copied from out-build/out (lines 1908-1937)
+    # because those files contain CSS imports that need to be fixed
+    echo "Fixing CSS imports in packaged app bundle (after all files copied)..."
+    # fix_css_imports.js is in the builder root, but we're in vscode directory
+    FIX_SCRIPT="../fix_css_imports.js"
+    APP_OUT_VS_DIR="${APP_OUT_DIR}/vs"
+    if [[ -d "${APP_OUT_VS_DIR}" ]] && [[ -f "${FIX_SCRIPT}" ]]; then
+      # Make files writable before fixing
+      echo "Making app bundle files writable..."
+      chmod -R u+w "${APP_OUT_VS_DIR}" 2>/dev/null || {
+        echo "⚠ Warning: Cannot make files writable, trying anyway..." >&2
+      }
+      # Run the fix and show output
+      if node "${FIX_SCRIPT}" "${APP_OUT_VS_DIR}"; then
+        echo "✓ Fixed CSS imports in app bundle"
+        # VERIFY: Check that CSS imports were actually removed
+        CSS_IMPORT_COUNT=$(grep -r "import.*\.css" "${APP_OUT_VS_DIR}" 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+        if [[ ${CSS_IMPORT_COUNT} -gt 0 ]]; then
+          echo "✗ ERROR: CSS imports still present after fix! (${CSS_IMPORT_COUNT} found)" >&2
+          echo "  This indicates the fix script did not work correctly!" >&2
+          echo "  Sample CSS imports found:" >&2
+          grep -r "import.*\.css" "${APP_OUT_VS_DIR}" 2>/dev/null | head -3 >&2
+          exit 1
+        else
+          echo "✓ Verified: No CSS imports found in app bundle"
+        fi
+      else
+        echo "✗ ERROR: CSS import fix script failed on app bundle!" >&2
+        echo "  This will cause MIME type errors at runtime!" >&2
+        exit 1
+      fi
+    else
+      echo "⚠ Warning: Cannot fix CSS imports - app bundle or fix script not found" >&2
+      echo "  APP_OUT_VS_DIR: ${APP_OUT_VS_DIR}" >&2
+      echo "  fix_css_imports.js exists: $([ -f "${FIX_SCRIPT}" ] && echo "yes" || echo "no")" >&2
+    fi
 
     if [[ -x "./verify_bundle_files.sh" ]]; then
       echo "Running verify_bundle_files.sh for macOS bundle..."
@@ -2252,21 +2257,6 @@ POWERSHELLESCAPEFIX
         echo "Skipping PowerShell escaping patch (PATCH_INNO_POWERSHELL!=yes)" >&2
       fi
 
-      # CRITICAL FIX: Transform CSS imports in the packaged Windows app
-      echo "Fixing CSS imports in Windows package..."
-      WIN_PACKAGE="../VSCode-win32-${VSCODE_ARCH}"
-      WIN_OUT_DIR="${WIN_PACKAGE}/resources/app/out/vs"
-      FIX_SCRIPT="../fix_css_imports.js"
-      if [[ -d "${WIN_OUT_DIR}" ]] && [[ -f "${FIX_SCRIPT}" ]]; then
-        chmod -R u+w "${WIN_OUT_DIR}" 2>/dev/null || true
-        if node "${FIX_SCRIPT}" "${WIN_OUT_DIR}"; then
-          echo "✓ Fixed CSS imports in Windows package"
-        else
-          echo "✗ ERROR: CSS import fix script failed on Windows package!" >&2
-          exit 1
-        fi
-      fi
-
       # CRITICAL: Verify workbench.html exists in the built Windows package to prevent blank screen
       echo "Verifying critical files in Windows package..."
       WORKBENCH_HTML="${WIN_PACKAGE}/resources/app/out/vs/code/electron-browser/workbench/workbench.html"
@@ -2437,6 +2427,33 @@ POWERSHELLESCAPEFIX
       
       echo "✓ Critical files verified in Windows package"
 
+      # CRITICAL FIX: Transform CSS imports in the packaged Windows app
+      # This MUST run AFTER all files are copied from out-build/out (lines 2399-2427)
+      # because those files contain CSS imports that need to be fixed
+      echo "Fixing CSS imports in Windows package (after all files copied)..."
+      FIX_SCRIPT="../fix_css_imports.js"
+      WIN_OUT_VS_DIR="${WIN_OUT_DIR}/vs"
+      if [[ -d "${WIN_OUT_VS_DIR}" ]] && [[ -f "${FIX_SCRIPT}" ]]; then
+        chmod -R u+w "${WIN_OUT_VS_DIR}" 2>/dev/null || true
+        if node "${FIX_SCRIPT}" "${WIN_OUT_VS_DIR}"; then
+          echo "✓ Fixed CSS imports in Windows package"
+          # VERIFY: Check that CSS imports were actually removed
+          CSS_IMPORT_COUNT=$(grep -r "import.*\.css" "${WIN_OUT_VS_DIR}" 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+          if [[ ${CSS_IMPORT_COUNT} -gt 0 ]]; then
+            echo "✗ ERROR: CSS imports still present after fix! (${CSS_IMPORT_COUNT} found)" >&2
+            echo "  This indicates the fix script did not work correctly!" >&2
+            echo "  Sample CSS imports found:" >&2
+            grep -r "import.*\.css" "${WIN_OUT_VS_DIR}" 2>/dev/null | head -3 >&2
+            exit 1
+          else
+            echo "✓ Verified: No CSS imports found in Windows package"
+          fi
+        else
+          echo "✗ ERROR: CSS import fix script failed on Windows package!" >&2
+          exit 1
+        fi
+      fi
+
       if [[ -x "./verify_bundle_files.sh" ]]; then
         echo "Running verify_bundle_files.sh for Windows package..."
         if ! ./verify_bundle_files.sh "${WIN_PACKAGE}"; then
@@ -2489,21 +2506,6 @@ POWERSHELLESCAPEFIX
       fi
 
       find "../VSCode-linux-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
-
-      # CRITICAL FIX: Transform CSS imports in the packaged Linux app
-      echo "Fixing CSS imports in Linux package..."
-      LINUX_PACKAGE="../VSCode-linux-${VSCODE_ARCH}"
-      LINUX_OUT_DIR="${LINUX_PACKAGE}/resources/app/out/vs"
-      FIX_SCRIPT="../fix_css_imports.js"
-      if [[ -d "${LINUX_OUT_DIR}" ]] && [[ -f "${FIX_SCRIPT}" ]]; then
-        chmod -R u+w "${LINUX_OUT_DIR}" 2>/dev/null || true
-        if node "${FIX_SCRIPT}" "${LINUX_OUT_DIR}"; then
-          echo "✓ Fixed CSS imports in Linux package"
-        else
-          echo "✗ ERROR: CSS import fix script failed on Linux package!" >&2
-          exit 1
-        fi
-      fi
 
       # CRITICAL: Verify workbench.html exists in the built Linux package to prevent blank screen
       echo "Verifying critical files in Linux package..."
@@ -2674,6 +2676,32 @@ POWERSHELLESCAPEFIX
       fi
       
       echo "✓ Critical files verified in Linux package"
+
+      # CRITICAL FIX: Transform CSS imports in the packaged Linux app
+      # This MUST run AFTER all files are copied from out-build/out (lines 2622-2650)
+      # because those files contain CSS imports that need to be fixed
+      echo "Fixing CSS imports in Linux package (after all files copied)..."
+      FIX_SCRIPT="../fix_css_imports.js"
+      if [[ -d "${LINUX_OUT_DIR}" ]] && [[ -f "${FIX_SCRIPT}" ]]; then
+        chmod -R u+w "${LINUX_OUT_DIR}" 2>/dev/null || true
+        if node "${FIX_SCRIPT}" "${LINUX_OUT_DIR}"; then
+          echo "✓ Fixed CSS imports in Linux package"
+          # VERIFY: Check that CSS imports were actually removed
+          CSS_IMPORT_COUNT=$(grep -r "import.*\.css" "${LINUX_OUT_DIR}" 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+          if [[ ${CSS_IMPORT_COUNT} -gt 0 ]]; then
+            echo "✗ ERROR: CSS imports still present after fix! (${CSS_IMPORT_COUNT} found)" >&2
+            echo "  This indicates the fix script did not work correctly!" >&2
+            echo "  Sample CSS imports found:" >&2
+            grep -r "import.*\.css" "${LINUX_OUT_VS_DIR}" 2>/dev/null | head -3 >&2
+            exit 1
+          else
+            echo "✓ Verified: No CSS imports found in Linux package"
+          fi
+        else
+          echo "✗ ERROR: CSS import fix script failed on Linux package!" >&2
+          exit 1
+        fi
+      fi
 
       if [[ -x "./verify_bundle_files.sh" ]]; then
         echo "Running verify_bundle_files.sh for Linux package..."

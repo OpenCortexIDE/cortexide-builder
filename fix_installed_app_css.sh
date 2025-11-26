@@ -22,33 +22,38 @@ fi
 echo "Fixing CSS imports in installed app: ${APP_PATH}"
 echo "This requires write permissions to the app bundle..."
 
-if [[ -f "fix_css_imports.js" ]]; then
-    # Make files writable - macOS app bundles are code-signed and protected
-    echo "Making files writable (this may require sudo)..."
-    if ! chmod -R u+w "${APP_OUT_DIR}" 2>/dev/null; then
-        echo "Regular chmod failed, trying with sudo..."
-        if sudo chmod -R u+w "${APP_OUT_DIR}" 2>/dev/null; then
-            echo "✓ Files made writable with sudo"
-        else
-            echo "Error: Cannot make files writable even with sudo."
-            echo "The app bundle may be protected by System Integrity Protection (SIP)."
-            echo "Try: sudo chmod -R u+w ${APP_OUT_DIR}"
-            exit 1
-        fi
-    else
-        echo "✓ Files made writable"
-    fi
-    
-    # Run the fix
-    if node fix_css_imports.js "${APP_OUT_DIR}"; then
-        echo "✓ Fixed CSS imports in installed app"
-        echo "Please restart CortexIDE for changes to take effect"
-    else
-        echo "✗ Failed to fix CSS imports"
-        exit 1
-    fi
-else
-    echo "Error: fix_css_imports.js not found in current directory"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FIX_SCRIPT="${SCRIPT_DIR}/fix_css_imports.js"
+
+if [[ ! -f "${FIX_SCRIPT}" ]]; then
+    echo "Error: fix_css_imports.js not found at ${FIX_SCRIPT}"
     exit 1
 fi
 
+# Make files writable using sudo
+echo "Making files writable using sudo (you'll be prompted for password)..."
+sudo chmod -R u+w "${APP_OUT_DIR}" || {
+    echo "Error: Failed to make files writable. Please ensure you have sudo privileges."
+    exit 1
+}
+
+# Run the fix
+echo "Running CSS import fix..."
+if node "${FIX_SCRIPT}" "${APP_OUT_DIR}"; then
+    echo "✓ Fixed CSS imports in installed app"
+    
+    # Verify the fix
+    CSS_IMPORT_COUNT=$(grep -r "import.*\.css" "${APP_OUT_DIR}" 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+    if [[ ${CSS_IMPORT_COUNT} -gt 0 ]]; then
+        echo "⚠ Warning: ${CSS_IMPORT_COUNT} CSS imports still found after fix"
+        echo "  This may indicate the fix didn't work completely"
+    else
+        echo "✓ Verified: No CSS imports found - fix successful!"
+    fi
+    
+    echo ""
+    echo "Please restart CortexIDE for changes to take effect"
+else
+    echo "✗ Failed to fix CSS imports"
+    exit 1
+fi

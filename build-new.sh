@@ -56,23 +56,17 @@ log_error() {
 validate_environment() {
   log_info "Validating environment..."
   
-  # Check if cortexide directory exists
+  # Check if cortexide directory exists, if not, get_repo.sh will handle it
   if [[ ! -d "${CORTEXIDE_DIR}" ]]; then
-    log_error "CortexIDE directory not found: ${CORTEXIDE_DIR}"
-    log_info "Expected cortexide repository at: ${CORTEXIDE_DIR}"
-    exit 1
-  fi
-  
-  # Check if cortexide has package.json
-  if [[ ! -f "${CORTEXIDE_DIR}/package.json" ]]; then
-    log_error "CortexIDE package.json not found"
-    exit 1
-  fi
-  
-  # Check if unified build script exists
-  if [[ ! -f "${CORTEXIDE_DIR}/scripts/build.sh" ]]; then
-    log_error "Unified build script not found: ${CORTEXIDE_DIR}/scripts/build.sh"
-    exit 1
+    log_warning "CortexIDE directory not found: ${CORTEXIDE_DIR}"
+    log_info "Will use get_repo.sh to clone/copy repository"
+  else
+    # Check if cortexide has package.json
+    if [[ ! -f "${CORTEXIDE_DIR}/package.json" ]]; then
+      log_warning "CortexIDE package.json not found, will use get_repo.sh"
+    else
+      log_success "CortexIDE repository found"
+    fi
   fi
   
   log_success "Environment validated"
@@ -82,7 +76,7 @@ validate_environment() {
 get_repository() {
   log_info "Preparing source repository..."
   
-  # If vscode directory doesn't exist, copy from cortexide
+  # If vscode directory doesn't exist, use get_repo.sh (handles both local and CI)
   if [[ ! -d "${BUILDER_DIR}/vscode" ]]; then
     if [[ -d "${CORTEXIDE_DIR}" ]]; then
       log_info "Copying CortexIDE repository to vscode directory..."
@@ -104,8 +98,19 @@ get_repository() {
       
       log_success "Repository copied"
     else
-      log_error "CortexIDE directory not found: ${CORTEXIDE_DIR}"
-      exit 1
+      log_info "CortexIDE directory not found locally, using get_repo.sh to clone..."
+      # Use get_repo.sh which handles cloning from GitHub in CI
+      cd "${BUILDER_DIR}"
+      if [[ -f "get_repo.sh" ]]; then
+        . get_repo.sh || {
+          log_error "get_repo.sh failed"
+          exit 1
+        }
+        log_success "Repository cloned via get_repo.sh"
+      else
+        log_error "get_repo.sh not found and CortexIDE directory doesn't exist"
+        exit 1
+      fi
     fi
   else
     log_info "vscode directory already exists, skipping copy"

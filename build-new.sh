@@ -56,17 +56,17 @@ log_error() {
 validate_environment() {
   log_info "Validating environment..."
   
-  # Check if cortexide directory exists, if not, get_repo.sh will handle it
-  if [[ ! -d "${CORTEXIDE_DIR}" ]]; then
-    log_warning "CortexIDE directory not found: ${CORTEXIDE_DIR}"
-    log_info "Will use get_repo.sh to clone/copy repository"
+  # In CI, get_repo.sh runs before build-new.sh and creates vscode/ directory
+  # In local dev, we might have ../cortexide directory
+  # Check if either exists
+  if [[ -d "${BUILDER_DIR}/vscode" ]]; then
+    log_success "vscode directory found (from get_repo.sh)"
+  elif [[ -d "${CORTEXIDE_DIR}" ]]; then
+    log_success "CortexIDE directory found locally"
   else
-    # Check if cortexide has package.json
-    if [[ ! -f "${CORTEXIDE_DIR}/package.json" ]]; then
-      log_warning "CortexIDE package.json not found, will use get_repo.sh"
-    else
-      log_success "CortexIDE repository found"
-    fi
+    log_warning "Neither vscode/ nor ../cortexide found"
+    log_info "get_repo.sh should have created vscode/ directory"
+    log_info "This is OK if get_repo.sh runs before build-new.sh in workflow"
   fi
   
   log_success "Environment validated"

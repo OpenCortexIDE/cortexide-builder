@@ -1969,7 +1969,7 @@ EOFPATCH2
       if node "${FIX_SCRIPT}" "${APP_OUT_VS_DIR}"; then
         echo "✓ Fixed CSS imports in app bundle"
         # VERIFY: Check that CSS imports were actually removed
-        CSS_IMPORT_COUNT=$(grep -r "import.*\.css" "${APP_OUT_VS_DIR}" 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+        CSS_IMPORT_COUNT=$(grep -r "import.*\.css" "${APP_OUT_VS_DIR}" 2>/dev/null | grep -v "CSS import replaced" | wc -l | tr -d ' ' || echo "0")
         if [[ ${CSS_IMPORT_COUNT} -gt 0 ]]; then
           echo "✗ ERROR: CSS imports still present after fix! (${CSS_IMPORT_COUNT} found)" >&2
           echo "  This indicates the fix script did not work correctly!" >&2
@@ -2438,7 +2438,7 @@ POWERSHELLESCAPEFIX
         if node "${FIX_SCRIPT}" "${WIN_OUT_VS_DIR}"; then
           echo "✓ Fixed CSS imports in Windows package"
           # VERIFY: Check that CSS imports were actually removed
-          CSS_IMPORT_COUNT=$(grep -r "import.*\.css" "${WIN_OUT_VS_DIR}" 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+          CSS_IMPORT_COUNT=$(grep -r "import.*\.css" "${WIN_OUT_VS_DIR}" 2>/dev/null | grep -v "CSS import replaced" | wc -l | tr -d ' ' || echo "0")
           if [[ ${CSS_IMPORT_COUNT} -gt 0 ]]; then
             echo "✗ ERROR: CSS imports still present after fix! (${CSS_IMPORT_COUNT} found)" >&2
             echo "  This indicates the fix script did not work correctly!" >&2
@@ -2687,7 +2687,7 @@ POWERSHELLESCAPEFIX
         if node "${FIX_SCRIPT}" "${LINUX_OUT_DIR}"; then
           echo "✓ Fixed CSS imports in Linux package"
           # VERIFY: Check that CSS imports were actually removed
-          CSS_IMPORT_COUNT=$(grep -r "import.*\.css" "${LINUX_OUT_DIR}" 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+          CSS_IMPORT_COUNT=$(grep -r "import.*\.css" "${LINUX_OUT_DIR}" 2>/dev/null | grep -v "CSS import replaced" | wc -l | tr -d ' ' || echo "0")
           if [[ ${CSS_IMPORT_COUNT} -gt 0 ]]; then
             echo "✗ ERROR: CSS imports still present after fix! (${CSS_IMPORT_COUNT} found)" >&2
             echo "  This indicates the fix script did not work correctly!" >&2

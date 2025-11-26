@@ -1959,25 +1959,43 @@ EOFPATCH2
     # fix_css_imports.js is in the builder root, but we're in vscode directory
     FIX_SCRIPT="../fix_css_imports.js"
     APP_OUT_VS_DIR="${APP_OUT_DIR}/vs"
+    
+    # First, check how many CSS imports exist BEFORE the fix
+    CSS_IMPORT_COUNT_BEFORE=$(grep -r --include="*.js" "import.*\.css" "${APP_OUT_VS_DIR}" 2>/dev/null | grep -v "CSS import replaced" | wc -l | tr -d ' ' || echo "0")
+    echo "  Found ${CSS_IMPORT_COUNT_BEFORE} CSS import(s) before fix"
+    
     if [[ -d "${APP_OUT_VS_DIR}" ]] && [[ -f "${FIX_SCRIPT}" ]]; then
       # Make files writable before fixing
       echo "Making app bundle files writable..."
-      chmod -R u+w "${APP_OUT_VS_DIR}" 2>/dev/null || {
-        echo "⚠ Warning: Cannot make files writable, trying anyway..." >&2
-      }
+      if chmod -R u+w "${APP_OUT_VS_DIR}" 2>/dev/null; then
+        echo "  ✓ Files made writable"
+      else
+        echo "  ⚠ Warning: Cannot make files writable, trying anyway..." >&2
+        # Try with sudo if available (won't work in CI, but helpful for local builds)
+        if command -v sudo >/dev/null 2>&1 && [[ "${CI_BUILD}" == "no" ]]; then
+          echo "  Attempting with sudo (you may be prompted for password)..." >&2
+          sudo chmod -R u+w "${APP_OUT_VS_DIR}" 2>/dev/null || true
+        fi
+      fi
+      
+      # Count JS files to process
+      JS_FILE_COUNT=$(find "${APP_OUT_VS_DIR}" -name "*.js" -type f 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+      echo "  Processing ${JS_FILE_COUNT} JavaScript file(s)..."
+      
       # Run the fix and show output
       if node "${FIX_SCRIPT}" "${APP_OUT_VS_DIR}"; then
         echo "✓ Fixed CSS imports in app bundle"
         # VERIFY: Check that CSS imports were actually removed
-        CSS_IMPORT_COUNT=$(grep -r --include="*.js" "import.*\.css" "${APP_OUT_VS_DIR}" 2>/dev/null | grep -v "CSS import replaced" | wc -l | tr -d ' ' || echo "0")
-        if [[ ${CSS_IMPORT_COUNT} -gt 0 ]]; then
-          echo "✗ ERROR: CSS imports still present after fix! (${CSS_IMPORT_COUNT} found)" >&2
+        CSS_IMPORT_COUNT_AFTER=$(grep -r --include="*.js" "import.*\.css" "${APP_OUT_VS_DIR}" 2>/dev/null | grep -v "CSS import replaced" | wc -l | tr -d ' ' || echo "0")
+        echo "  Found ${CSS_IMPORT_COUNT_AFTER} CSS import(s) after fix"
+        if [[ ${CSS_IMPORT_COUNT_AFTER} -gt 0 ]]; then
+          echo "✗ ERROR: CSS imports still present after fix! (${CSS_IMPORT_COUNT_AFTER} found)" >&2
           echo "  This indicates the fix script did not work correctly!" >&2
           echo "  Sample CSS imports found:" >&2
-          grep -r "import.*\.css" "${APP_OUT_VS_DIR}" 2>/dev/null | head -3 >&2
+          grep -r --include="*.js" "import.*\.css" "${APP_OUT_VS_DIR}" 2>/dev/null | grep -v "CSS import replaced" | head -3 >&2
           exit 1
         else
-          echo "✓ Verified: No CSS imports found in app bundle"
+          echo "✓ Verified: No CSS imports found in app bundle (fixed ${CSS_IMPORT_COUNT_BEFORE} import(s))"
         fi
       else
         echo "✗ ERROR: CSS import fix script failed on app bundle!" >&2
@@ -1987,7 +2005,13 @@ EOFPATCH2
     else
       echo "⚠ Warning: Cannot fix CSS imports - app bundle or fix script not found" >&2
       echo "  APP_OUT_VS_DIR: ${APP_OUT_VS_DIR}" >&2
+      echo "  Directory exists: $([ -d "${APP_OUT_VS_DIR}" ] && echo "yes" || echo "no")" >&2
       echo "  fix_css_imports.js exists: $([ -f "${FIX_SCRIPT}" ] && echo "yes" || echo "no")" >&2
+      if [[ ${CSS_IMPORT_COUNT_BEFORE} -gt 0 ]]; then
+        echo "✗ ERROR: CSS imports are present but cannot be fixed!" >&2
+        echo "  This will cause MIME type errors at runtime!" >&2
+        exit 1
+      fi
     fi
 
     if [[ -x "./verify_bundle_files.sh" ]]; then
@@ -2440,23 +2464,43 @@ POWERSHELLESCAPEFIX
       echo "Fixing CSS imports in Windows package (after all files copied)..."
       FIX_SCRIPT="../fix_css_imports.js"
       WIN_OUT_VS_DIR="${WIN_OUT_DIR}/vs"
+      
+      # First, check how many CSS imports exist BEFORE the fix
+      CSS_IMPORT_COUNT_BEFORE=$(grep -r --include="*.js" "import.*\.css" "${WIN_OUT_VS_DIR}" 2>/dev/null | grep -v "CSS import replaced" | wc -l | tr -d ' ' || echo "0")
+      echo "  Found ${CSS_IMPORT_COUNT_BEFORE} CSS import(s) before fix"
+      
       if [[ -d "${WIN_OUT_VS_DIR}" ]] && [[ -f "${FIX_SCRIPT}" ]]; then
         chmod -R u+w "${WIN_OUT_VS_DIR}" 2>/dev/null || true
+        
+        # Count JS files to process
+        JS_FILE_COUNT=$(find "${WIN_OUT_VS_DIR}" -name "*.js" -type f 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+        echo "  Processing ${JS_FILE_COUNT} JavaScript file(s)..."
+        
         if node "${FIX_SCRIPT}" "${WIN_OUT_VS_DIR}"; then
           echo "✓ Fixed CSS imports in Windows package"
           # VERIFY: Check that CSS imports were actually removed
-          CSS_IMPORT_COUNT=$(grep -r --include="*.js" "import.*\.css" "${WIN_OUT_VS_DIR}" 2>/dev/null | grep -v "CSS import replaced" | wc -l | tr -d ' ' || echo "0")
-          if [[ ${CSS_IMPORT_COUNT} -gt 0 ]]; then
-            echo "✗ ERROR: CSS imports still present after fix! (${CSS_IMPORT_COUNT} found)" >&2
+          CSS_IMPORT_COUNT_AFTER=$(grep -r --include="*.js" "import.*\.css" "${WIN_OUT_VS_DIR}" 2>/dev/null | grep -v "CSS import replaced" | wc -l | tr -d ' ' || echo "0")
+          echo "  Found ${CSS_IMPORT_COUNT_AFTER} CSS import(s) after fix"
+          if [[ ${CSS_IMPORT_COUNT_AFTER} -gt 0 ]]; then
+            echo "✗ ERROR: CSS imports still present after fix! (${CSS_IMPORT_COUNT_AFTER} found)" >&2
             echo "  This indicates the fix script did not work correctly!" >&2
             echo "  Sample CSS imports found:" >&2
-            grep -r "import.*\.css" "${WIN_OUT_VS_DIR}" 2>/dev/null | head -3 >&2
+            grep -r --include="*.js" "import.*\.css" "${WIN_OUT_VS_DIR}" 2>/dev/null | grep -v "CSS import replaced" | head -3 >&2
             exit 1
           else
-            echo "✓ Verified: No CSS imports found in Windows package"
+            echo "✓ Verified: No CSS imports found in Windows package (fixed ${CSS_IMPORT_COUNT_BEFORE} import(s))"
           fi
         else
           echo "✗ ERROR: CSS import fix script failed on Windows package!" >&2
+          exit 1
+        fi
+      else
+        echo "⚠ Warning: Cannot fix CSS imports - package or fix script not found" >&2
+        echo "  WIN_OUT_VS_DIR: ${WIN_OUT_VS_DIR}" >&2
+        echo "  Directory exists: $([ -d "${WIN_OUT_VS_DIR}" ] && echo "yes" || echo "no")" >&2
+        echo "  fix_css_imports.js exists: $([ -f "${FIX_SCRIPT}" ] && echo "yes" || echo "no")" >&2
+        if [[ ${CSS_IMPORT_COUNT_BEFORE} -gt 0 ]]; then
+          echo "✗ ERROR: CSS imports are present but cannot be fixed!" >&2
           exit 1
         fi
       fi
@@ -2696,23 +2740,44 @@ POWERSHELLESCAPEFIX
       # because those files contain CSS imports that need to be fixed
       echo "Fixing CSS imports in Linux package (after all files copied)..."
       FIX_SCRIPT="../fix_css_imports.js"
-      if [[ -d "${LINUX_OUT_DIR}" ]] && [[ -f "${FIX_SCRIPT}" ]]; then
-        chmod -R u+w "${LINUX_OUT_DIR}" 2>/dev/null || true
-        if node "${FIX_SCRIPT}" "${LINUX_OUT_DIR}"; then
+      LINUX_OUT_VS_DIR="${LINUX_OUT_DIR}/vs"
+      
+      # First, check how many CSS imports exist BEFORE the fix
+      CSS_IMPORT_COUNT_BEFORE=$(grep -r --include="*.js" "import.*\.css" "${LINUX_OUT_VS_DIR}" 2>/dev/null | grep -v "CSS import replaced" | wc -l | tr -d ' ' || echo "0")
+      echo "  Found ${CSS_IMPORT_COUNT_BEFORE} CSS import(s) before fix"
+      
+      if [[ -d "${LINUX_OUT_VS_DIR}" ]] && [[ -f "${FIX_SCRIPT}" ]]; then
+        chmod -R u+w "${LINUX_OUT_VS_DIR}" 2>/dev/null || true
+        
+        # Count JS files to process
+        JS_FILE_COUNT=$(find "${LINUX_OUT_VS_DIR}" -name "*.js" -type f 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+        echo "  Processing ${JS_FILE_COUNT} JavaScript file(s)..."
+        
+        if node "${FIX_SCRIPT}" "${LINUX_OUT_VS_DIR}"; then
           echo "✓ Fixed CSS imports in Linux package"
           # VERIFY: Check that CSS imports were actually removed
-          CSS_IMPORT_COUNT=$(grep -r --include="*.js" "import.*\.css" "${LINUX_OUT_DIR}" 2>/dev/null | grep -v "CSS import replaced" | wc -l | tr -d ' ' || echo "0")
-          if [[ ${CSS_IMPORT_COUNT} -gt 0 ]]; then
-            echo "✗ ERROR: CSS imports still present after fix! (${CSS_IMPORT_COUNT} found)" >&2
+          CSS_IMPORT_COUNT_AFTER=$(grep -r --include="*.js" "import.*\.css" "${LINUX_OUT_VS_DIR}" 2>/dev/null | grep -v "CSS import replaced" | wc -l | tr -d ' ' || echo "0")
+          echo "  Found ${CSS_IMPORT_COUNT_AFTER} CSS import(s) after fix"
+          if [[ ${CSS_IMPORT_COUNT_AFTER} -gt 0 ]]; then
+            echo "✗ ERROR: CSS imports still present after fix! (${CSS_IMPORT_COUNT_AFTER} found)" >&2
             echo "  This indicates the fix script did not work correctly!" >&2
             echo "  Sample CSS imports found:" >&2
-            grep -r "import.*\.css" "${LINUX_OUT_VS_DIR}" 2>/dev/null | head -3 >&2
+            grep -r --include="*.js" "import.*\.css" "${LINUX_OUT_VS_DIR}" 2>/dev/null | grep -v "CSS import replaced" | head -3 >&2
             exit 1
           else
-            echo "✓ Verified: No CSS imports found in Linux package"
+            echo "✓ Verified: No CSS imports found in Linux package (fixed ${CSS_IMPORT_COUNT_BEFORE} import(s))"
           fi
         else
           echo "✗ ERROR: CSS import fix script failed on Linux package!" >&2
+          exit 1
+        fi
+      else
+        echo "⚠ Warning: Cannot fix CSS imports - package or fix script not found" >&2
+        echo "  LINUX_OUT_VS_DIR: ${LINUX_OUT_VS_DIR}" >&2
+        echo "  Directory exists: $([ -d "${LINUX_OUT_VS_DIR}" ] && echo "yes" || echo "no")" >&2
+        echo "  fix_css_imports.js exists: $([ -f "${FIX_SCRIPT}" ] && echo "yes" || echo "no")" >&2
+        if [[ ${CSS_IMPORT_COUNT_BEFORE} -gt 0 ]]; then
+          echo "✗ ERROR: CSS imports are present but cannot be fixed!" >&2
           exit 1
         fi
       fi

@@ -25,6 +25,23 @@ For maintainers: [`cortexide-builder/`](https://github.com/cortexide/cortexide-b
 - <a href="https://github.com/OpenCortexIDE/cortexide-binaries/releases/download/RELEASE_VERSION/cortexide_RELEASE_VERSION_amd64.deb">Linux .deb (AMD)</a>
 
 
+## Troubleshooting
+
+### macOS: "CortexIDE is damaged and can't be opened"
+If you see this error after downloading the DMG, macOS Gatekeeper has quarantined the app. To fix:
+
+**Option 1 (Recommended):** Run the fix script from the [cortexide-builder repository](https://github.com/OpenCortexIDE/cortexide-builder):
+```bash
+curl -L https://raw.githubusercontent.com/OpenCortexIDE/cortexide-builder/main/fix_gatekeeper.sh | bash -s /Applications/CortexIDE.app
+```
+
+**Option 2:** Manually remove the quarantine attribute:
+```bash
+sudo xattr -rd com.apple.quarantine /Applications/CortexIDE.app
+```
+
+**Option 3:** Right-click the app in Finder and select "Open" (this bypasses Gatekeeper once).
+
 ## Status
 If any downloads give a 404, this version is likely very new. Try the previous version until the workflows complete!
 

@@ -160,10 +160,23 @@ const ${varName} = {};`;
     });
 
     if (modified) {
-        fs.writeFileSync(filePath, content, 'utf8');
-        fixedCount++;
-        console.log(`  ✓ Fixed CSS imports in: ${filePath}`);
-        return true;
+        try {
+            // Ensure file is writable before writing
+            try {
+                fs.chmodSync(filePath, 0o644);
+            } catch (chmodError) {
+                // Continue anyway - might still be writable
+            }
+            fs.writeFileSync(filePath, content, 'utf8');
+            fixedCount++;
+            console.log(`  ✓ Fixed CSS imports in: ${filePath}`);
+            return true;
+        } catch (writeError) {
+            console.error(`  ✗ ERROR: Cannot write to ${filePath}: ${writeError.message}`);
+            console.error(`    Error code: ${writeError.code}`);
+            console.error(`    This file needs to be writable for the CSS fix to work!`);
+            throw writeError;
+        }
     }
     return false;
 }

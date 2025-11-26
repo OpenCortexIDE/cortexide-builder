@@ -20,7 +20,8 @@ apply_patch() {
   local ORIG_SET_E
   [[ $- == *e* ]] && ORIG_SET_E=1 || ORIG_SET_E=0
   
-  if [[ -z "$2" ]]; then
+  # Use ${2:-} to handle unbound variable when $2 is not provided
+  if [[ -z "${2:-}" ]]; then
     echo applying patch: "$1";
   fi
   

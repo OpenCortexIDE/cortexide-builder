@@ -1700,16 +1700,18 @@ EOFPATCH2
   # This will DEFINITELY work because we're modifying the actual code before it runs
   # CROSS-PLATFORM: This runs on macOS, Windows, and Linux (before platform-specific sections)
   echo "Fixing CSS imports in bundled JavaScript files..."
-  if [[ -f "fix_css_imports.js" ]]; then
+  # fix_css_imports.js is in the builder root, but we're in vscode directory
+  FIX_SCRIPT="../fix_css_imports.js"
+  if [[ -f "${FIX_SCRIPT}" ]]; then
     # Make files writable first
     chmod -R u+w "out-vscode-min/vs" 2>/dev/null || true
-    if node fix_css_imports.js "out-vscode-min/vs"; then
+    if node "${FIX_SCRIPT}" "out-vscode-min/vs"; then
       echo "✓ Fixed CSS imports in bundled files"
     else
       echo "⚠ Warning: CSS import fix script failed on out-vscode-min, but will retry after packaging..." >&2
     fi
   else
-    echo "⚠ Warning: fix_css_imports.js not found, skipping CSS import fix" >&2
+    echo "⚠ Warning: fix_css_imports.js not found at ${FIX_SCRIPT}, skipping CSS import fix" >&2
     echo "  CSS imports may cause MIME type errors at runtime" >&2
   fi
 
@@ -1743,14 +1745,16 @@ EOFPATCH2
     APP_BUNDLE="../VSCode-darwin-${VSCODE_ARCH}/${APP_BUNDLE_NAME}.app"
     if [[ -d "${APP_BUNDLE}" ]]; then
       APP_OUT_DIR="${APP_BUNDLE}/Contents/Resources/app/out/vs"
-      if [[ -d "${APP_OUT_DIR}" ]] && [[ -f "fix_css_imports.js" ]]; then
+      # fix_css_imports.js is in the builder root, but we're in vscode directory
+      FIX_SCRIPT="../fix_css_imports.js"
+      if [[ -d "${APP_OUT_DIR}" ]] && [[ -f "${FIX_SCRIPT}" ]]; then
         # Make files writable before fixing
         echo "Making app bundle files writable..."
         chmod -R u+w "${APP_OUT_DIR}" 2>/dev/null || {
           echo "⚠ Warning: Cannot make files writable, trying anyway..." >&2
         }
         # Run the fix and show output
-        if node fix_css_imports.js "${APP_OUT_DIR}"; then
+        if node "${FIX_SCRIPT}" "${APP_OUT_DIR}"; then
           echo "✓ Fixed CSS imports in app bundle"
         else
           echo "✗ ERROR: CSS import fix script failed on app bundle!" >&2
@@ -1760,7 +1764,7 @@ EOFPATCH2
       else
         echo "⚠ Warning: Cannot fix CSS imports - app bundle or fix script not found" >&2
         echo "  APP_OUT_DIR: ${APP_OUT_DIR}" >&2
-        echo "  fix_css_imports.js exists: $([ -f "fix_css_imports.js" ] && echo "yes" || echo "no")" >&2
+        echo "  fix_css_imports.js exists: $([ -f "${FIX_SCRIPT}" ] && echo "yes" || echo "no")" >&2
       fi
     fi
 
@@ -2252,9 +2256,10 @@ POWERSHELLESCAPEFIX
       echo "Fixing CSS imports in Windows package..."
       WIN_PACKAGE="../VSCode-win32-${VSCODE_ARCH}"
       WIN_OUT_DIR="${WIN_PACKAGE}/resources/app/out/vs"
-      if [[ -d "${WIN_OUT_DIR}" ]] && [[ -f "fix_css_imports.js" ]]; then
+      FIX_SCRIPT="../fix_css_imports.js"
+      if [[ -d "${WIN_OUT_DIR}" ]] && [[ -f "${FIX_SCRIPT}" ]]; then
         chmod -R u+w "${WIN_OUT_DIR}" 2>/dev/null || true
-        if node fix_css_imports.js "${WIN_OUT_DIR}"; then
+        if node "${FIX_SCRIPT}" "${WIN_OUT_DIR}"; then
           echo "✓ Fixed CSS imports in Windows package"
         else
           echo "✗ ERROR: CSS import fix script failed on Windows package!" >&2
@@ -2489,9 +2494,10 @@ POWERSHELLESCAPEFIX
       echo "Fixing CSS imports in Linux package..."
       LINUX_PACKAGE="../VSCode-linux-${VSCODE_ARCH}"
       LINUX_OUT_DIR="${LINUX_PACKAGE}/resources/app/out/vs"
-      if [[ -d "${LINUX_OUT_DIR}" ]] && [[ -f "fix_css_imports.js" ]]; then
+      FIX_SCRIPT="../fix_css_imports.js"
+      if [[ -d "${LINUX_OUT_DIR}" ]] && [[ -f "${FIX_SCRIPT}" ]]; then
         chmod -R u+w "${LINUX_OUT_DIR}" 2>/dev/null || true
-        if node fix_css_imports.js "${LINUX_OUT_DIR}"; then
+        if node "${FIX_SCRIPT}" "${LINUX_OUT_DIR}"; then
           echo "✓ Fixed CSS imports in Linux package"
         else
           echo "✗ ERROR: CSS import fix script failed on Linux package!" >&2

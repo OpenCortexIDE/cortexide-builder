@@ -534,9 +534,8 @@ EOFTS
     echo "Compiling build/lib/optimize.ts (compile-build-without-mangling doesn't compile build/lib/ files)..." >&2
     # Use the build system's build-ts script to compile build/lib files
     if [[ -f "build/package.json" ]] && grep -q "build-ts" "build/package.json"; then
-      cd build && npm run build-ts 2>&1 | tail -10 && cd .. && echo "✓ Compiled optimize.ts using build-ts script" >&2 || {
+      (cd build && npm run build-ts 2>&1 | tail -10) && echo "✓ Compiled optimize.ts using build-ts script" >&2 || {
         echo "  Warning: build-ts script may have had warnings, but compilation should have completed" >&2
-        cd .. 2>/dev/null || true
       }
     else
       echo "Warning: build-ts script not found in build/package.json" >&2
@@ -560,7 +559,8 @@ EOFTS
       fi
     fi
     # Verify CSS fix is in the compiled file
-    if ! grep -q "CSS Import Transformer\|document.createElement('link')" "build/lib/optimize.js" 2>/dev/null; then
+    # Check for multiple patterns since compilation may transform the code
+    if ! grep -qE "CSS Import Transformer|CSS import transformed|document\.createElement\(['\"]link['\"]\)|createElement.*link" "build/lib/optimize.js" 2>/dev/null; then
       echo "ERROR: CSS import transformation is missing from optimize.js!" >&2
       echo "  The build/lib/optimize.ts file contains the fix, but it wasn't compiled." >&2
       echo "  This will cause CSS MIME type errors at runtime." >&2

@@ -379,7 +379,16 @@ SIGNFIX
     cd "VSCode-darwin-${VSCODE_ARCH}"
     ZIP_NAME="${APP_NAME}-darwin-${VSCODE_ARCH}-${RELEASE_VERSION}${BUILD_ID}.zip"
     echo "Creating ZIP: ${ZIP_NAME} (includes fixes from commit ${BUILD_COMMIT_HASH:-unknown})"
-    zip -r -X -y "../assets/${ZIP_NAME}" ./*.app
+    if ! zip -r -X -y "../assets/${ZIP_NAME}" ./*.app; then
+      echo "Error: Failed to create ZIP archive: ${ZIP_NAME}" >&2
+      echo "  This may be due to:" >&2
+      echo "  - Disk space issues" >&2
+      echo "  - File permission issues" >&2
+      echo "  - App bundle too large" >&2
+      cd ..
+      exit 1
+    fi
+    echo "✓ ZIP archive created successfully: ${ZIP_NAME}"
     cd ..
   fi
 

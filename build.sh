@@ -529,6 +529,41 @@ EOFTS
     exit 1
   fi
   
+  # CRITICAL: Verify optimize.ts was recompiled and includes CSS fix
+  echo "Verifying optimize.ts recompilation and CSS fix presence..." >&2
+  if [[ -f "build/lib/optimize.ts" ]] && [[ -f "build/lib/optimize.js" ]]; then
+    TS_TIME=$(stat -f "%m" "build/lib/optimize.ts" 2>/dev/null || stat -c "%Y" "build/lib/optimize.ts" 2>/dev/null || echo "0")
+    JS_TIME=$(stat -f "%m" "build/lib/optimize.js" 2>/dev/null || stat -c "%Y" "build/lib/optimize.js" 2>/dev/null || echo "0")
+    if [[ "${TS_TIME}" -gt "${JS_TIME}" ]]; then
+      echo "WARNING: optimize.ts is newer than optimize.js - TypeScript may not have been recompiled!" >&2
+      echo "  TS modified: $(date -r "${TS_TIME}" 2>/dev/null || echo "unknown")" >&2
+      echo "  JS modified: $(date -r "${JS_TIME}" 2>/dev/null || echo "unknown")" >&2
+      echo "  Forcing recompilation..." >&2
+      npm run gulp compile-build-without-mangling 2>&1 | tail -20 || {
+        echo "Error: Recompilation failed" >&2
+        exit 1
+      }
+    fi
+    # Verify CSS fix is in the compiled file
+    if ! grep -q "CSS Import Transformer\|document.createElement('link')" "build/lib/optimize.js" 2>/dev/null; then
+      echo "ERROR: CSS import transformation is missing from optimize.js!" >&2
+      echo "  The build/lib/optimize.ts file contains the fix, but it wasn't compiled." >&2
+      echo "  This will cause CSS MIME type errors at runtime." >&2
+      echo "  Please ensure optimize.ts is recompiled before bundling." >&2
+      exit 1
+    else
+      echo "✓ Verified: CSS import transformation is present in optimize.js"
+    fi
+  else
+    if [[ ! -f "build/lib/optimize.ts" ]]; then
+      echo "WARNING: build/lib/optimize.ts not found - CSS fix verification skipped" >&2
+    fi
+    if [[ ! -f "build/lib/optimize.js" ]]; then
+      echo "WARNING: build/lib/optimize.js not found - CSS fix verification skipped" >&2
+      echo "  This may indicate a build issue. optimize.js should exist after compile-build-without-mangling." >&2
+    fi
+  fi
+  
   # Then patch the compiled JavaScript (fallback or if TS patch didn't work)
   if [[ -f "build/lib/extensions.js" ]]; then
     # ALWAYS try to patch if file has the patterns, even if pathToFileURL exists

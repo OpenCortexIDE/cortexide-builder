@@ -1701,10 +1701,12 @@ EOFPATCH2
   # CROSS-PLATFORM: This runs on macOS, Windows, and Linux (before platform-specific sections)
   echo "Fixing CSS imports in bundled JavaScript files..."
   if [[ -f "fix_css_imports.js" ]]; then
-    if node fix_css_imports.js "out-vscode-min/vs" 2>/dev/null; then
+    # Make files writable first
+    chmod -R u+w "out-vscode-min/vs" 2>/dev/null || true
+    if node fix_css_imports.js "out-vscode-min/vs"; then
       echo "✓ Fixed CSS imports in bundled files"
     else
-      echo "⚠ Warning: CSS import fix script failed, but continuing..." >&2
+      echo "⚠ Warning: CSS import fix script failed on out-vscode-min, but will retry after packaging..." >&2
     fi
   else
     echo "⚠ Warning: fix_css_imports.js not found, skipping CSS import fix" >&2

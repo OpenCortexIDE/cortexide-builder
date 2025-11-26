@@ -703,7 +703,7 @@ setpath "product" "requestFeatureUrl" "https://github.com/cortexide/cortexide/is
 setpath "product" "tipsAndTricksUrl" "https://opencortexide.com/docs"
 setpath "product" "twitterUrl" "https://x.com/cortexide"
 
-if [[ "${DISABLE_UPDATE}" != "yes" ]]; then
+if [[ "${DISABLE_UPDATE:-no}" != "yes" ]]; then
   setpath "product" "updateUrl" "https://raw.githubusercontent.com/OpenCortexIDE/cortexide-versions/refs/heads/main"
   setpath "product" "downloadUrl" "https://github.com/OpenCortexIDE/cortexide-binaries/releases"
 fi

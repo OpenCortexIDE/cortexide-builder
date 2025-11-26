@@ -27,6 +27,7 @@ export BINARY_NAME="${BINARY_NAME:-cortexide}"
 export GH_REPO_PATH="${GH_REPO_PATH:-cortexide/cortexide}"
 export ORG_NAME="${ORG_NAME:-cortexide}"
 export CI_BUILD="${CI_BUILD:-no}"
+export DISABLE_UPDATE="${DISABLE_UPDATE:-no}"
 
 # Source version script if it exists (with error handling)
 if [[ -f "${BUILDER_DIR}/version.sh" ]]; then

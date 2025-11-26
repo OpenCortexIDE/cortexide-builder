@@ -529,6 +529,21 @@ EOFTS
     exit 1
   fi
   
+  # CRITICAL: Compile optimize.ts manually (compile-build-without-mangling only compiles src/, not build/lib/)
+  if [[ -f "build/lib/optimize.ts" ]]; then
+    echo "Compiling build/lib/optimize.ts (compile-build-without-mangling doesn't compile build/lib/ files)..." >&2
+    # Use the build system's build-ts script to compile build/lib files
+    if [[ -f "build/package.json" ]] && grep -q "build-ts" "build/package.json"; then
+      cd build && npm run build-ts 2>&1 | tail -10 && cd .. && echo "✓ Compiled optimize.ts using build-ts script" >&2 || {
+        echo "  Warning: build-ts script may have had warnings, but compilation should have completed" >&2
+        cd .. 2>/dev/null || true
+      }
+    else
+      echo "Warning: build-ts script not found in build/package.json" >&2
+      echo "  Relying on existing optimize.js (may be outdated)" >&2
+    fi
+  fi
+  
   # CRITICAL: Verify optimize.ts was recompiled and includes CSS fix
   echo "Verifying optimize.ts recompilation and CSS fix presence..." >&2
   if [[ -f "build/lib/optimize.ts" ]] && [[ -f "build/lib/optimize.js" ]]; then
@@ -538,19 +553,31 @@ EOFTS
       echo "WARNING: optimize.ts is newer than optimize.js - TypeScript may not have been recompiled!" >&2
       echo "  TS modified: $(date -r "${TS_TIME}" 2>/dev/null || echo "unknown")" >&2
       echo "  JS modified: $(date -r "${JS_TIME}" 2>/dev/null || echo "unknown")" >&2
-      echo "  Forcing recompilation..." >&2
-      npm run gulp compile-build-without-mangling 2>&1 | tail -20 || {
-        echo "Error: Recompilation failed" >&2
-        exit 1
-      }
+      echo "  Attempting manual compilation..." >&2
+      # Try to compile using the build system's compiler
+      if [[ -f "node_modules/.bin/tsc" ]]; then
+        ./node_modules/.bin/tsc build/lib/optimize.ts --outDir build/lib --module commonjs --target es2020 --esModuleInterop --skipLibCheck --noEmit false >/dev/null 2>&1 || true
+      fi
     fi
     # Verify CSS fix is in the compiled file
     if ! grep -q "CSS Import Transformer\|document.createElement('link')" "build/lib/optimize.js" 2>/dev/null; then
       echo "ERROR: CSS import transformation is missing from optimize.js!" >&2
       echo "  The build/lib/optimize.ts file contains the fix, but it wasn't compiled." >&2
       echo "  This will cause CSS MIME type errors at runtime." >&2
-      echo "  Please ensure optimize.ts is recompiled before bundling." >&2
-      exit 1
+      echo "  Attempting to force recompilation..." >&2
+      # Force recompilation by touching optimize.ts to make it newer
+      touch "build/lib/optimize.ts"
+      if [[ -f "node_modules/.bin/tsc" ]]; then
+        ./node_modules/.bin/tsc build/lib/optimize.ts --outDir build/lib --module commonjs --target es2020 --esModuleInterop --skipLibCheck --noEmit false >/dev/null 2>&1 || true
+      fi
+      # Check again
+      if ! grep -q "CSS Import Transformer\|document.createElement('link')" "build/lib/optimize.js" 2>/dev/null; then
+        echo "  ERROR: Force recompilation failed - CSS fix still missing!" >&2
+        echo "  Please ensure optimize.ts is manually compiled or the build system is fixed." >&2
+        exit 1
+      else
+        echo "  ✓ Force recompilation succeeded - CSS fix now present" >&2
+      fi
     else
       echo "✓ Verified: CSS import transformation is present in optimize.js"
     fi

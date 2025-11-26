@@ -179,15 +179,49 @@ build_application() {
     exit 1
   }
   
-  # Make build script executable
-  chmod +x scripts/build.sh
-  
-  # Run unified build script
-  if ./scripts/build.sh --verbose; then
-    log_success "Application built successfully"
+  # Check if unified build script exists in vscode/scripts
+  if [[ -f "scripts/build.sh" ]]; then
+    # Make build script executable
+    chmod +x scripts/build.sh
+    
+    # Run unified build script
+    if ./scripts/build.sh --verbose; then
+      log_success "Application built successfully"
+    else
+      log_error "Build failed"
+      exit 1
+    fi
+  elif [[ -f "${CORTEXIDE_DIR}/scripts/build.sh" ]]; then
+    # Fallback: use build script from cortexide directory
+    log_info "Using build script from cortexide directory..."
+    chmod +x "${CORTEXIDE_DIR}/scripts/build.sh"
+    if "${CORTEXIDE_DIR}/scripts/build.sh" --verbose; then
+      log_success "Application built successfully"
+    else
+      log_error "Build failed"
+      exit 1
+    fi
   else
-    log_error "Build failed"
-    exit 1
+    # Fallback to legacy build method (npm run compile)
+    log_warning "Unified build script not found, using legacy build method..."
+    export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=12288}"
+    
+    # Build React components first
+    if [[ -d "src/vs/workbench/contrib/cortexide/browser/react" ]]; then
+      log_info "Building React components..."
+      npm run buildreact || {
+        log_warning "React build failed, continuing..."
+      }
+    fi
+    
+    # Compile TypeScript
+    log_info "Compiling TypeScript..."
+    if npm run compile; then
+      log_success "Application built successfully"
+    else
+      log_error "Build failed"
+      exit 1
+    fi
   fi
 }
 

@@ -191,6 +191,9 @@ build_application() {
       log_error "Build failed"
       exit 1
     fi
+    
+    # Build Electron app bundle after compilation
+    build_electron_app
   elif [[ -f "${CORTEXIDE_DIR}/scripts/build.sh" ]]; then
     # Fallback: use build script from cortexide directory
     log_info "Using build script from cortexide directory..."
@@ -201,6 +204,9 @@ build_application() {
       log_error "Build failed"
       exit 1
     fi
+    
+    # Build Electron app bundle after compilation
+    build_electron_app
   else
     # Fallback to legacy build method (npm run compile)
     log_warning "Unified build script not found, using legacy build method..."
@@ -241,6 +247,144 @@ build_application() {
       log_info "Some extensions may have TypeScript errors, but core build should work"
     fi
   fi
+  
+  # Build Electron app bundle (required for packaging)
+  build_electron_app
+}
+
+# Build Electron app bundle
+build_electron_app() {
+  log_info "Building Electron app bundle..."
+  
+  # Determine OS and architecture
+  local os_name="${OS_NAME:-}"
+  local vscode_arch="${VSCODE_ARCH:-}"
+  
+  # Auto-detect if not set
+  if [[ -z "${os_name}" ]]; then
+    case "$(uname -s)" in
+      Darwin*) os_name="osx" ;;
+      Linux*) os_name="linux" ;;
+      MINGW*|MSYS*|CYGWIN*) os_name="windows" ;;
+      *) os_name="linux" ;; # Default
+    esac
+  fi
+  
+  if [[ -z "${vscode_arch}" ]]; then
+    case "$(uname -m)" in
+      arm64|aarch64) vscode_arch="arm64" ;;
+      x86_64|amd64) vscode_arch="x64" ;;
+      *) vscode_arch="x64" ;; # Default
+    esac
+  fi
+  
+  log_info "Building for ${os_name} (${vscode_arch})..."
+  
+  # Get app name from product.json
+  local app_name="CortexIDE"
+  if [[ -f "product.json" ]]; then
+    app_name=$(node -p "require('./product.json').nameShort || 'CortexIDE'" 2>/dev/null || echo "CortexIDE")
+    if [[ "${app_name}" == "null" || "${app_name}" == "undefined" ]]; then
+      app_name="CortexIDE"
+    fi
+  fi
+  
+  # Ensure we're in the vscode directory
+  local current_dir=$(pwd)
+  log_info "Current directory: ${current_dir}"
+  
+  # Build Electron app based on platform
+  case "${os_name}" in
+    osx)
+      log_info "Running: npm run gulp vscode-darwin-${vscode_arch}-min-ci"
+      log_info "Working directory: $(pwd)"
+      if npm run gulp "vscode-darwin-${vscode_arch}-min-ci"; then
+        log_success "Gulp task completed successfully"
+        
+        # The gulp task creates the app in ../VSCode-darwin-${arch}/ (relative to vscode dir)
+        # Also check absolute paths
+        local source_dir="../VSCode-darwin-${vscode_arch}"
+        local source_dir_abs="${BUILDER_DIR}/VSCode-darwin-${vscode_arch}"
+        local target_dir=".build/electron"
+        local source_app="${source_dir}/${app_name}.app"
+        local source_app_abs="${source_dir_abs}/${app_name}.app"
+        
+        log_info "Looking for app bundle at:"
+        log_info "  - ${source_app} (relative)"
+        log_info "  - ${source_app_abs} (absolute)"
+        
+        # Try to find the app bundle
+        local found_app=""
+        if [[ -d "${source_app}" ]]; then
+          found_app="${source_app}"
+        elif [[ -d "${source_app_abs}" ]]; then
+          found_app="${source_app_abs}"
+        else
+          # Search for any .app in the VSCode-darwin directory
+          log_info "App not found at expected location, searching..."
+          if [[ -d "${source_dir}" ]]; then
+            found_app=$(find "${source_dir}" -name "*.app" -type d | head -1)
+          elif [[ -d "${source_dir_abs}" ]]; then
+            found_app=$(find "${source_dir_abs}" -name "*.app" -type d | head -1)
+          fi
+        fi
+        
+        if [[ -n "${found_app}" && -d "${found_app}" ]]; then
+          log_info "Found app bundle at: ${found_app}"
+          log_info "Copying app bundle to .build/electron/..."
+          mkdir -p "${target_dir}"
+          if [[ -d "${target_dir}/${app_name}.app" ]]; then
+            rm -rf "${target_dir}/${app_name}.app"
+          fi
+          if cp -R "${found_app}" "${target_dir}/"; then
+            log_success "App bundle copied to ${target_dir}/${app_name}.app"
+          else
+            log_error "Failed to copy app bundle from ${found_app}"
+            exit 1
+          fi
+        else
+          log_error "App bundle not found after gulp task completed"
+          log_error "Searched in:"
+          log_error "  - ${source_app}"
+          log_error "  - ${source_app_abs}"
+          if [[ -d "${source_dir}" ]]; then
+            log_info "Contents of ${source_dir}:"
+            ls -la "${source_dir}" || true
+          fi
+          if [[ -d "${source_dir_abs}" ]]; then
+            log_info "Contents of ${source_dir_abs}:"
+            ls -la "${source_dir_abs}" || true
+          fi
+          exit 1
+        fi
+      else
+        log_error "Failed to create Electron app bundle (gulp task failed)"
+        exit 1
+      fi
+      ;;
+    linux)
+      log_info "Running: npm run gulp vscode-linux-${vscode_arch}-min-ci"
+      if npm run gulp "vscode-linux-${vscode_arch}-min-ci"; then
+        log_success "Electron app bundle created successfully"
+      else
+        log_error "Failed to create Electron app bundle"
+        exit 1
+      fi
+      ;;
+    windows)
+      log_info "Running: npm run gulp vscode-win32-${vscode_arch}-min-ci"
+      if npm run gulp "vscode-win32-${vscode_arch}-min-ci"; then
+        log_success "Electron app bundle created successfully"
+      else
+        log_error "Failed to create Electron app bundle"
+        exit 1
+      fi
+      ;;
+    *)
+      log_error "Unknown OS: ${os_name}"
+      exit 1
+      ;;
+  esac
 }
 
 # Package application

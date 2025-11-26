@@ -45,12 +45,38 @@ create_dmg() {
   
   log_info "Creating DMG for ${arch}..."
   
+  # Check multiple possible locations for the app bundle
   local app_path="${VSCODE_DIR}/.build/electron/${app_name}.app"
+  local alt_path="${BUILDER_DIR}/VSCode-darwin-${arch}/${app_name}.app"
+  local alt_path2="${VSCODE_DIR}/../VSCode-darwin-${arch}/${app_name}.app"
   
+  # Try to find the app bundle
   if [[ ! -d "${app_path}" ]]; then
-    log_error "App not found: ${app_path}"
-    log_info "Run: npm run electron"
-    exit 1
+    log_info "App not found at ${app_path}, checking alternative locations..."
+    if [[ -d "${alt_path}" ]]; then
+      log_info "Found app at ${alt_path}, copying to expected location..."
+      mkdir -p "${VSCODE_DIR}/.build/electron"
+      cp -R "${alt_path}" "${VSCODE_DIR}/.build/electron/" || {
+        log_error "Failed to copy app bundle"
+        exit 1
+      }
+      app_path="${VSCODE_DIR}/.build/electron/${app_name}.app"
+    elif [[ -d "${alt_path2}" ]]; then
+      log_info "Found app at ${alt_path2}, copying to expected location..."
+      mkdir -p "${VSCODE_DIR}/.build/electron"
+      cp -R "${alt_path2}" "${VSCODE_DIR}/.build/electron/" || {
+        log_error "Failed to copy app bundle"
+        exit 1
+      }
+      app_path="${VSCODE_DIR}/.build/electron/${app_name}.app"
+    else
+      log_error "App not found in any expected location:"
+      log_error "  - ${app_path}"
+      log_error "  - ${alt_path}"
+      log_error "  - ${alt_path2}"
+      log_info "Run: npm run gulp vscode-darwin-${arch}-min-ci"
+      exit 1
+    fi
   fi
   
   local dmg_name="CortexIDE-${version}-darwin-${arch}.dmg"
@@ -103,11 +129,37 @@ create_zip() {
   
   log_info "Creating ZIP for ${arch}..."
   
+  # Check multiple possible locations for the app bundle
   local app_path="${VSCODE_DIR}/.build/electron/${app_name}.app"
+  local alt_path="${BUILDER_DIR}/VSCode-darwin-${arch}/${app_name}.app"
+  local alt_path2="${VSCODE_DIR}/../VSCode-darwin-${arch}/${app_name}.app"
   
+  # Try to find the app bundle
   if [[ ! -d "${app_path}" ]]; then
-    log_error "App not found: ${app_path}"
-    exit 1
+    log_info "App not found at ${app_path}, checking alternative locations..."
+    if [[ -d "${alt_path}" ]]; then
+      log_info "Found app at ${alt_path}, copying to expected location..."
+      mkdir -p "${VSCODE_DIR}/.build/electron"
+      cp -R "${alt_path}" "${VSCODE_DIR}/.build/electron/" || {
+        log_error "Failed to copy app bundle"
+        exit 1
+      }
+      app_path="${VSCODE_DIR}/.build/electron/${app_name}.app"
+    elif [[ -d "${alt_path2}" ]]; then
+      log_info "Found app at ${alt_path2}, copying to expected location..."
+      mkdir -p "${VSCODE_DIR}/.build/electron"
+      cp -R "${alt_path2}" "${VSCODE_DIR}/.build/electron/" || {
+        log_error "Failed to copy app bundle"
+        exit 1
+      }
+      app_path="${VSCODE_DIR}/.build/electron/${app_name}.app"
+    else
+      log_error "App not found in any expected location:"
+      log_error "  - ${app_path}"
+      log_error "  - ${alt_path}"
+      log_error "  - ${alt_path2}"
+      exit 1
+    fi
   fi
   
   local zip_name="CortexIDE-${version}-darwin-${arch}.zip"

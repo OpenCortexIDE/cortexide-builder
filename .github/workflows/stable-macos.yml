@@ -99,7 +99,13 @@ jobs:
         continue-on-error: true
         run: |
           if [[ -f "vscode/package-lock.json" ]]; then
-            HASH=$(sha256sum vscode/package-lock.json | cut -d' ' -f1 | head -c 16)
+            if command -v sha256sum &> /dev/null; then
+              HASH=$(sha256sum vscode/package-lock.json | cut -d' ' -f1 | head -c 16)
+            elif command -v shasum &> /dev/null; then
+              HASH=$(shasum -a 256 vscode/package-lock.json | cut -d' ' -f1 | head -c 16)
+            else
+              HASH=$(cat vscode/package-lock.json | shasum -a 256 | cut -d' ' -f1 | head -c 16)
+            fi
             echo "hash=$HASH" >> $GITHUB_OUTPUT
           else
             echo "hash=missing" >> $GITHUB_OUTPUT

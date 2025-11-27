@@ -50,6 +50,7 @@ update_setting () {
   replace "${DEFAULT_TRUE_TO_FALSE}" "${FILENAME}"
 }
 
-update_setting "${TELEMETRY_CRASH_REPORTER}" src/vs/workbench/electron-sandbox/desktop.contribution.ts
+# VS Code 1.106 moved electron-sandbox to electron-browser
+update_setting "${TELEMETRY_CRASH_REPORTER}" src/vs/workbench/electron-browser/desktop.contribution.ts
 update_setting "${TELEMETRY_CONFIGURATION}" src/vs/platform/telemetry/common/telemetryService.ts
 update_setting "${NLS}" src/vs/workbench/contrib/preferences/common/preferencesContribution.ts

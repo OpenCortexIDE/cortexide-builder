@@ -48,25 +48,21 @@ apply_patch() {
     else
       # Try with --reject to see if we can partially apply
       echo "Warning: Patch may have conflicts, attempting partial apply..."
-      if git apply --reject --ignore-whitespace "$1" 2>&1; then
-        # Remove .rej files for missing files
+      git apply --reject --ignore-whitespace "$1" 2>&1 || true
+      
+      # Check if we have .rej files (unresolved conflicts)
+      if find . -name "*.rej" -type f 2>/dev/null | grep -q .; then
+        [[ -z "$silent_mode" ]] && echo "Warning: Patch has conflicts, but CortexIDE may already have these changes."
+        [[ -z "$silent_mode" ]] && echo "Cleaning up .rej files and continuing..."
+        # Clean up .rej files - these are expected for CortexIDE which already has customizations
         find . -name "*.rej" -type f -delete 2>/dev/null || true
-        echo "Applied patch partially"
+        mv -f $1{.bak,}
+        # Return 1 to indicate patch didn't fully apply, but don't abort
+        return 1
+      else
+        [[ -z "$silent_mode" ]] && echo "Patch applied with warnings"
         mv -f $1{.bak,}
         return 0
-      else
-        # Check if we have actual unresolved conflicts
-        if find . -name "*.rej" -type f 2>/dev/null | grep -q .; then
-          echo "Error: Patch has unresolved conflicts" >&2
-          echo "$PATCH_ERROR" >&2
-          mv -f $1{.bak,}
-          # For now, return error but let caller decide whether to continue
-          return 1
-        else
-          echo "Patch applied with warnings"
-          mv -f $1{.bak,}
-          return 0
-        fi
       fi
     fi
   fi

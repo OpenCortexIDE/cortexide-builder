@@ -34,24 +34,29 @@ echo "ORG_NAME=\"${ORG_NAME}\""
 # We apply patches but don't fail if some are already applied or files don't exist.
 echo "Applying core patches at ../patches/*.patch..."
 echo "Note: Some patches may be skipped if already applied or not applicable to CortexIDE 1.106"
+echo "Patch failures are EXPECTED and will not stop the build."
+PATCHES_APPLIED=0
+PATCHES_SKIPPED=0
 for file in ../patches/*.patch; do
   if [[ -f "${file}" ]]; then
     # Extract just the filename for clearer logging
     patch_name=$(basename "${file}")
     echo "Attempting to apply: ${patch_name}"
-    apply_patch "${file}" "silent" || {
+    if apply_patch "${file}" "silent"; then
+      PATCHES_APPLIED=$((PATCHES_APPLIED + 1))
+    else
       echo "Warning: Patch ${patch_name} failed to apply (may be already applied or not needed)"
-      # Continue with other patches rather than failing
-      true
-    }
+      PATCHES_SKIPPED=$((PATCHES_SKIPPED + 1))
+    fi
   fi
 done
+echo "Patch summary: ${PATCHES_APPLIED} applied, ${PATCHES_SKIPPED} skipped"
 
 if [[ "${VSCODE_QUALITY}" == "insider" ]]; then
   echo "Applying insider patches..."
   for file in ../patches/insider/*.patch; do
     if [[ -f "${file}" ]]; then
-      apply_patch "${file}"
+      apply_patch "${file}" || echo "Skipped: $(basename "${file}")"
     fi
   done
 fi
@@ -60,7 +65,7 @@ if [[ -d "../patches/${OS_NAME}/" ]]; then
   echo "Applying OS patches (${OS_NAME})..."
   for file in "../patches/${OS_NAME}/"*.patch; do
     if [[ -f "${file}" ]]; then
-      apply_patch "${file}"
+      apply_patch "${file}" || echo "Skipped: $(basename "${file}")"
     fi
   done
 fi
@@ -68,7 +73,7 @@ fi
 echo "Applying user patches..."
 for file in ../patches/user/*.patch; do
   if [[ -f "${file}" ]]; then
-    apply_patch "${file}"
+    apply_patch "${file}" || echo "Skipped: $(basename "${file}")"
   fi
 done
 

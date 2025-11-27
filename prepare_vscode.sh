@@ -226,11 +226,13 @@ fi
 for i in {1..5}; do # try 5 times
   # Fix the script before attempting install (in case it exists from previous attempt)
   fix_node_pty_postinstall
-
-  # Try npm install with ignore-scripts for node-pty, then run postinstall manually
-  # Actually, we can't selectively ignore scripts, so we'll need to handle failures
+  
+  # Try npm ci first, fall back to npm install if lock file is out of sync
+  # npm ci requires package-lock.json to be perfectly in sync with package.json
+  # npm install is more forgiving and will update lock file
+  NPM_CMD="npm ci"
   if [[ "${CI_BUILD}" != "no" && "${OS_NAME}" == "osx" ]]; then
-    CXX=clang++ npm ci 2>&1 | tee /tmp/npm-install.log || {
+    CXX=clang++ $NPM_CMD 2>&1 | tee /tmp/npm-install.log || {
       # If it failed, check if it's due to node-pty postinstall or ripgrep download
       if grep -q "node-pty.*postinstall\|ERR_REQUIRE_ESM.*env-paths" /tmp/npm-install.log; then
         echo "npm install failed due to node-pty postinstall issue, fixing and retrying..."
@@ -241,16 +243,17 @@ for i in {1..5}; do # try 5 times
         continue
       elif grep -q "ripgrep.*403\|Request failed: 403.*ripgrep\|@vscode/ripgrep.*403\|Downloading ripgrep failed" /tmp/npm-install.log; then
         echo "npm install failed due to ripgrep download 403 error, will handle manually after install..."
-        # Create bin folder to skip download on retry
         mkdir -p node_modules/@vscode/ripgrep/bin 2>/dev/null || true
-        # Continue - the download will be handled manually after successful install
+        continue
+      elif grep -q "package.json and package-lock.json.*not in sync\|Missing:.*from lock file" /tmp/npm-install.log; then
+        echo "npm ci failed due to package-lock.json out of sync, switching to npm install..."
+        NPM_CMD="npm install"
         continue
       fi
-      # Other errors, break and retry normally
       false
     } && break
   else
-    npm ci 2>&1 | tee /tmp/npm-install.log || {
+    $NPM_CMD 2>&1 | tee /tmp/npm-install.log || {
       if grep -q "node-pty.*postinstall\|ERR_REQUIRE_ESM.*env-paths" /tmp/npm-install.log; then
         echo "npm install failed due to node-pty postinstall issue, fixing and retrying..."
         fix_node_pty_postinstall
@@ -258,9 +261,11 @@ for i in {1..5}; do # try 5 times
         continue
       elif grep -q "ripgrep.*403\|Request failed: 403.*ripgrep\|@vscode/ripgrep.*403\|Downloading ripgrep failed" /tmp/npm-install.log; then
         echo "npm install failed due to ripgrep download 403 error, will handle manually after install..."
-        # Create bin folder to skip download on retry
         mkdir -p node_modules/@vscode/ripgrep/bin 2>/dev/null || true
-        # Continue - the download will be handled manually after successful install
+        continue
+      elif grep -q "package.json and package-lock.json.*not in sync\|Missing:.*from lock file" /tmp/npm-install.log; then
+        echo "npm ci failed due to package-lock.json out of sync, switching to npm install..."
+        NPM_CMD="npm install"
         continue
       fi
       false

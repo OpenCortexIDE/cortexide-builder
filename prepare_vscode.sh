@@ -391,8 +391,8 @@ for i in {1..5}; do # try 5 times
   if [[ "${CI_BUILD}" != "no" && "${OS_NAME}" == "osx" ]]; then
     CXX=clang++ npm ci 2>&1 | tee /tmp/npm-install.log || {
       # If it failed, check if it's due to package-lock.json sync issue
-      if grep -q "package.json and package-lock.json.*are in sync\|can only install packages when.*package-lock.json.*are in sync\|Missing:.*from lock file" /tmp/npm-install.log; then
-        echo "npm ci failed due to package-lock.json sync issue, falling back to npm install..." >&2
+      if grep -qiE "package.json and package-lock.json.*are in sync|can only install packages when.*package-lock.json.*are in sync|Missing:.*from lock file|package-lock.json.*sync|EUSAGE" /tmp/npm-install.log; then
+        echo "npm ci failed due to package-lock.json sync issue (patches modified package.json), falling back to npm install..." >&2
         rm -f /tmp/npm-install.log
         CXX=clang++ npm install 2>&1 | tee /tmp/npm-install.log || {
           echo "npm install also failed, will retry..." >&2
@@ -418,8 +418,8 @@ for i in {1..5}; do # try 5 times
     } && break
   else
     npm ci 2>&1 | tee /tmp/npm-install.log || {
-      if grep -q "package.json and package-lock.json.*are in sync\|can only install packages when.*package-lock.json.*are in sync\|Missing:.*from lock file" /tmp/npm-install.log; then
-        echo "npm ci failed due to package-lock.json sync issue, falling back to npm install..." >&2
+      if grep -qiE "package.json and package-lock.json.*are in sync|can only install packages when.*package-lock.json.*are in sync|Missing:.*from lock file|package-lock.json.*sync|EUSAGE" /tmp/npm-install.log; then
+        echo "npm ci failed due to package-lock.json sync issue (patches modified package.json), falling back to npm install..." >&2
         rm -f /tmp/npm-install.log
         npm install 2>&1 | tee /tmp/npm-install.log || {
           echo "npm install also failed, will retry..." >&2

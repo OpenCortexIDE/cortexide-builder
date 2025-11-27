@@ -164,6 +164,7 @@ jobs:
           path: |
             vscode/out
             vscode/out-build
+            vscode/out-vscode-min
           key: ${{ runner.os }}-ts-build-${{ github.sha }}-x64
           restore-keys: |
             ${{ runner.os }}-ts-build-

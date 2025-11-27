@@ -215,6 +215,17 @@ build_application() {
       exit 1
     fi
     
+    # Minify VS Code (creates out-vscode-min directory required for packaging)
+    log_info "Minifying VS Code (required for packaging)..."
+    if npm run gulp minify-vscode; then
+      log_success "VS Code minified successfully"
+    else
+      log_error "Minification failed - this is required for packaging"
+      log_info "The minify-vscode task creates out-vscode-min directory"
+      log_info "This directory is required by the packaging tasks"
+      exit 1
+    fi
+    
     # Build Electron app bundle after compilation
     build_electron_app
   elif [[ -f "${CORTEXIDE_DIR}/scripts/build.sh" ]]; then
@@ -225,6 +236,17 @@ build_application() {
       log_success "Application built successfully"
     else
       log_error "Build failed"
+      exit 1
+    fi
+    
+    # Minify VS Code (creates out-vscode-min directory required for packaging)
+    log_info "Minifying VS Code (required for packaging)..."
+    if npm run gulp minify-vscode; then
+      log_success "VS Code minified successfully"
+    else
+      log_error "Minification failed - this is required for packaging"
+      log_info "The minify-vscode task creates out-vscode-min directory"
+      log_info "This directory is required by the packaging tasks"
       exit 1
     fi
     
@@ -269,6 +291,17 @@ build_application() {
       log_warning "Extension compilation had errors, but continuing..."
       log_info "Some extensions may have TypeScript errors, but core build should work"
     fi
+  fi
+  
+  # Minify VS Code (creates out-vscode-min directory required for packaging)
+  log_info "Minifying VS Code (required for packaging)..."
+  if npm run gulp minify-vscode; then
+    log_success "VS Code minified successfully"
+  else
+    log_error "Minification failed - this is required for packaging"
+    log_info "The minify-vscode task creates out-vscode-min directory"
+    log_info "This directory is required by the packaging tasks"
+    exit 1
   fi
   
   # Build Electron app bundle (required for packaging)

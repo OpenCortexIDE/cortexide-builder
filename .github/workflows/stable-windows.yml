@@ -140,7 +140,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SHOULD_BUILD_REH: 'no'
           SHOULD_BUILD_REH_WEB: 'no'
-        run: ./build.sh
+          NODE_OPTIONS: "--max-old-space-size=12288"
+        run: |
+          echo "Compiling CortexIDE core (TypeScript + React)..."
+          echo "This is the main compile step for Windows builds"
+          ./build.sh
         if: env.SHOULD_BUILD == 'yes'
 
       - name: Compress vscode artifact
@@ -227,7 +231,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           npm_config_arch: ${{ matrix.vscode_arch }}
           npm_config_target_arch: ${{ matrix.vscode_arch }}
-        run: ./build/windows/package.sh
+          NODE_OPTIONS: "--max-old-space-size=12288"
+        run: |
+          echo "Packaging CortexIDE for Windows ${VSCODE_ARCH}..."
+          echo "Using pre-compiled artifacts and building platform-specific binaries"
+          ./build/windows/package.sh
         if: env.SHOULD_BUILD == 'yes'
 
       - name: Prepare assets

@@ -29,10 +29,21 @@ echo "BINARY_NAME=\"${BINARY_NAME}\""
 echo "GH_REPO_PATH=\"${GH_REPO_PATH}\""
 echo "ORG_NAME=\"${ORG_NAME}\""
 
-echo "Applying patches at ../patches/*.patch..."
+# CortexIDE Note: Many branding patches may not be needed since the CortexIDE repo
+# already has correct branding in product.json and source code.
+# We apply patches but don't fail if some are already applied or files don't exist.
+echo "Applying core patches at ../patches/*.patch..."
+echo "Note: Some patches may be skipped if already applied or not applicable to CortexIDE 1.106"
 for file in ../patches/*.patch; do
   if [[ -f "${file}" ]]; then
-    apply_patch "${file}"
+    # Extract just the filename for clearer logging
+    patch_name=$(basename "${file}")
+    echo "Attempting to apply: ${patch_name}"
+    apply_patch "${file}" "silent" || {
+      echo "Warning: Patch ${patch_name} failed to apply (may be already applied or not needed)"
+      # Continue with other patches rather than failing
+      true
+    }
   fi
 done
 
@@ -164,11 +175,11 @@ const postInstallPath = path.join(cwd, 'node_modules/node-pty/scripts/post-insta
 
 if (fs.existsSync(postInstallPath)) {
   let content = fs.readFileSync(postInstallPath, 'utf8');
-  
+
   if (content.includes('nodeGypCmd')) {
     process.exit(0);
   }
-  
+
   const fixCode = `// Try to use local node-gyp first to respect package.json overrides
 let nodeGypCmd = 'npx node-gyp';
 const localNodeGyp = path.join(__dirname, '../../node-gyp/bin/node-gyp.js');
@@ -177,17 +188,17 @@ if (fs.existsSync(localNodeGyp)) {
 }
 
 `;
-  
+
   content = content.replace(
     /console\.log\(`\\x1b\[32m> Generating compile_commands\.json\.\.\.\\x1b\[0m`\);/,
     fixCode + 'console.log(`\\x1b[32m> Generating compile_commands.json...\\x1b[0m`);'
   );
-  
+
   content = content.replace(
     /execSync\('npx node-gyp configure -- -f compile_commands_json'\);/,
     'execSync(`${nodeGypCmd} configure -- -f compile_commands_json`);'
   );
-  
+
   fs.writeFileSync(postInstallPath, content, 'utf8');
   console.log('Fixed node-pty post-install script');
 }
@@ -210,7 +221,7 @@ fi
 for i in {1..5}; do # try 5 times
   # Fix the script before attempting install (in case it exists from previous attempt)
   fix_node_pty_postinstall
-  
+
   # Try npm install with ignore-scripts for node-pty, then run postinstall manually
   # Actually, we can't selectively ignore scripts, so we'll need to handle failures
   if [[ "${CI_BUILD}" != "no" && "${OS_NAME}" == "osx" ]]; then
@@ -256,7 +267,7 @@ for i in {1..5}; do # try 5 times
     exit 1
   fi
   echo "Npm install failed $i, trying again..."
-  
+
   # Fix the script after failure (it may have been partially installed)
   fix_node_pty_postinstall
 

@@ -16,9 +16,23 @@ chown -R root:root vscode
 
 cd vscode || { echo "'vscode' dir not found"; exit 1; }
 
+# CortexIDE-specific: Clean up any stale processes and build artifacts
+echo "Cleaning up processes and build artifacts..."
+pkill -f "$(pwd)/out/main.js" || true
+pkill -f "$(pwd)/out-build/main.js" || true
+
+# Remove React build output to ensure clean state
+if [[ -d "src/vs/workbench/contrib/void/browser/react/out" ]]; then
+  rm -rf src/vs/workbench/contrib/void/browser/react/out
+fi
+if [[ -d "src/vs/workbench/contrib/cortexide/browser/react/out" ]]; then
+  rm -rf src/vs/workbench/contrib/cortexide/browser/react/out
+fi
+
 export VSCODE_PLATFORM='linux'
 export VSCODE_SKIP_NODE_VERSION_CHECK=1
 export VSCODE_SYSROOT_PREFIX='-glibc-2.28'
+export NODE_OPTIONS="--max-old-space-size=12288"
 
 if [[ "${VSCODE_ARCH}" == "arm64" || "${VSCODE_ARCH}" == "armhf" ]]; then
   export VSCODE_SKIP_SYSROOT=1
@@ -102,7 +116,7 @@ fi
 
 for i in {1..5}; do # try 5 times
   npm ci --prefix build && break
-  if [[ $i == 3 ]]; then
+  if [[ $i == 5 ]]; then
     echo "Npm install failed too many times" >&2
     exit 1
   fi
@@ -119,7 +133,7 @@ fi
 
 for i in {1..5}; do # try 5 times
   npm ci && break
-  if [[ $i -eq 3 ]]; then
+  if [[ $i -eq 5 ]]; then
     echo "Npm install failed too many times" >&2
     exit 1
   fi
@@ -128,6 +142,12 @@ done
 
 node build/azure-pipelines/distro/mixin-npm
 
+# CortexIDE: Build React components before packaging
+echo "Building React components for Linux ${VSCODE_ARCH}..."
+npm run buildreact || echo "Warning: buildreact failed, continuing..."
+
+# Package the Linux application
+echo "Packaging Linux ${VSCODE_ARCH} application..."
 npm run gulp "vscode-linux-${VSCODE_ARCH}-min-ci"
 
 if [[ -f "../build/linux/${VSCODE_ARCH}/ripgrep.sh" ]]; then

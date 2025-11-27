@@ -109,7 +109,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-        run: ./build.sh
+          NODE_OPTIONS: "--max-old-space-size=12288"
+        run: |
+          echo "Building CortexIDE for macOS ${VSCODE_ARCH}..."
+          echo "This will compile TypeScript, build React components, and package the application"
+          ./build.sh
         if: env.SHOULD_BUILD == 'yes'
 
       - name: Prepare assets

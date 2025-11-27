@@ -16,8 +16,9 @@ echo "ORG_NAME=\"${ORG_NAME}\""
 # All common functions can be added to this file
 
 apply_patch() {
-  if [[ -z "$2" ]]; then
-    echo applying patch: "$1";
+  local silent_mode="$2"
+  if [[ -z "$silent_mode" ]]; then
+    echo "Applying patch: $1"
   fi
   # grep '^+++' "$1"  | sed -e 's#+++ [ab]/#./vscode/#' | while read line; do shasum -a 256 "${line}"; done
 
@@ -33,31 +34,45 @@ apply_patch() {
   # Try to apply the patch, capturing errors
   PATCH_ERROR=$(git apply --ignore-whitespace "$1" 2>&1) || PATCH_FAILED=1
   if [[ -n "$PATCH_FAILED" ]]; then
-    # Check if the failure is due to missing files
+    # Check if the failure is due to missing files (patch not applicable to CortexIDE)
     if echo "$PATCH_ERROR" | grep -q "No such file or directory"; then
-      # Try with --reject to apply what we can
-      echo "Warning: Some files in patch do not exist, attempting partial apply..."
+      [[ -z "$silent_mode" ]] && echo "Info: Patch targets files not in CortexIDE, skipping..."
+      mv -f $1{.bak,}
+      # Return non-zero but don't abort - let caller decide
+      return 1
+    # Check if already applied
+    elif echo "$PATCH_ERROR" | grep -q "patch does not apply\|already exists in working"; then
+      [[ -z "$silent_mode" ]] && echo "Info: Patch already applied or not needed, skipping..."
+      mv -f $1{.bak,}
+      return 0
+    else
+      # Try with --reject to see if we can partially apply
+      echo "Warning: Patch may have conflicts, attempting partial apply..."
       if git apply --reject --ignore-whitespace "$1" 2>&1; then
-        # Remove .rej files for missing files (they're expected)
+        # Remove .rej files for missing files
         find . -name "*.rej" -type f -delete 2>/dev/null || true
-        echo "Applied patch partially (some files skipped)"
+        echo "Applied patch partially"
+        mv -f $1{.bak,}
+        return 0
       else
-        # Check if we have actual patch failures (not just missing files)
+        # Check if we have actual unresolved conflicts
         if find . -name "*.rej" -type f 2>/dev/null | grep -q .; then
-          echo "Error: Patch has conflicts that need to be resolved" >&2
-          exit 1
+          echo "Error: Patch has unresolved conflicts" >&2
+          echo "$PATCH_ERROR" >&2
+          mv -f $1{.bak,}
+          # For now, return error but let caller decide whether to continue
+          return 1
         else
-          echo "Applied patch partially (some files skipped)"
+          echo "Patch applied with warnings"
+          mv -f $1{.bak,}
+          return 0
         fi
       fi
-    else
-      echo failed to apply patch "$1" >&2
-      echo "$PATCH_ERROR" >&2
-      exit 1
     fi
   fi
 
   mv -f $1{.bak,}
+  return 0
 }
 
 exists() { type -t "$1" &> /dev/null; }

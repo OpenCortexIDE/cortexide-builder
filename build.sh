@@ -12,30 +12,60 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
 
   cd vscode || { echo "'vscode' dir not found"; exit 1; }
 
-  export NODE_OPTIONS="--max-old-space-size=8192"
+  export NODE_OPTIONS="--max-old-space-size=12288"
+
+  # Clean up any running processes and stale build artifacts
+  # This ensures a clean build state matching the working local development flow
+  echo "Cleaning up processes and build artifacts..."
+  pkill -f "$(pwd)/out/main.js" || true
+  pkill -f "$(pwd)/out-build/main.js" || true
+
+  # Remove React build output to force fresh build
+  # CortexIDE has a React-based UI component that needs to be rebuilt
+  if [[ -d "src/vs/workbench/contrib/void/browser/react/out" ]]; then
+    echo "Removing old React build output..."
+    rm -rf src/vs/workbench/contrib/void/browser/react/out
+  fi
+  if [[ -d "src/vs/workbench/contrib/cortexide/browser/react/out" ]]; then
+    echo "Removing old React build output..."
+    rm -rf src/vs/workbench/contrib/cortexide/browser/react/out
+  fi
 
   # Skip monaco-compile-check as it's failing due to searchUrl property
   # Skip valid-layers-check as well since it might depend on monaco
-  # Void commented these out
+  # These checks are not critical for CortexIDE builds
   # npm run monaco-compile-check
   # npm run valid-layers-check
 
+  # Build React components first (required for CortexIDE UI)
+  echo "Building React components..."
   npm run buildreact
+
+  # Compile the main codebase
+  # Using compile-build-without-mangling for compatibility and debugging
+  echo "Compiling TypeScript..."
   npm run gulp compile-build-without-mangling
+
+  # Compile extension media assets
+  echo "Compiling extension media..."
   npm run gulp compile-extension-media
+
+  # Compile built-in extensions
+  echo "Compiling extensions..."
   npm run gulp compile-extensions-build
-  
+
   # Fix CSS paths in out-build directory before minify
+  # CortexIDE has custom CSS that may have incorrect relative paths after compilation
   # This fixes paths that get incorrectly modified during the build process
   echo "Fixing CSS paths in out-build directory..."
-  
+
   # Determine sed command based on system (GNU vs BSD)
   if sed --version >/dev/null 2>&1; then
     SED_CMD="sed -i"
   else
     SED_CMD="sed -i ''"
   fi
-  
+
   # Fix editorgroupview.css: ../../media/code-icon.svg -> ../../../media/code-icon.svg
   if [[ -f "out-build/vs/workbench/browser/parts/editor/media/editorgroupview.css" ]]; then
     if grep -q "../../media/code-icon.svg" "out-build/vs/workbench/browser/parts/editor/media/editorgroupview.css" 2>/dev/null; then
@@ -44,7 +74,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
       $SED_CMD "s|url(\"../../media/code-icon\.svg\")|url('../../../media/code-icon.svg')|g" "out-build/vs/workbench/browser/parts/editor/media/editorgroupview.css" 2>/dev/null || true
     fi
   fi
-  
+
   # Fix void.css: ../../browser/media/code-icon.svg -> ../../../../browser/media/code-icon.svg
   if [[ -f "out-build/vs/workbench/contrib/void/browser/media/void.css" ]]; then
     if grep -q "../../browser/media/code-icon.svg" "out-build/vs/workbench/contrib/void/browser/media/void.css" 2>/dev/null; then
@@ -53,7 +83,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
       $SED_CMD "s|url(\"../../browser/media/code-icon\.svg\")|url('../../../../browser/media/code-icon.svg')|g" "out-build/vs/workbench/contrib/void/browser/media/void.css" 2>/dev/null || true
     fi
   fi
-  
+
   # Fix any other CSS files in out-build/browser/parts with incorrect paths to media/
   find out-build/vs/workbench/browser/parts -name "*.css" -type f 2>/dev/null | while read -r css_file; do
     if [[ -f "$css_file" ]] && grep -q "../../media/code-icon.svg" "$css_file" 2>/dev/null; then
@@ -62,7 +92,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
       $SED_CMD "s|url(\"../../media/code-icon\.svg\")|url('../../../media/code-icon.svg')|g" "$css_file" 2>/dev/null || true
     fi
   done
-  
+
   # Fix any CSS files in out-build/contrib with incorrect paths to browser/media/
   find out-build/vs/workbench/contrib -path "*/browser/media/*.css" -type f 2>/dev/null | while read -r css_file; do
     if [[ -f "$css_file" ]] && grep -q "../../browser/media/code-icon.svg" "$css_file" 2>/dev/null; then
@@ -71,7 +101,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
       $SED_CMD "s|url(\"../../browser/media/code-icon\.svg\")|url('../../../../browser/media/code-icon.svg')|g" "$css_file" 2>/dev/null || true
     fi
   done
-  
+
   # Also check for any other incorrect relative paths that might cause issues
   # Pattern: ../../media/ from parts/*/media/ (too short, should be ../../../media/)
   find out-build/vs/workbench/browser/parts -path "*/media/*.css" -type f 2>/dev/null | while read -r css_file; do
@@ -83,46 +113,61 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
       fi
     fi
   done
-  
+
+  # Minify and bundle the entire application for production
+  echo "Minifying and bundling application..."
   npm run gulp minify-vscode
 
   if [[ "${OS_NAME}" == "osx" ]]; then
-    # generate Group Policy definitions
-    # node build/lib/policies darwin # Void commented this out
+    # Generate Group Policy definitions (disabled for CortexIDE)
+    # node build/lib/policies darwin
 
+    # Package for macOS with the specified architecture (x64 or arm64)
+    echo "Packaging macOS ${VSCODE_ARCH} application..."
     npm run gulp "vscode-darwin-${VSCODE_ARCH}-min-ci"
 
+    # Touch all files to ensure consistent timestamps
     find "../VSCode-darwin-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
 
+    # Build the CLI binary for macOS
     . ../build_cli.sh
 
     VSCODE_PLATFORM="darwin"
   elif [[ "${OS_NAME}" == "windows" ]]; then
-    # generate Group Policy definitions
-    # node build/lib/policies win32 # Void commented this out
+    # Generate Group Policy definitions (disabled for CortexIDE)
+    # node build/lib/policies win32
 
-    # in CI, packaging will be done by a different job
+    # In CI, packaging will be done by a separate job to support multi-arch builds
     if [[ "${CI_BUILD}" == "no" ]]; then
+      # Generate RTF license file for Windows installer
       . ../build/windows/rtf/make.sh
 
+      # Package for Windows with the specified architecture
+      echo "Packaging Windows ${VSCODE_ARCH} application..."
       npm run gulp "vscode-win32-${VSCODE_ARCH}-min-ci"
 
+      # REH (Remote Extension Host) only supported on x64
       if [[ "${VSCODE_ARCH}" != "x64" ]]; then
         SHOULD_BUILD_REH="no"
         SHOULD_BUILD_REH_WEB="no"
       fi
 
+      # Build the CLI binary for Windows
       . ../build_cli.sh
     fi
 
     VSCODE_PLATFORM="win32"
   else # linux
-    # in CI, packaging will be done by a different job
+    # In CI, packaging will be done by a separate job to support multi-arch builds
     if [[ "${CI_BUILD}" == "no" ]]; then
+      # Package for Linux with the specified architecture
+      echo "Packaging Linux ${VSCODE_ARCH} application..."
       npm run gulp "vscode-linux-${VSCODE_ARCH}-min-ci"
 
+      # Touch all files to ensure consistent timestamps
       find "../VSCode-linux-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
 
+      # Build the CLI binary for Linux
       . ../build_cli.sh
     fi
 

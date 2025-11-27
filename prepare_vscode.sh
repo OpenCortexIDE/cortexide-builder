@@ -290,6 +290,18 @@ mv .npmrc.bak .npmrc
 # Ensure the script is fixed after successful install
 fix_node_pty_postinstall
 
+# Install build dependencies (required for gulp tasks)
+echo "Installing build dependencies..."
+for i in {1..5}; do
+  npm ci --prefix build && break
+  if [[ $i == 5 ]]; then
+    echo "Build dependencies install failed too many times" >&2
+    exit 1
+  fi
+  echo "Build dependencies install failed $i, trying again..."
+  sleep $(( 5 * i ))
+done
+
 # Handle @vscode/ripgrep download manually after npm install
 # This allows us to use GITHUB_TOKEN and handle errors gracefully
 if [[ -d "node_modules/@vscode/ripgrep" ]] && [[ ! -f "node_modules/@vscode/ripgrep/bin/rg" ]]; then

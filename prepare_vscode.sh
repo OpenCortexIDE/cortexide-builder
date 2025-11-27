@@ -161,6 +161,16 @@ fi
 mv .npmrc .npmrc.bak
 cp ../npmrc .npmrc
 
+# Remove package-lock.json if Node version changed to avoid ES Module conflicts
+# package-lock.json generated with Node 20 causes issues with Node 22
+if [[ -f "package-lock.json" ]]; then
+  NODE_VERSION=$(node --version | cut -d'v' -f2 | cut -d'.' -f1)
+  if [[ "$NODE_VERSION" -ge 22 ]]; then
+    echo "Removing package-lock.json to regenerate with Node ${NODE_VERSION}..."
+    rm -f package-lock.json
+  fi
+fi
+
 # Create @vscode/ripgrep bin folder to skip download during npm install
 # This prevents 403 errors from GitHub rate limiting during npm ci
 # We'll handle the download manually after npm install with proper error handling
@@ -227,10 +237,15 @@ for i in {1..5}; do # try 5 times
   # Fix the script before attempting install (in case it exists from previous attempt)
   fix_node_pty_postinstall
   
-  # Try npm ci first, fall back to npm install if lock file is out of sync
+  # Try npm ci first, fall back to npm install if lock file is out of sync or missing
   # npm ci requires package-lock.json to be perfectly in sync with package.json
   # npm install is more forgiving and will update lock file
-  NPM_CMD="npm ci"
+  # If we removed package-lock.json above, use npm install
+  if [[ ! -f "package-lock.json" ]]; then
+    NPM_CMD="npm install"
+  else
+    NPM_CMD="npm ci"
+  fi
   if [[ "${CI_BUILD}" != "no" && "${OS_NAME}" == "osx" ]]; then
     CXX=clang++ $NPM_CMD 2>&1 | tee /tmp/npm-install.log || {
       # If it failed, check if it's due to node-pty postinstall or ripgrep download

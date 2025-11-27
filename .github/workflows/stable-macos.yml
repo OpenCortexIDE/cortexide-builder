@@ -94,29 +94,45 @@ jobs:
           CORTEXIDE_RELEASE: ${{ github.event.inputs.cortexide_release }}
         run: . get_repo.sh
 
+      - name: Get package files hash
+        id: package-hash
+        continue-on-error: true
+        run: |
+          if [[ -f "vscode/package-lock.json" ]]; then
+            HASH=$(sha256sum vscode/package-lock.json | cut -d' ' -f1 | head -c 16)
+            echo "hash=$HASH" >> $GITHUB_OUTPUT
+          else
+            echo "hash=missing" >> $GITHUB_OUTPUT
+          fi
+
       - name: Cache node_modules
         uses: actions/cache@v4
         id: cache-node-modules
+        continue-on-error: true
         with:
           path: vscode/node_modules
-          key: ${{ runner.os }}-node-modules-${{ hashFiles('vscode/package-lock.json') }}
+          key: ${{ runner.os }}-node-modules-${{ steps.package-hash.outputs.hash }}-${{ matrix.vscode_arch }}
           restore-keys: |
             ${{ runner.os }}-node-modules-
+            ${{ runner.os }}-
 
       - name: Cache Electron binaries
         uses: actions/cache@v4
         id: cache-electron
+        continue-on-error: true
         with:
           path: |
             vscode/.electron-cache
             ~/.cache/electron
-          key: ${{ runner.os }}-electron-${{ matrix.vscode_arch }}-${{ hashFiles('vscode/package.json') }}
+          key: ${{ runner.os }}-electron-${{ matrix.vscode_arch }}-v1
           restore-keys: |
             ${{ runner.os }}-electron-${{ matrix.vscode_arch }}-
+            ${{ runner.os }}-electron-
 
       - name: Cache TypeScript build outputs
         uses: actions/cache@v4
         id: cache-ts-build
+        continue-on-error: true
         with:
           path: |
             vscode/out

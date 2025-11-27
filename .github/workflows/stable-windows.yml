@@ -135,31 +135,48 @@ jobs:
         run: ./get_repo.sh
         if: env.SHOULD_BUILD == 'yes'
 
+      - name: Get package files hash
+        id: package-hash
+        continue-on-error: true
+        run: |
+          if [[ -f "vscode/package-lock.json" ]]; then
+            HASH=$(sha256sum vscode/package-lock.json | cut -d' ' -f1 | head -c 16)
+            echo "hash=$HASH" >> $GITHUB_OUTPUT
+          else
+            echo "hash=missing" >> $GITHUB_OUTPUT
+          fi
+        if: env.SHOULD_BUILD == 'yes'
+
       - name: Cache node_modules
         uses: actions/cache@v4
         id: cache-node-modules
+        continue-on-error: true
         with:
           path: vscode/node_modules
-          key: ${{ runner.os }}-node-modules-${{ hashFiles('vscode/package-lock.json') }}
+          key: ${{ runner.os }}-node-modules-${{ steps.package-hash.outputs.hash }}-x64
           restore-keys: |
             ${{ runner.os }}-node-modules-
+            ${{ runner.os }}-
         if: env.SHOULD_BUILD == 'yes'
 
       - name: Cache Electron binaries
         uses: actions/cache@v4
         id: cache-electron
+        continue-on-error: true
         with:
           path: |
             vscode/.electron-cache
             ~/.cache/electron
-          key: ${{ runner.os }}-electron-x64-${{ hashFiles('vscode/package.json') }}
+          key: ${{ runner.os }}-electron-x64-v1
           restore-keys: |
             ${{ runner.os }}-electron-x64-
+            ${{ runner.os }}-electron-
         if: env.SHOULD_BUILD == 'yes'
 
       - name: Cache TypeScript build outputs
         uses: actions/cache@v4
         id: cache-ts-build
+        continue-on-error: true
         with:
           path: |
             vscode/out

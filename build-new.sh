@@ -217,12 +217,38 @@ build_application() {
     
     # Minify VS Code (creates out-vscode-min directory required for packaging)
     log_info "Minifying VS Code (required for packaging)..."
+    log_info "Current directory: $(pwd)"
+    log_info "Checking if out-build exists: $([ -d 'out-build' ] && echo 'yes' || echo 'no')"
+    
     if npm run gulp minify-vscode; then
       log_success "VS Code minified successfully"
+      
+      # Verify out-vscode-min was created
+      if [[ -d "out-vscode-min" ]]; then
+        local file_count=$(find out-vscode-min -type f | wc -l | tr -d ' ')
+        log_success "out-vscode-min directory created with ${file_count} files"
+        
+        # Check for critical file
+        if [[ -f "out-vscode-min/vs/base/parts/sandbox/electron-browser/preload.js" ]]; then
+          log_success "Critical file preload.js found in out-vscode-min"
+        else
+          log_warning "preload.js not found in out-vscode-min, but directory exists"
+        fi
+      else
+        log_error "minify-vscode completed but out-vscode-min directory was not created!"
+        log_error "This will cause packaging to fail"
+        exit 1
+      fi
     else
       log_error "Minification failed - this is required for packaging"
       log_info "The minify-vscode task creates out-vscode-min directory"
       log_info "This directory is required by the packaging tasks"
+      log_info "Checking if out-build directory exists (required for minify)..."
+      if [[ -d "out-build" ]]; then
+        log_info "out-build exists, minify should work"
+      else
+        log_error "out-build directory missing! TypeScript compilation may have failed."
+      fi
       exit 1
     fi
     

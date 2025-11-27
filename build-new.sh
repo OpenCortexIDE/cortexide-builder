@@ -323,16 +323,35 @@ build_application() {
     
     # Use compile-build-without-mangling to avoid mangler hanging issues
     # The mangler can sometimes hang on large codebases
+    # CRITICAL: Must create out-build/ for minify-vscode to work
     log_info "Using compile-build-without-mangling (faster, more reliable)..."
-    if npm run gulp compile-build-without-mangling 2>/dev/null; then
-      log_success "Application built successfully"
-    elif npm run compile-build 2>/dev/null; then
-      log_success "Application built successfully"
-    elif npm run gulp compile 2>/dev/null; then
-      log_success "Application built successfully"
+    log_info "This creates out-build/ directory required for minify-vscode"
+    if npm run gulp compile-build-without-mangling; then
+      log_success "Application built successfully (out-build/ created)"
+      # Verify out-build exists
+      if [[ ! -d "out-build" ]]; then
+        log_error "compile-build-without-mangling completed but out-build/ not found!"
+        exit 1
+      fi
+    elif npm run compile-build; then
+      log_success "Application built successfully (out-build/ created)"
+      # Verify out-build exists
+      if [[ ! -d "out-build" ]]; then
+        log_error "compile-build completed but out-build/ not found!"
+        exit 1
+      fi
+    elif npm run gulp compile; then
+      log_warning "Using 'compile' instead of 'compile-build' - out-build/ may not exist"
+      log_warning "minify-vscode requires out-build/ - this may fail"
+      if [[ ! -d "out-build" ]]; then
+        log_error "out-build/ directory missing! minify-vscode will fail."
+        log_error "Use compile-build or compile-build-without-mangling instead"
+        exit 1
+      fi
     else
-      log_warning "Main compilation had issues, but continuing..."
-      # Don't exit - extensions might have errors but main build might be OK
+      log_error "All compilation methods failed!"
+      log_error "Cannot continue without out-build/ directory"
+      exit 1
     fi
     
     # Try extension compilation separately (non-fatal)

@@ -51,12 +51,14 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   npm run gulp compile-extension-media
   
   # Install extension dependencies before building extensions
-  # Some extensions (like open-remote-ssh) have their own package.json with dependencies
+  # Extensions need both production AND dev dependencies for TypeScript compilation
+  # (devDependencies include @types/node, etc. needed for webpack/tsc)
   echo "Installing extension dependencies..."
   for ext_dir in extensions/*/; do
     if [[ -f "${ext_dir}package.json" ]] && [[ -f "${ext_dir}package-lock.json" ]]; then
       echo "Installing deps for $(basename "$ext_dir")..."
-      (cd "$ext_dir" && npm ci --production --ignore-scripts) || echo "Skipped $(basename "$ext_dir")"
+      # Use npm ci without --production to get devDependencies (needed for @types/node)
+      (cd "$ext_dir" && npm ci --ignore-scripts) || echo "Skipped $(basename "$ext_dir")"
     fi
   done
   

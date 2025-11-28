@@ -175,8 +175,10 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
       # Package for Linux with the specified architecture
       echo "Packaging Linux ${VSCODE_ARCH} application..."
       npm run gulp "vscode-linux-${VSCODE_ARCH}-min-ci"
+    fi
 
-      # Touch all files to ensure consistent timestamps
+    # Touch all files to ensure consistent timestamps
+    if [[ "${CI_BUILD}" == "no" ]]; then
       find "../VSCode-linux-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
 
       # Build the CLI binary for Linux

@@ -61,6 +61,8 @@ elif [[ "${VSCODE_ARCH}" == "loong64" ]]; then
   export ELECTRON_SKIP_BINARY_DOWNLOAD=1
   export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
   export VSCODE_SKIP_SETUPENV=1
+  # Skip postinstall scripts for unsupported packages on alternative architectures
+  export SKIP_POSTINSTALL_SCRIPTS=1
 fi
 
 if [[ -f "../build/linux/${VSCODE_ARCH}/electron.sh" ]]; then
@@ -120,8 +122,15 @@ EOF
   echo "${INCLUDES}" > "$HOME/.gyp/include.gypi"
 fi
 
+# For alternative architectures, skip postinstall scripts to avoid unsupported platform errors
+BUILD_NPM_CI_OPTS=""
+if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]]; then
+  BUILD_NPM_CI_OPTS="--ignore-scripts"
+  echo "Skipping postinstall scripts for build dependencies on ${VSCODE_ARCH}"
+fi
+
 for i in {1..5}; do # try 5 times
-  npm ci --prefix build && break
+  npm ci --prefix build ${BUILD_NPM_CI_OPTS} && break
   if [[ $i == 5 ]]; then
     echo "Npm install failed too many times" >&2
     exit 1
@@ -146,14 +155,27 @@ if [[ -z "${VSCODE_SKIP_SETUPENV}" ]]; then
   fi
 fi
 
+# For alternative architectures, skip postinstall scripts to avoid unsupported platform errors
+NPM_CI_OPTS=""
+if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]]; then
+  NPM_CI_OPTS="--ignore-scripts"
+  echo "Skipping postinstall scripts for ${VSCODE_ARCH} (unsupported by some packages)"
+fi
+
 for i in {1..5}; do # try 5 times
-  npm ci && break
+  npm ci ${NPM_CI_OPTS} && break
   if [[ $i -eq 5 ]]; then
     echo "Npm install failed too many times" >&2
     exit 1
   fi
   echo "Npm install failed $i, trying again..."
 done
+
+# Apply fixes for alternative architectures after npm install
+if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]]; then
+  echo "Applying fixes for ${VSCODE_ARCH} architecture support..."
+  bash "../build/linux/fix-dependencies-generator.sh" || echo "Warning: Fix script failed, continuing..."
+fi
 
 node build/azure-pipelines/distro/mixin-npm
 

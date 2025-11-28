@@ -34,11 +34,14 @@ export VSCODE_SKIP_NODE_VERSION_CHECK=1
 export VSCODE_SYSROOT_PREFIX='-glibc-2.28'
 export NODE_OPTIONS="--max-old-space-size=12288"
 
-# Skip sysroot download for x64 - not needed for standard builds
+# Skip sysroot download - CortexIDE doesn't need cross-compilation toolchains
+# Standard builds work without sysroot, and it's causing checksum errors
 if [[ "${VSCODE_ARCH}" == "x64" ]]; then
   export VSCODE_SKIP_SYSROOT=1
+  export VSCODE_SKIP_SETUPENV=1
 elif [[ "${VSCODE_ARCH}" == "arm64" || "${VSCODE_ARCH}" == "armhf" ]]; then
   export VSCODE_SKIP_SYSROOT=1
+  export VSCODE_SKIP_SETUPENV=1
   export USE_GNUPP2A=1
 elif [[ "${VSCODE_ARCH}" == "ppc64le" ]]; then
   export VSCODE_SYSROOT_REPOSITORY='VSCodium/vscode-linux-build-agent'

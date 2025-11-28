@@ -45,11 +45,21 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   # Using compile-build-without-mangling for compatibility and debugging
   echo "Compiling TypeScript..."
   npm run gulp compile-build-without-mangling
-
+  
   # Compile extension media assets
   echo "Compiling extension media..."
   npm run gulp compile-extension-media
-
+  
+  # Install extension dependencies before building extensions
+  # Some extensions (like open-remote-ssh) have their own package.json with dependencies
+  echo "Installing extension dependencies..."
+  for ext_dir in extensions/*/; do
+    if [[ -f "${ext_dir}package.json" ]] && [[ -f "${ext_dir}package-lock.json" ]]; then
+      echo "Installing deps for $(basename "$ext_dir")..."
+      (cd "$ext_dir" && npm ci --production --ignore-scripts) || echo "Skipped $(basename "$ext_dir")"
+    fi
+  done
+  
   # Compile built-in extensions
   echo "Compiling extensions..."
   npm run gulp compile-extensions-build

@@ -114,7 +114,7 @@ jobs:
       - name: Setup Node.js environment
         uses: actions/setup-node@v4
         with:
-          node-version: '22.12.0'
+          node-version: '22.15.1'
         if: env.SHOULD_BUILD == 'yes'
 
       - name: Setup Python 3
@@ -204,7 +204,7 @@ jobs:
       - name: Setup Node.js environment
         uses: actions/setup-node@v4
         with:
-          node-version: '22.12.0'
+          node-version: '22.15.1'
         if: env.SHOULD_BUILD == 'yes'
 
       - name: Setup Python 3

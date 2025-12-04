@@ -1,0 +1,29 @@
+diff --git a/build/lib/fetch.js b/build/lib/fetch.js
+index 1849e2e..ffffffff 100644
+--- a/build/lib/fetch.js
++++ b/build/lib/fetch.js
+@@ -23,14 +23,14 @@ function fetchUrls(urls, options) {
+     if (typeof options.base !== 'string' && options.base !== null) {
+         options.base = '/';
+     }
+     if (!Array.isArray(urls)) {
+         urls = [urls];
+     }
+-    return event_stream_1.default.readArray(urls).pipe(event_stream_1.default.map((data, cb) => {
+-        const url = [options.base, data].join('');
+-        fetchUrl(url, options).then(file => {
+-            cb(undefined, file);
+-        }, error => {
+-            cb(error);
+-        });
+-    }));
++    // Use a classic CommonJS require for `event-stream` to avoid cases where the
++    // transpiled default import does not expose `readArray` in some environments.
++    // This mirrors how other build scripts (e.g. `gulpfile.reh.js`) consume it.
++    const es = require("event-stream");
++    return es.readArray(urls).pipe(es.map((data, cb) => {
++        const url = [options.base, data].join('');
++        fetchUrl(url, options).then(file => cb(undefined, file), error => cb(error));
++    }));
+ }
+

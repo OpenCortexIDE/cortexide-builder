@@ -1,0 +1,14 @@
+diff --git a/build/lib/fetch.ts b/build/lib/fetch.ts
+index 0000000..ffffffff 100644
+--- a/build/lib/fetch.ts
++++ b/build/lib/fetch.ts
+@@ -3,7 +3,7 @@
+  *  Licensed under the MIT License. See License.txt in the project root for license information.
+  *--------------------------------------------------------------------------------------------*/
+ 
+-import es from 'event-stream';
++import * as es from 'event-stream';
+ import VinylFile from 'vinyl';
+ import log from 'fancy-log';
+ import ansiColors from 'ansi-colors';
+

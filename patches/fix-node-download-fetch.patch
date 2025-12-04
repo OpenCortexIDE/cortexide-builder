@@ -1,8 +1,18 @@
 diff --git a/build/lib/fetch.js b/build/lib/fetch.js
-index b0876cd..9b00515 100644
+index b0876cd..23fcac2 100644
 --- a/build/lib/fetch.js
 +++ b/build/lib/fetch.js
-@@ -26,7 +26,11 @@ function fetchUrls(urls, options) {
+@@ -13,7 +13,8 @@ exports.fetchGithub = fetchGithub;
+ const event_stream_1 = __importDefault(require("event-stream"));
+ const vinyl_1 = __importDefault(require("vinyl"));
+ const fancy_log_1 = __importDefault(require("fancy-log"));
+-const ansi_colors_1 = __importDefault(require("ansi-colors"));
++// Use direct require for ansi-colors to avoid default import issues in some environments
++const ansiColors = require("ansi-colors");
+ const crypto_1 = __importDefault(require("crypto"));
+ const through2_1 = __importDefault(require("through2"));
+ function fetchUrls(urls, options) {
+@@ -26,7 +27,11 @@ function fetchUrls(urls, options) {
      if (!Array.isArray(urls)) {
          urls = [urls];
      }
@@ -15,3 +25,60 @@ index b0876cd..9b00515 100644
          const url = [options.base, data].join('');
          fetchUrl(url, options).then(file => {
              cb(undefined, file);
+@@ -40,7 +45,7 @@ async function fetchUrl(url, options, retries = 10, retryDelay = 1000) {
+     try {
+         let startTime = 0;
+         if (verbose) {
+-            (0, fancy_log_1.default)(`Start fetching ${ansi_colors_1.default.magenta(url)}${retries !== 10 ? ` (${10 - retries} retry)` : ''}`);
++            (0, fancy_log_1.default)(`Start fetching ${ansiColors.magenta(url)}${retries !== 10 ? ` (${10 - retries} retry)` : ''}`);
+             startTime = new Date().getTime();
+         }
+         const controller = new AbortController();
+@@ -51,24 +56,24 @@ async function fetchUrl(url, options, retries = 10, retryDelay = 1000) {
+                 signal: controller.signal
+             });
+             if (verbose) {
+-                (0, fancy_log_1.default)(`Fetch completed: Status ${response.status}. Took ${ansi_colors_1.default.magenta(`${new Date().getTime() - startTime} ms`)}`);
++                (0, fancy_log_1.default)(`Fetch completed: Status ${response.status}. Took ${ansiColors.magenta(`${new Date().getTime() - startTime} ms`)}`);
+             }
+             if (response.ok && (response.status >= 200 && response.status < 300)) {
+                 const contents = Buffer.from(await response.arrayBuffer());
+                 if (options.checksumSha256) {
+                     const actualSHA256Checksum = crypto_1.default.createHash('sha256').update(contents).digest('hex');
+                     if (actualSHA256Checksum !== options.checksumSha256) {
+-                        throw new Error(`Checksum mismatch for ${ansi_colors_1.default.cyan(url)} (expected ${options.checksumSha256}, actual ${actualSHA256Checksum}))`);
++                        throw new Error(`Checksum mismatch for ${ansiColors.cyan(url)} (expected ${options.checksumSha256}, actual ${actualSHA256Checksum}))`);
+                     }
+                     else if (verbose) {
+-                        (0, fancy_log_1.default)(`Verified SHA256 checksums match for ${ansi_colors_1.default.cyan(url)}`);
++                        (0, fancy_log_1.default)(`Verified SHA256 checksums match for ${ansiColors.cyan(url)}`);
+                     }
+                 }
+                 else if (verbose) {
+-                    (0, fancy_log_1.default)(`Skipping checksum verification for ${ansi_colors_1.default.cyan(url)} because no expected checksum was provided`);
++                    (0, fancy_log_1.default)(`Skipping checksum verification for ${ansiColors.cyan(url)} because no expected checksum was provided`);
+                 }
+                 if (verbose) {
+-                    (0, fancy_log_1.default)(`Fetched response body buffer: ${ansi_colors_1.default.magenta(`${contents.byteLength} bytes`)}`);
++                    (0, fancy_log_1.default)(`Fetched response body buffer: ${ansiColors.magenta(`${contents.byteLength} bytes`)}`);
+                 }
+                 return new vinyl_1.default({
+                     cwd: '/',
+@@ -77,7 +82,7 @@ async function fetchUrl(url, options, retries = 10, retryDelay = 1000) {
+                     contents
+                 });
+             }
+-            let err = `Request ${ansi_colors_1.default.magenta(url)} failed with status code: ${response.status}`;
++            let err = `Request ${ansiColors.magenta(url)} failed with status code: ${response.status}`;
+             if (response.status === 403) {
+                 err += ' (you may be rate limited)';
+             }
+@@ -89,7 +94,7 @@ async function fetchUrl(url, options, retries = 10, retryDelay = 1000) {
+     }
+     catch (e) {
+         if (verbose) {
+-            (0, fancy_log_1.default)(`Fetching ${ansi_colors_1.default.cyan(url)} failed: ${e}`);
++            (0, fancy_log_1.default)(`Fetching ${ansiColors.cyan(url)} failed: ${e}`);
+         }
+         if (retries > 0) {
+             await new Promise(resolve => setTimeout(resolve, retryDelay));

@@ -190,6 +190,38 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
 
   if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
     npm run gulp minify-vscode-reh
+
+    # Fix fetch.js import issues that prevent Windows REH builds
+    # This is a workaround for patch application issues in CI
+    if [[ -f "build/lib/fetch.js" ]]; then
+      echo "Applying direct fix to fetch.js for Windows REH compatibility..."
+
+      # Use Node.js script to fix the imports more reliably
+      node -e "
+        const fs = require('fs');
+        const path = './build/lib/fetch.js';
+        let content = fs.readFileSync(path, 'utf8');
+
+        // Fix event-stream usage
+        content = content.replace(
+          /return event_stream_1\.default\.readArray\(urls\)\.pipe\(event_stream_1\.default\.map\(/g,
+          '// Use a classic CommonJS require for \`event-stream\` to avoid cases where the\n    // transpiled default import does not expose \`readArray\` in some environments.\n    // This mirrors how other build scripts (e.g. \`gulpfile.reh.js\`) consume it.\n    const es = require(\"event-stream\");\n    return es.readArray(urls).pipe(es.map('
+        );
+
+        // Fix ansi-colors import
+        content = content.replace(
+          /const ansi_colors_1 = __importDefault\(require\(\"ansi-colors\"\)\);/g,
+          '// Use direct require for ansi-colors to avoid default import issues in some environments\nconst ansiColors = require(\"ansi-colors\");'
+        );
+
+        // Fix ansi-colors usage
+        content = content.replace(/ansi_colors_1\.default/g, 'ansiColors');
+
+        fs.writeFileSync(path, content, 'utf8');
+        console.log('fetch.js fixes applied successfully');
+      "
+    fi
+
     npm run gulp "vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
   fi
 

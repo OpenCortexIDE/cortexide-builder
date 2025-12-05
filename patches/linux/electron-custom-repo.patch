@@ -1,7 +1,7 @@
 diff --git a/build/gulpfile.vscode.js b/build/gulpfile.vscode.js
 --- a/build/gulpfile.vscode.js
 +++ b/build/gulpfile.vscode.js
-@@ -369,11 +369,22 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
+@@ -369,11 +369,31 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
  			all = es.merge(all, shortcut, policyDest);
  		}
  
@@ -16,12 +16,21 @@ diff --git a/build/gulpfile.vscode.js b/build/gulpfile.vscode.js
 +			}
 +		}
 +
++		// Build electron options with override
++		const electronOptions = { ...config, ...electronOverride, platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false };
++		if (electronOverride.repo) {
++			electronOptions.repo = electronOverride.repo;
++		}
++		if (electronOverride.tag) {
++			electronOptions.tag = electronOverride.tag;
++		}
++
  		let result = all
  			.pipe(util.skipDirectories())
  			.pipe(util.fixWin32DirectoryPermissions())
  			.pipe(filter(['**', '!**/.github/**'], { dot: true })) // https://github.com/microsoft/vscode/issues/116523
 -			.pipe(electron({ ...config, platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
-+			.pipe(electron({ ...config, ...electronOverride, platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
++			.pipe(electron(electronOptions))
  			.pipe(filter(['**', '!LICENSE', '!version'], { dot: true }));
  
  		if (platform === 'linux') {

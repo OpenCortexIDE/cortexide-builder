@@ -53,6 +53,7 @@ elif [[ "${VSCODE_ARCH}" == "ppc64le" ]]; then
   export VSCODE_SYSROOT_REPOSITORY='VSCodium/vscode-linux-build-agent'
   export VSCODE_SYSROOT_VERSION='20240129-253798'
   export USE_GNUPP2A=1
+  export VSCODE_SKIP_SYSROOT=1
 elif [[ "${VSCODE_ARCH}" == "riscv64" ]]; then
   NODE_VERSION="20.16.0"
   VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME="vscodium/vscodium-linux-build-agent:focal-devtoolset-riscv64"
@@ -165,9 +166,20 @@ for i in {1..5}; do # try 5 times
     exit 1
   fi
   echo "Npm install failed $i, trying again..."
+done
 
-  # remove dependencies that fail during cleanup
-  rm -rf node_modules/@vscode node_modules/node-pty
+# Install extension dependencies (required for TypeScript compilation)
+echo "Installing extension dependencies..."
+for ext_dir in extensions/*/; do
+  if [[ -f "${ext_dir}package.json" ]] && [[ -f "${ext_dir}package-lock.json" ]]; then
+    ext_name=$(basename "$ext_dir")
+    echo "Installing deps for ${ext_name}..."
+    if (cd "$ext_dir" && npm ci --ignore-scripts); then
+      echo "✓ Successfully installed dependencies for ${ext_name}"
+    else
+      echo "⚠ Warning: Failed to install dependencies for ${ext_name}, continuing..."
+    fi
+  fi
 done
 
 mv .npmrc.bak .npmrc
@@ -178,6 +190,9 @@ export VSCODE_NODE_GLIBC="-glibc-${GLIBC_VERSION}"
 
 if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
   echo "Building REH"
+  # Compile extensions before minifying (extensions need their dependencies installed)
+  echo "Compiling extensions for REH..."
+  npm run gulp compile-extensions-build || echo "Warning: Extension compilation failed, continuing..."
   npm run gulp minify-vscode-reh
 
   # Fix fetch.js import issues that prevent REH builds
@@ -219,6 +234,9 @@ fi
 
 if [[ "${SHOULD_BUILD_REH_WEB}" != "no" ]]; then
   echo "Building REH-web"
+  # Compile extensions before minifying (extensions need their dependencies installed)
+  echo "Compiling extensions for REH-web..."
+  npm run gulp compile-extensions-build || echo "Warning: Extension compilation failed, continuing..."
   npm run gulp minify-vscode-reh-web
   npm run gulp "vscode-reh-web-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
 

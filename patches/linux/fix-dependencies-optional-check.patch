@@ -1,8 +1,7 @@
 diff --git a/build/linux/dependencies-generator.js b/build/linux/dependencies-generator.js
-index a1b2c3d..c4d5e6f 100644
 --- a/build/linux/dependencies-generator.js
 +++ b/build/linux/dependencies-generator.js
-@@ -83,10 +83,15 @@ async function getDependencies(packageType, buildDir, applicationName, arch) {
+@@ -83,16 +83,21 @@ async function getDependencies(packageType, buildDir, applicationName, arch) {
      const referenceGeneratedDeps = packageType === 'deb' ?
          dep_lists_1.referenceGeneratedDepsByArch[arch] :
          dep_lists_2.referenceGeneratedDepsByArch[arch];
@@ -27,10 +26,9 @@ index a1b2c3d..c4d5e6f 100644
 +            else {
 +                console.warn(failMessage);
 +            }
-+        }
+         }
 +    } else {
 +        console.warn("No reference dependency list found for architecture " + arch + ". Skipping dependency check.");
      }
      return sortedDependencies;
  }
-

@@ -74,6 +74,9 @@ if [[ "${VSCODE_ARCH}" == "x64" ]]; then
         // Replace all ansi_colors_1.default usages with ansiColors first
         content = content.replace(/ansi_colors_1\.default/g, 'ansiColors');
 
+        // Replace all fancy_log_1.default usages with fancyLog first
+        content = content.replace(/fancy_log_1\.default/g, 'fancyLog');
+
         // Remove any existing ansi-colors import patterns
         content = content.replace(
           /const\s+ansi_colors_1\s*=\s*__importDefault\(require\(\"ansi-colors\"\)\);\s*\n?/g,
@@ -85,6 +88,12 @@ if [[ "${VSCODE_ARCH}" == "x64" ]]; then
         );
         content = content.replace(
           /const\s+_ansiColors\s*=\s*require\(\"ansi-colors\"\);\s*\n\s*const\s+ansiColors\s*=\s*\(_ansiColors[^;]+\);\s*\n?/g,
+          ''
+        );
+
+        // Remove any existing fancy-log import patterns
+        content = content.replace(
+          /const\s+fancy_log_1\s*=\s*__importDefault\(require\(\"fancy-log\"\)\);\s*\n?/g,
           ''
         );
 
@@ -120,10 +129,21 @@ if [[ "${VSCODE_ARCH}" == "x64" ]]; then
         // Check if ansiColors is already properly defined
         const hasAnsiColorsDef = content.match(/const\s+_ansiColors\s*=\s*require\(\"ansi-colors\"\);\s*\n\s*const\s+ansiColors\s*=\s*\(_ansiColors[^)]+\)/);
         
+        // Check if fancyLog is already properly defined
+        const hasFancyLogDef = content.match(/const\s+_fancyLog\s*=\s*require\(\"fancy-log\"\);\s*\n\s*const\s+fancyLog\s*=\s*\(_fancyLog[^)]+\)/);
+        
+        const definitions = [];
         if (!hasAnsiColorsDef) {
           // Insert the robust ansiColors definition
-          const ansiColorsDef = '// Use direct require for ansi-colors to avoid default import issues in some environments\nconst _ansiColors = require(\"ansi-colors\");\nconst ansiColors = (_ansiColors && _ansiColors.default) ? _ansiColors.default : _ansiColors;';
-          lines.splice(insertIndex, 0, ansiColorsDef);
+          definitions.push('// Use direct require for ansi-colors to avoid default import issues in some environments\nconst _ansiColors = require(\"ansi-colors\");\nconst ansiColors = (_ansiColors && _ansiColors.default) ? _ansiColors.default : _ansiColors;');
+        }
+        if (!hasFancyLogDef) {
+          // Insert the robust fancyLog definition
+          definitions.push('// Use direct require for fancy-log to avoid default import issues in some environments\nconst _fancyLog = require(\"fancy-log\");\nconst fancyLog = (_fancyLog && _fancyLog.default) ? _fancyLog.default : _fancyLog;');
+        }
+        
+        if (definitions.length > 0) {
+          lines.splice(insertIndex, 0, ...definitions);
           content = lines.join('\n');
         }
 

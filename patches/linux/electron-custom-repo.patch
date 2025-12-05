@@ -2,7 +2,14 @@ diff --git a/build/gulpfile.vscode.js b/build/gulpfile.vscode.js
 index ead65d8..e5b1d6f 100644
 --- a/build/gulpfile.vscode.js
 +++ b/build/gulpfile.vscode.js
-@@ -370,6 +370,16 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
+@@ -363,10 +363,20 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
+ 		} else if (platform === 'darwin') {
+ 			const shortcut = gulp.src('resources/darwin/bin/code.sh')
+ 				.pipe(replace('@@APPNAME@@', product.applicationName))
+-				.pipe(rename('bin/code'));
++				.pipe(rename('bin/' + product.applicationName));
+ 			const policyDest = gulp.src('.build/policies/darwin/**', { base: '.build/policies/darwin' })
+ 				.pipe(rename(f => f.dirname = `policies/${f.dirname}`));
  			all = es.merge(all, shortcut, policyDest);
  		}
  

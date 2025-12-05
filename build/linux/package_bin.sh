@@ -185,6 +185,12 @@ npm run buildreact || echo "Warning: buildreact failed, continuing..."
 
 # Package the Linux application
 echo "Packaging Linux ${VSCODE_ARCH} application..."
+# Ensure environment variables are exported for Node.js process
+export VSCODE_ELECTRON_REPOSITORY
+export VSCODE_ELECTRON_TAG
+echo "Environment variables for Electron:"
+echo "  VSCODE_ELECTRON_REPOSITORY=${VSCODE_ELECTRON_REPOSITORY}"
+echo "  VSCODE_ELECTRON_TAG=${VSCODE_ELECTRON_TAG}"
 npm run gulp "vscode-linux-${VSCODE_ARCH}-min-ci"
 
 if [[ -f "../build/linux/${VSCODE_ARCH}/ripgrep.sh" ]]; then

@@ -1,8 +1,10 @@
 diff --git a/build/gulpfile.vscode.js b/build/gulpfile.vscode.js
-index 7046ee0..67cb99a 100644
+index ead65d8..e5b1d6f 100644
 --- a/build/gulpfile.vscode.js
 +++ b/build/gulpfile.vscode.js
-@@ -382,2 +382,12 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
+@@ -370,6 +370,16 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
+ 			all = es.merge(all, shortcut, policyDest);
+ 		}
  
 +		const electronOverride = {};
 +		if (process.env.VSCODE_ELECTRON_REPOSITORY) {
@@ -15,7 +17,8 @@ index 7046ee0..67cb99a 100644
 +		}
 +
  		let result = all
-@@ -386,3 +396,3 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
+ 			.pipe(util.skipDirectories())
+ 			.pipe(util.fixWin32DirectoryPermissions())
  			.pipe(filter(['**', '!**/.github/**'], { dot: true })) // https://github.com/microsoft/vscode/issues/116523
 -			.pipe(electron({ ...config, platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
 +			.pipe(electron({ ...config, ...electronOverride, platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))

@@ -1,16 +1,19 @@
 diff --git a/build/gulpfile.vscode.js b/build/gulpfile.vscode.js
 --- a/build/gulpfile.vscode.js
 +++ b/build/gulpfile.vscode.js
-@@ -369,11 +369,22 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
+@@ -370,6 +370,20 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
  			all = es.merge(all, shortcut, policyDest);
  		}
  
-+		// CORTEXIDE: Support custom Electron repositories for alternative architectures
++		// Support custom Electron repositories for alternative architectures
++		// Only add if not already present to avoid duplicate declaration
 +		if (typeof electronOverride === 'undefined') {
 +			var electronOverride = {};
 +			if (process.env.VSCODE_ELECTRON_REPOSITORY) {
++				// official electron doesn't support all arch, override the repo with `VSCODE_ELECTRON_REPOSITORY`.
 +				electronOverride.repo = process.env.VSCODE_ELECTRON_REPOSITORY;
 +			}
++
 +			if (process.env.VSCODE_ELECTRON_TAG) {
 +				electronOverride.tag = process.env.VSCODE_ELECTRON_TAG;
 +			}
@@ -23,5 +26,4 @@ diff --git a/build/gulpfile.vscode.js b/build/gulpfile.vscode.js
 -			.pipe(electron({ ...config, platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
 +			.pipe(electron({ ...config, ...electronOverride, platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
  			.pipe(filter(['**', '!LICENSE', '!version'], { dot: true }));
- 
- 		if (platform === 'linux') {
+

@@ -1,12 +1,13 @@
 diff --git a/build/gulpfile.vscode.js b/build/gulpfile.vscode.js
 --- a/build/gulpfile.vscode.js
 +++ b/build/gulpfile.vscode.js
-@@ -369,11 +369,22 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
+@@ -370,6 +370,18 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
  			all = es.merge(all, shortcut, policyDest);
  		}
  
-+		// CORTEXIDE: Support custom Electron repositories for alternative architectures
-+		if (typeof electronOverride === 'undefined') {
++		// CORTEXIDE: Support custom Electron repositories for alternative architectures (riscv64, ppc64le, loong64)
++		// This block is added by electron-custom-repo.patch - do not duplicate
++		if (!electronOverride) {
 +			var electronOverride = {};
 +			if (process.env.VSCODE_ELECTRON_REPOSITORY) {
 +				electronOverride.repo = process.env.VSCODE_ELECTRON_REPOSITORY;
@@ -21,7 +22,6 @@ diff --git a/build/gulpfile.vscode.js b/build/gulpfile.vscode.js
  			.pipe(util.fixWin32DirectoryPermissions())
  			.pipe(filter(['**', '!**/.github/**'], { dot: true })) // https://github.com/microsoft/vscode/issues/116523
 -			.pipe(electron({ ...config, platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
-+			.pipe(electron({ ...config, ...electronOverride, platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
++			.pipe(electron({ ...config, ...(electronOverride || {}), platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
  			.pipe(filter(['**', '!LICENSE', '!version'], { dot: true }));
- 
- 		if (platform === 'linux') {
+

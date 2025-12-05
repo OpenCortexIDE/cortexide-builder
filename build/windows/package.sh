@@ -71,14 +71,61 @@ if [[ "${VSCODE_ARCH}" == "x64" ]]; then
           '// Use a classic CommonJS require for \`event-stream\` to avoid cases where the\n    // transpiled default import does not expose \`readArray\` in some environments.\n    // This mirrors how other build scripts (e.g. \`gulpfile.reh.js\`) consume it.\n    const es = require(\"event-stream\");\n    return es.readArray(urls).pipe(es.map('
         );
 
-        // Fix ansi-colors import
+        // Replace all ansi_colors_1.default usages with ansiColors first
+        content = content.replace(/ansi_colors_1\.default/g, 'ansiColors');
+
+        // Remove any existing ansi-colors import patterns
         content = content.replace(
-          /const ansi_colors_1 = __importDefault\(require\(\"ansi-colors\"\)\);/g,
-          '// Use direct require for ansi-colors to avoid default import issues in some environments\nconst ansiColors = require(\"ansi-colors\");'
+          /const\s+ansi_colors_1\s*=\s*__importDefault\(require\(\"ansi-colors\"\)\);\s*\n?/g,
+          ''
+        );
+        content = content.replace(
+          /\/\/\s*Use direct require for ansi-colors[^\n]*\n\s*const\s+ansiColors\s*=\s*require\(\"ansi-colors\"\);\s*\n?/g,
+          ''
+        );
+        content = content.replace(
+          /const\s+_ansiColors\s*=\s*require\(\"ansi-colors\"\);\s*\n\s*const\s+ansiColors\s*=\s*\(_ansiColors[^;]+\);\s*\n?/g,
+          ''
         );
 
-        // Fix ansi-colors usage
-        content = content.replace(/ansi_colors_1\.default/g, 'ansiColors');
+        // Find insertion point: after the last top-level const declaration before functions
+        // Look for pattern: const ... = require(...) or const ... = __importDefault(...)
+        const lines = content.split('\n');
+        let insertIndex = -1;
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim();
+          // Stop before function declarations
+          if (line.startsWith('function ') || line.startsWith('async function ') || 
+              (line.startsWith('const ') && line.includes('= function')) ||
+              (line.startsWith('const ') && line.includes('= async function'))) {
+            insertIndex = i;
+            break;
+          }
+          // Track the last require/import statement
+          if (line.match(/^const\s+\w+\s*=\s*(?:__importDefault\()?require\(/)) {
+            insertIndex = i + 1;
+          }
+        }
+
+        // If no good insertion point found, insert after exports
+        if (insertIndex === -1) {
+          const exportsIndex = lines.findIndex(line => line.includes('Object.defineProperty(exports'));
+          if (exportsIndex !== -1) {
+            insertIndex = exportsIndex + 1;
+          } else {
+            insertIndex = 10; // Fallback: after initial declarations
+          }
+        }
+
+        // Check if ansiColors is already properly defined
+        const hasAnsiColorsDef = content.match(/const\s+_ansiColors\s*=\s*require\(\"ansi-colors\"\);\s*\n\s*const\s+ansiColors\s*=\s*\(_ansiColors[^)]+\)/);
+        
+        if (!hasAnsiColorsDef) {
+          // Insert the robust ansiColors definition
+          const ansiColorsDef = '// Use direct require for ansi-colors to avoid default import issues in some environments\nconst _ansiColors = require(\"ansi-colors\");\nconst ansiColors = (_ansiColors && _ansiColors.default) ? _ansiColors.default : _ansiColors;';
+          lines.splice(insertIndex, 0, ansiColorsDef);
+          content = lines.join('\n');
+        }
 
         fs.writeFileSync(path, content, 'utf8');
         console.log('fetch.js fixes applied successfully');

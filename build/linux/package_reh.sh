@@ -124,11 +124,18 @@ EOF
   echo "${INCLUDES}" > "${HOME}/.gyp/include.gypi"
 fi
 
+# For alternative architectures, skip postinstall scripts to avoid unsupported platform errors
+BUILD_NPM_CI_OPTS=""
+if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]]; then
+  BUILD_NPM_CI_OPTS="--ignore-scripts"
+  echo "Skipping postinstall scripts for build dependencies on ${VSCODE_ARCH}"
+fi
+
 mv .npmrc .npmrc.bak
 cp ../npmrc .npmrc
 
 for i in {1..5}; do # try 5 times
-  npm ci --prefix build && break
+  npm ci --prefix build ${BUILD_NPM_CI_OPTS} && break
   if [[ $i == 3 ]]; then
     echo "Npm install failed too many times" >&2
     exit 1
@@ -144,8 +151,15 @@ if [[ -z "${VSCODE_SKIP_SETUPENV}" ]]; then
   fi
 fi
 
+# For alternative architectures, skip postinstall scripts to avoid unsupported platform errors
+NPM_CI_OPTS=""
+if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]]; then
+  NPM_CI_OPTS="--ignore-scripts"
+  echo "Skipping postinstall scripts for ${VSCODE_ARCH} (unsupported by some packages)"
+fi
+
 for i in {1..5}; do # try 5 times
-  npm ci && break
+  npm ci ${NPM_CI_OPTS} && break
   if [[ $i == 3 ]]; then
     echo "Npm install failed too many times" >&2
     exit 1

@@ -214,6 +214,15 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
         // Replace all fancy_log_1.default usages with fancyLog first
         content = content.replace(/fancy_log_1\.default/g, 'fancyLog');
 
+        // Replace all crypto_1.default usages with crypto (built-in module)
+        content = content.replace(/crypto_1\.default/g, 'crypto');
+
+        // Replace all vinyl_1.default usages with VinylFile
+        content = content.replace(/vinyl_1\.default/g, 'VinylFile');
+
+        // Replace all through2_1.default usages with through2
+        content = content.replace(/through2_1\.default/g, 'through2');
+
         // Remove any existing ansi-colors import patterns
         content = content.replace(
           /const\s+ansi_colors_1\s*=\s*__importDefault\(require\(\"ansi-colors\"\)\);\s*\n?/g,
@@ -231,6 +240,24 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
         // Remove any existing fancy-log import patterns
         content = content.replace(
           /const\s+fancy_log_1\s*=\s*__importDefault\(require\(\"fancy-log\"\)\);\s*\n?/g,
+          ''
+        );
+
+        // Remove any existing crypto import patterns (built-in module)
+        content = content.replace(
+          /const\s+crypto_1\s*=\s*__importDefault\(require\(\"crypto\"\)\);\s*\n?/g,
+          ''
+        );
+
+        // Remove any existing vinyl import patterns
+        content = content.replace(
+          /const\s+vinyl_1\s*=\s*__importDefault\(require\(\"vinyl\"\)\);\s*\n?/g,
+          ''
+        );
+
+        // Remove any existing through2 import patterns
+        content = content.replace(
+          /const\s+through2_1\s*=\s*__importDefault\(require\(\"through2\"\)\);\s*\n?/g,
           ''
         );
 
@@ -268,6 +295,15 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
         // Check if fancyLog is already properly defined
         const hasFancyLogDef = content.match(/const\s+_fancyLog\s*=\s*require\(\"fancy-log\"\);\s*\n\s*const\s+fancyLog\s*=\s*\(_fancyLog[^)]+\)/);
         
+        // Check if crypto is already properly defined (built-in module)
+        const hasCryptoDef = content.match(/const\s+crypto\s*=\s*require\(\"crypto\"\)/);
+        
+        // Check if VinylFile is already properly defined
+        const hasVinylFileDef = content.match(/const\s+_VinylFile\s*=\s*require\(\"vinyl\"\);\s*\n\s*const\s+VinylFile\s*=\s*\(_VinylFile[^)]+\)/);
+        
+        // Check if through2 is already properly defined
+        const hasThrough2Def = content.match(/const\s+_through2\s*=\s*require\(\"through2\"\);\s*\n\s*const\s+through2\s*=\s*\(_through2[^)]+\)/);
+        
         const definitions = [];
         if (!hasAnsiColorsDef) {
           // Insert the robust ansiColors definition
@@ -276,6 +312,18 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
         if (!hasFancyLogDef) {
           // Insert the robust fancyLog definition
           definitions.push('// Use direct require for fancy-log to avoid default import issues in some environments\nconst _fancyLog = require(\"fancy-log\");\nconst fancyLog = (_fancyLog && _fancyLog.default) ? _fancyLog.default : _fancyLog;');
+        }
+        if (!hasCryptoDef) {
+          // Insert crypto definition (built-in module, no default handling needed)
+          definitions.push('// Use direct require for crypto (built-in module)\nconst crypto = require(\"crypto\");');
+        }
+        if (!hasVinylFileDef) {
+          // Insert VinylFile definition
+          definitions.push('// Use direct require for vinyl to avoid default import issues in some environments\nconst _VinylFile = require(\"vinyl\");\nconst VinylFile = (_VinylFile && _VinylFile.default) ? _VinylFile.default : _VinylFile;');
+        }
+        if (!hasThrough2Def) {
+          // Insert through2 definition
+          definitions.push('// Use direct require for through2 to avoid default import issues in some environments\nconst _through2 = require(\"through2\");\nconst through2 = (_through2 && _through2.default) ? _through2.default : _through2;');
         }
         
         if (definitions.length > 0) {

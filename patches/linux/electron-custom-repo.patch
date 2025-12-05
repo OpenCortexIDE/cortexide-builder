@@ -1,27 +1,23 @@
 diff --git a/build/gulpfile.vscode.js b/build/gulpfile.vscode.js
 --- a/build/gulpfile.vscode.js
 +++ b/build/gulpfile.vscode.js
-@@ -370,6 +370,18 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
+@@ -370,6 +370,16 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
  			all = es.merge(all, shortcut, policyDest);
  		}
  
-+		// CORTEXIDE: Support custom Electron repositories for alternative architectures (riscv64, ppc64le, loong64)
-+		// This block is added by electron-custom-repo.patch - do not duplicate
-+		if (!electronOverride) {
-+			var electronOverride = {};
-+			if (process.env.VSCODE_ELECTRON_REPOSITORY) {
-+				electronOverride.repo = process.env.VSCODE_ELECTRON_REPOSITORY;
-+			}
-+			if (process.env.VSCODE_ELECTRON_TAG) {
-+				electronOverride.tag = process.env.VSCODE_ELECTRON_TAG;
-+			}
++		// CORTEXIDE: Support custom Electron repositories for alternative architectures
++		var electronOverride = electronOverride || {};
++		if (process.env.VSCODE_ELECTRON_REPOSITORY) {
++			electronOverride.repo = process.env.VSCODE_ELECTRON_REPOSITORY;
++		}
++		if (process.env.VSCODE_ELECTRON_TAG) {
++			electronOverride.tag = process.env.VSCODE_ELECTRON_TAG;
 +		}
 +
  		let result = all
  			.pipe(util.skipDirectories())
  			.pipe(util.fixWin32DirectoryPermissions())
- 			.pipe(filter(['**', '!**/.github/**'], { dot: true })) // https://github.com/microsoft/vscode/issues/116523
+ 			.pipe(filter(['**', '!**/.github/**'], { dot: true })) // https://github.com/microsoft/vscode/issues/120523
 -			.pipe(electron({ ...config, platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
 +			.pipe(electron({ ...config, ...(electronOverride || {}), platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
  			.pipe(filter(['**', '!LICENSE', '!version'], { dot: true }));
-

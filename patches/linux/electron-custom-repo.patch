@@ -2,14 +2,7 @@ diff --git a/build/gulpfile.vscode.js b/build/gulpfile.vscode.js
 index ead65d8..e5b1d6f 100644
 --- a/build/gulpfile.vscode.js
 +++ b/build/gulpfile.vscode.js
-@@ -363,10 +363,20 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
- 		} else if (platform === 'darwin') {
- 			const shortcut = gulp.src('resources/darwin/bin/code.sh')
- 				.pipe(replace('@@APPNAME@@', product.applicationName))
--				.pipe(rename('bin/code'));
-+				.pipe(rename('bin/' + product.applicationName));
- 			const policyDest = gulp.src('.build/policies/darwin/**', { base: '.build/policies/darwin' })
- 				.pipe(rename(f => f.dirname = `policies/${f.dirname}`));
+@@ -370,6 +370,16 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
  			all = es.merge(all, shortcut, policyDest);
  		}
  
@@ -30,4 +23,3 @@ index ead65d8..e5b1d6f 100644
 -			.pipe(electron({ ...config, platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
 +			.pipe(electron({ ...config, ...electronOverride, platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
  			.pipe(filter(['**', '!LICENSE', '!version'], { dot: true }));
-

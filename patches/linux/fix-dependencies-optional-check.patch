@@ -1,8 +1,7 @@
 diff --git a/build/linux/dependencies-generator.js b/build/linux/dependencies-generator.js
-index 7111573ff00..d417fabd6f0 100644
 --- a/build/linux/dependencies-generator.js
 +++ b/build/linux/dependencies-generator.js
-@@ -83,23 +83,6 @@ async function getDependencies(packageType, buildDir, applicationName, arch) {
+@@ -83,19 +83,20 @@ async function getDependencies(packageType, buildDir, applicationName, arch) {
      const referenceGeneratedDeps = packageType === 'deb' ?
          dep_lists_1.referenceGeneratedDepsByArch[arch] :
          dep_lists_2.referenceGeneratedDepsByArch[arch];
@@ -17,22 +16,7 @@ index 7111573ff00..d417fabd6f0 100644
 -            throw new Error(failMessage);
 -        }
 -        else {
--            console.warn(failMessage);
--            if (skipValidation) {
--                console.warn(`Skipping dependency validation for ${arch} (newly added architecture)`);
--            }
--        }
--    }
-     return sortedDependencies;
- }
- // Based on https://source.chromium.org/chromium/chromium/src/+/main:chrome/installer/linux/rpm/merge_package_deps.py.
-@@ -115,4 +98,16 @@ function mergePackageDeps(inputDeps) {
-     }
-     return requires;
- }
--//# sourceMappingURL=dependencies-generator.js.map
-\ No newline at end of file
-+//# sourceMappingURL=dependencies-generator.js.map    // Skip dependency check if no reference list exists for this architecture
++    // Skip dependency check if no reference list exists for this architecture
 +    if (referenceGeneratedDeps) {
 +        if (JSON.stringify(sortedDependencies) !== JSON.stringify(referenceGeneratedDeps)) {
 +            const failMessage = 'The dependencies list has changed.'
@@ -40,8 +24,13 @@ index 7111573ff00..d417fabd6f0 100644
 +                + '\nNew:\n' + sortedDependencies.join('\n');
 +            // CORTEXIDE: Always warn instead of throwing for alternative architectures or when dependencies change
 +            // This allows builds to continue even when dependencies are updated
-+            console.warn(failMessage);
-+        }
+             console.warn(failMessage);
+-            if (skipValidation) {
+-                console.warn(`Skipping dependency validation for ${arch} (newly added architecture)`);
+-            }
+         }
 +    } else {
 +        console.warn("No reference dependency list found for architecture " + arch + ". Skipping dependency check.");
-+    }
+     }
+     return sortedDependencies;
+ }

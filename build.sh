@@ -41,6 +41,11 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   echo "Building React components..."
   npm run buildreact || echo "Warning: buildreact failed, continuing..."
 
+  # Compile build directory TypeScript files first (required for gulp tasks)
+  # This compiles build/linux/dependencies-generator.ts and other build scripts
+  echo "Compiling build directory TypeScript..."
+  npm run --prefix build build-ts || echo "Warning: build-ts failed, continuing..."
+
   # Compile the main codebase
   # Using compile-build-without-mangling for compatibility and debugging
   echo "Compiling TypeScript..."

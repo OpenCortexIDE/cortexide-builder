@@ -1,6 +1,6 @@
 --- vscode/build/gulpfile.vscode.js.orig	2025-12-06 12:30:03
 +++ vscode/build/gulpfile.vscode.js	2025-12-06 12:30:18
-@@ -373,7 +373,19 @@
+@@ -373,7 +373,20 @@
  			.pipe(util.skipDirectories())
  			.pipe(util.fixWin32DirectoryPermissions())
  			.pipe(filter(['**', '!**/.github/**'], { dot: true })) // https://github.com/microsoft/vscode/issues/116523
@@ -8,16 +8,17 @@
 +
 +		// CORTEXIDE/VSCODIUM: Support custom Electron repositories for alternative architectures
 +		// This allows using VSCODE_ELECTRON_REPOSITORY and VSCODE_ELECTRON_TAG env vars
-+		let electronOverride = {};
-+		if (process.env.VSCODE_ELECTRON_REPOSITORY) {
-+			electronOverride.repo = process.env.VSCODE_ELECTRON_REPOSITORY;
++		// Check if not already defined to make this patch idempotent
++		if (typeof electronOverride === 'undefined') {
++			var electronOverride = {};
++			if (process.env.VSCODE_ELECTRON_REPOSITORY) {
++				electronOverride.repo = process.env.VSCODE_ELECTRON_REPOSITORY;
++			}
++			if (process.env.VSCODE_ELECTRON_TAG) {
++				electronOverride.tag = process.env.VSCODE_ELECTRON_TAG;
++			}
 +		}
-+		if (process.env.VSCODE_ELECTRON_TAG) {
-+			electronOverride.tag = process.env.VSCODE_ELECTRON_TAG;
-+		}
-+		const hasElectronOverride = electronOverride.repo || electronOverride.tag;
-+
-+			.pipe(electron({ ...config, ...(hasElectronOverride ? electronOverride : {}), platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
++			.pipe(electron({ ...config, ...(electronOverride.repo || electronOverride.tag ? electronOverride : {}), platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
  			.pipe(filter(['**', '!LICENSE', '!version'], { dot: true }));
- 
+
  		if (platform === 'linux') {

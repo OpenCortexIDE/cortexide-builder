@@ -11,13 +11,14 @@ index 0000000..1111111 100644
  import VinylFile from 'vinyl';
  import { ThroughStream } from 'through';
  import sm from 'source-map';
-@@ -19,6 +18,9 @@ import ternaryStream from 'ternary-stream';
- 
+@@ -17,6 +16,9 @@ import { pathToFileURL } from 'url';
+ import ternaryStream from 'ternary-stream';
+
  const root = path.dirname(path.dirname(__dirname));
- 
++
 +// Use require for rimraf 2.2.8 (CommonJS module, no default export)
 +const rimrafModule = require('rimraf');
-+
+
  export function cleanBuildTask(outDir: string, excludes: string[]): () => Promise<void> {
  	const result = () => new Promise<void>((c, e) => {
  		const patterns = excludes.map(exclude => `!${outDir}/${exclude}`);

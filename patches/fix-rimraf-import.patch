@@ -1,0 +1,39 @@
+diff --git a/build/lib/util.ts b/build/lib/util.ts
+index 0000000..1111111 100644
+--- a/build/lib/util.ts
++++ b/build/lib/util.ts
+@@ -9,7 +9,7 @@ import _debounce from 'debounce';
+ import _filter from 'gulp-filter';
+ import rename from 'gulp-rename';
+ import path from 'path';
+ import fs from 'fs';
+-import * as rimrafModule from 'rimraf';
++import rimrafModule from 'rimraf';
+ import VinylFile from 'vinyl';
+ import { ThroughStream } from 'through';
+ import sm from 'source-map';
+@@ -295,7 +295,20 @@ export function rimraf(dir: string): () => Promise<void> {
+ 	const result = () => new Promise<void>((c, e) => {
+ 		let retries = 0;
+ 
+-		const retry = () => {
++		const retry = async () => {
++			// Handle both promise-based (newer) and callback-based (legacy) rimraf APIs
++			try {
++				const rimrafFn = (rimrafModule as any).default || rimrafModule;
++				// Try promise-based API first (newer versions)
++				const promise = rimrafFn(dir, { maxBusyTries: 1 });
++				if (promise && typeof promise.then === 'function') {
++					await promise;
++					return c();
++				}
++			} catch (err: any) {
++				if (err.code === 'ENOTEMPTY' && ++retries < 5) {
++					return setTimeout(() => retry(), 10);
++				}
++				return e(err);
++			}
++			// Fallback to callback-based API (legacy)
+ 			rimrafModule(dir, { maxBusyTries: 1 }, (err: any) => {
+ 				if (!err) {
+ 					return c();

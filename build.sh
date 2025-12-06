@@ -43,8 +43,9 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
 
   # Compile build directory TypeScript files first (required for gulp tasks)
   # This compiles build/linux/dependencies-generator.ts and other build scripts
+  # This step is required - if it fails, the build will fail because gulp tasks need these compiled files
   echo "Compiling build directory TypeScript..."
-  npm run --prefix build build-ts || echo "Warning: build-ts failed, continuing..."
+  npm run --prefix build build-ts
 
   # Compile the main codebase
   # Using compile-build-without-mangling for compatibility and debugging

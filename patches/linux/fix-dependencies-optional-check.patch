@@ -34,3 +34,4 @@ diff --git a/build/linux/dependencies-generator.js b/build/linux/dependencies-ge
      }
      return sortedDependencies;
  }
+

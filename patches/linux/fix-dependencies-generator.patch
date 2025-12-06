@@ -1,0 +1,39 @@
+--- vscode/build/linux/dependencies-generator.ts.orig	2025-12-06 12:29:33
++++ vscode/build/linux/dependencies-generator.ts	2025-12-06 12:29:35
+@@ -88,15 +88,28 @@
+ 	const referenceGeneratedDeps = packageType === 'deb' ?
+ 		debianGeneratedDeps[arch as DebianArchString] :
+ 		rpmGeneratedDeps[arch as RpmArchString];
+-	if (JSON.stringify(sortedDependencies) !== JSON.stringify(referenceGeneratedDeps)) {
+-		const failMessage = 'The dependencies list has changed.'
+-			+ '\nOld:\n' + referenceGeneratedDeps.join('\n')
+-			+ '\nNew:\n' + sortedDependencies.join('\n');
+-		if (FAIL_BUILD_FOR_NEW_DEPENDENCIES) {
+-			throw new Error(failMessage);
+-		} else {
+-			console.warn(failMessage);
++	// Skip dependency check if no reference list exists for this architecture
++	// This is needed when sysroot is skipped or for alternative architectures
++	if (referenceGeneratedDeps && referenceGeneratedDeps.length > 0) {
++		if (JSON.stringify(sortedDependencies) !== JSON.stringify(referenceGeneratedDeps)) {
++			const oldSet = new Set(referenceGeneratedDeps);
++			const newSet = new Set(sortedDependencies);
++			const missing = referenceGeneratedDeps.filter(dep => !newSet.has(dep));
++			const extra = sortedDependencies.filter(dep => !oldSet.has(dep));
++
++			const failMessage = `The dependencies list has changed for architecture ${arch}.`
++				+ '\n\nReference dependencies (expected):\n' + referenceGeneratedDeps.join('\n')
++				+ '\n\nGenerated dependencies (actual):\n' + sortedDependencies.join('\n')
++				+ (missing.length > 0 ? '\n\nMissing from generated (in reference but not generated):\n' + missing.join('\n') : '')
++				+ (extra.length > 0 ? '\n\nExtra in generated (not in reference):\n' + extra.join('\n') : '');
++			if (FAIL_BUILD_FOR_NEW_DEPENDENCIES) {
++				throw new Error(failMessage);
++			} else {
++				console.warn(failMessage);
++			}
+ 		}
++	} else {
++		console.warn(`No reference dependency list found for architecture ${arch}. Skipping dependency validation.`);
+ 	}
+ 
+ 	return sortedDependencies;

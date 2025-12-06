@@ -1,7 +1,8 @@
-diff --git a/build/linux/dependencies-generator.js b/build/linux/dependencies-generator.js
+diff --git a/build/linux/dependencies-generator.js b/build/linux/dependencies-generator.js.modified
+index 7111573ff00..203ed6a5389 100644
 --- a/build/linux/dependencies-generator.js
-+++ b/build/linux/dependencies-generator.js
-@@ -83,19 +83,20 @@ async function getDependencies(packageType, buildDir, applicationName, arch) {
++++ b/build/linux/dependencies-generator.js.modified
+@@ -83,22 +83,18 @@ async function getDependencies(packageType, buildDir, applicationName, arch) {
      const referenceGeneratedDeps = packageType === 'deb' ?
          dep_lists_1.referenceGeneratedDepsByArch[arch] :
          dep_lists_2.referenceGeneratedDepsByArch[arch];
@@ -34,4 +35,3 @@ diff --git a/build/linux/dependencies-generator.js b/build/linux/dependencies-ge
      }
      return sortedDependencies;
  }
-

@@ -17,6 +17,8 @@ pkill -f "$(pwd)/out/main.js" || true
 pkill -f "$(pwd)/out-build/main.js" || true
 
 # Remove React build output to ensure clean state
+# Note: React components are rebuilt here even though they may be in the tar.gz
+# This ensures consistency across CI environments and handles any platform-specific build requirements
 if [[ -d "src/vs/workbench/contrib/void/browser/react/out" ]]; then
   rm -rf src/vs/workbench/contrib/void/browser/react/out
 fi
@@ -33,6 +35,17 @@ for i in {1..5}; do # try 5 times
     exit 1
   fi
   echo "Npm install failed $i, trying again..."
+done
+
+# Install extension dependencies (same as in Linux package_bin.sh)
+# Extensions need both production AND dev dependencies for TypeScript compilation
+# (devDependencies include @types/node, etc. needed for webpack/tsc)
+echo "Installing extension dependencies..."
+for ext_dir in extensions/*/; do
+  if [[ -f "${ext_dir}package.json" ]] && [[ -f "${ext_dir}package-lock.json" ]]; then
+    echo "Installing deps for $(basename "$ext_dir")..."
+    (cd "$ext_dir" && npm ci --ignore-scripts) || echo "Skipped $(basename "$ext_dir")"
+  fi
 done
 
 node build/azure-pipelines/distro/mixin-npm

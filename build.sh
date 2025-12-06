@@ -39,7 +39,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
 
   # Build React components first (required for CortexIDE UI)
   echo "Building React components..."
-  npm run buildreact
+  npm run buildreact || echo "Warning: buildreact failed, continuing..."
 
   # Compile the main codebase
   # Using compile-build-without-mangling for compatibility and debugging

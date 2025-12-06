@@ -22,6 +22,8 @@ pkill -f "$(pwd)/out/main.js" || true
 pkill -f "$(pwd)/out-build/main.js" || true
 
 # Remove React build output to ensure clean state
+# Note: React components are rebuilt here even though they may be in the tar.gz
+# This ensures consistency across CI environments and handles any platform-specific build requirements
 if [[ -d "src/vs/workbench/contrib/void/browser/react/out" ]]; then
   rm -rf src/vs/workbench/contrib/void/browser/react/out
 fi

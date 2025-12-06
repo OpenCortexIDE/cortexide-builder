@@ -1,11 +1,9 @@
 --- vscode/build/gulpfile.vscode.js.orig	2025-12-06 12:30:03
 +++ vscode/build/gulpfile.vscode.js	2025-12-06 12:30:18
-@@ -373,7 +373,20 @@
- 			.pipe(util.skipDirectories())
- 			.pipe(util.fixWin32DirectoryPermissions())
- 			.pipe(filter(['**', '!**/.github/**'], { dot: true })) // https://github.com/microsoft/vscode/issues/116523
--			.pipe(electron({ ...config, platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
-+
+@@ -370,10 +370,22 @@
+ 			all = es.merge(all, shortcut, policyDest);
+ 		}
+
 +		// CORTEXIDE/VSCODIUM: Support custom Electron repositories for alternative architectures
 +		// This allows using VSCODE_ELECTRON_REPOSITORY and VSCODE_ELECTRON_TAG env vars
 +		// Check if not already defined to make this patch idempotent
@@ -18,6 +16,12 @@
 +				electronOverride.tag = process.env.VSCODE_ELECTRON_TAG;
 +			}
 +		}
++
+ 		let result = all
+ 			.pipe(util.skipDirectories())
+ 			.pipe(util.fixWin32DirectoryPermissions())
+ 			.pipe(filter(['**', '!**/.github/**'], { dot: true })) // https://github.com/microsoft/vscode/issues/116523
+-			.pipe(electron({ ...config, platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
 +			.pipe(electron({ ...config, ...(electronOverride.repo || electronOverride.tag ? electronOverride : {}), platform, arch: arch === 'armhf' ? 'arm' : arch, ffmpegChromium: false }))
  			.pipe(filter(['**', '!LICENSE', '!version'], { dot: true }));
 

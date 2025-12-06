@@ -10,14 +10,8 @@ diff --git a/build/linux/dependencies-generator.js b/build/linux/dependencies-ge
 -    const skipValidation = newArchitectures.includes(arch);
 -    if (JSON.stringify(sortedDependencies) !== JSON.stringify(referenceGeneratedDeps)) {
 -        const failMessage = 'The dependencies list has changed.'
--            + '
-Old:
-' + referenceGeneratedDeps.join('
-')
--            + '
-New:
-' + sortedDependencies.join('
-');
+-            + '\nOld:\n' + referenceGeneratedDeps.join('\n')
+-            + '\nNew:\n' + sortedDependencies.join('\n');
 -        if (FAIL_BUILD_FOR_NEW_DEPENDENCIES && !skipValidation) {
 -            throw new Error(failMessage);
 -        }
@@ -26,14 +20,8 @@ New:
 +    if (referenceGeneratedDeps) {
 +        if (JSON.stringify(sortedDependencies) !== JSON.stringify(referenceGeneratedDeps)) {
 +            const failMessage = 'The dependencies list has changed.'
-+                + '
-Old:
-' + referenceGeneratedDeps.join('
-')
-+                + '
-New:
-' + sortedDependencies.join('
-');
++                + '\nOld:\n' + referenceGeneratedDeps.join('\n')
++                + '\nNew:\n' + sortedDependencies.join('\n');
 +            // CORTEXIDE: Always warn instead of throwing for alternative architectures or when dependencies change
 +            // This allows builds to continue even when dependencies are updated
              console.warn(failMessage);

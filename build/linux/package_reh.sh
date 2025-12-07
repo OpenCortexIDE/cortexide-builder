@@ -486,7 +486,85 @@ S390X_FIX
       PATCH_PATH="../patches/linux/reh/fix-nodejs-site-loong64.patch"
       if [[ -f "${PATCH_PATH}" ]]; then
         echo "Found patch at ${PATCH_PATH}, applying..."
-        if apply_patch "${PATCH_PATH}"; then
+        # Try to apply the patch, but handle "already applied" case
+        PATCH_OUTPUT=$(apply_patch "${PATCH_PATH}" 2>&1) || PATCH_EXIT=$?
+        if echo "${PATCH_OUTPUT}" | grep -q "already applied\|already exists\|patch does not apply"; then
+          echo "Patch reports as already applied or not applicable, verifying actual code..."
+          # Check again if the code is actually there
+          if grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+            echo "Node.js site patch verified in gulpfile.reh.js (code is present)"
+          else
+            echo "WARNING: Patch says already applied but code not found. Manually applying fix..."
+            # Manually apply the fix using Node.js - this is a fallback if patch application fails
+            node << 'NODEJS_SITE_FIX'
+const fs = require('fs');
+const file = 'build/gulpfile.reh.js';
+let content = fs.readFileSync(file, 'utf8');
+
+// Check if the fix is already applied
+if (content.includes("process.env.VSCODE_NODEJS_SITE")) {
+  console.log('Fix already present');
+  process.exit(0);
+}
+
+// Find the nodejs function's linux case and apply the fix
+// The patch adds support for VSCODE_NODEJS_SITE environment variable
+const linuxCasePattern = /(case 'linux':[\s\S]*?)(return \(product\.nodejsRepository)/;
+const match = content.match(linuxCasePattern);
+
+if (match) {
+  let linuxCase = match[1];
+
+  // Check if already fixed
+  if (linuxCase.includes('process.env.VSCODE_NODEJS_SITE')) {
+    console.log('Fix already present in linux case');
+    process.exit(0);
+  }
+
+  // Apply the fix: add the VSCODE_NODEJS_SITE check before the existing logic
+  const oldPattern = /case 'linux':[\s\S]*?return \(product\.nodejsRepository !== 'https:\/\/nodejs\.org'/;
+  const newCode = `case 'linux':
+			// Support custom Node.js download sites for alternative architectures
+			// (e.g., loong64, riscv64 use unofficial-builds.nodejs.org)
+			if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			if (product.nodejsRepository !== 'https://nodejs.org') {
+				return fetchGithub(product.nodejsRepository, { version: \`\${nodeVersion}-\${internalNodeVersion}\`, name: expectedName, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			else {
+				return fetchUrls(\`/dist/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}.tar.gz\`, { base: 'https://nodejs.org', checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}`;
+
+  content = content.replace(oldPattern, newCode);
+  fs.writeFileSync(file, content, 'utf8');
+  console.log('Manually applied Node.js site fix');
+} else {
+  console.log('Could not find linux case in nodejs function');
+  process.exit(1);
+}
+NODEJS_SITE_FIX
+            # Verify the fix was applied
+            if grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+              echo "Node.js site fix verified in gulpfile.reh.js after manual application"
+            else
+              echo "ERROR: Failed to apply Node.js site fix"
+              exit 1
+            fi
+          fi
+        elif [[ "${PATCH_EXIT:-0}" -eq 0 ]]; then
           echo "Successfully applied fix-nodejs-site-loong64.patch"
           # Verify it was applied
           if grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
@@ -496,8 +574,52 @@ S390X_FIX
             exit 1
           fi
         else
-          echo "Failed to apply fix-nodejs-site-loong64.patch"
-          exit 1
+          echo "Failed to apply fix-nodejs-site-loong64.patch, attempting manual fix..."
+          # Try manual fix as fallback (same as above)
+          node << 'NODEJS_SITE_FIX'
+const fs = require('fs');
+const file = 'build/gulpfile.reh.js';
+let content = fs.readFileSync(file, 'utf8');
+if (!content.includes("process.env.VSCODE_NODEJS_SITE")) {
+  const linuxCasePattern = /(case 'linux':[\s\S]*?)(return \(product\.nodejsRepository)/;
+  const match = content.match(linuxCasePattern);
+  if (match) {
+    const oldPattern = /case 'linux':[\s\S]*?return \(product\.nodejsRepository !== 'https:\/\/nodejs\.org'/;
+    const newCode = `case 'linux':
+			// Support custom Node.js download sites for alternative architectures
+			if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			if (product.nodejsRepository !== 'https://nodejs.org') {
+				return fetchGithub(product.nodejsRepository, { version: \`\${nodeVersion}-\${internalNodeVersion}\`, name: expectedName, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			else {
+				return fetchUrls(\`/dist/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}.tar.gz\`, { base: 'https://nodejs.org', checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}`;
+    content = content.replace(oldPattern, newCode);
+    fs.writeFileSync(file, content, 'utf8');
+    console.log('Manually applied Node.js site fix');
+  }
+}
+NODEJS_SITE_FIX
+          if grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+            echo "Node.js site fix verified after manual application"
+          else
+            echo "ERROR: All attempts to apply Node.js site fix failed"
+            exit 1
+          fi
         fi
       else
         echo "ERROR: fix-nodejs-site-loong64.patch not found at ${PATCH_PATH}"

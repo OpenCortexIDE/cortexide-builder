@@ -78,7 +78,9 @@ if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
   # This is critical for cross-architecture builds (ARM64 on x64 hosts)
   if [[ "${VSCODE_ARCH}" == "arm64" ]]; then
     echo "Verifying Docker platform patch for Alpine ARM64..."
-    if ! grep -q "dockerPlatform" build/gulpfile.reh.js 2>/dev/null; then
+    # Check for the actual code pattern from the patch, not just the variable name
+    # The patch adds: dockerPlatform = '--platform=linux/arm64'; and uses it in docker run
+    if ! grep -q "dockerPlatform.*--platform=linux/arm64" build/gulpfile.reh.js 2>/dev/null && ! grep -q "docker run --rm.*dockerPlatform" build/gulpfile.reh.js 2>/dev/null; then
       echo "ERROR: Docker platform patch not found in gulpfile.reh.js"
       echo "The fix-node-docker.patch may not have been applied correctly."
       echo "This is required for Alpine ARM64 REH builds on x64 hosts."
@@ -86,18 +88,113 @@ if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
       PATCH_PATH="../patches/alpine/reh/fix-node-docker.patch"
       if [[ -f "${PATCH_PATH}" ]]; then
         echo "Found patch at ${PATCH_PATH}, applying..."
-        if apply_patch "${PATCH_PATH}"; then
+        # Try to apply the patch, but handle "already applied" case
+        PATCH_OUTPUT=$(apply_patch "${PATCH_PATH}" 2>&1) || PATCH_EXIT=$?
+        if echo "${PATCH_OUTPUT}" | grep -q "already applied\|already exists\|patch does not apply"; then
+          echo "Patch reports as already applied or not applicable, verifying actual code..."
+          # Check again if the code is actually there
+          if grep -q "dockerPlatform.*--platform=linux/arm64" build/gulpfile.reh.js 2>/dev/null || grep -q "docker run --rm.*dockerPlatform" build/gulpfile.reh.js 2>/dev/null; then
+            echo "Docker platform patch verified in gulpfile.reh.js (code is present)"
+          else
+            echo "WARNING: Patch says already applied but code not found. Manually applying fix..."
+            # Manually apply the fix using Node.js
+            node << 'ALPINE_FIX'
+const fs = require('fs');
+const file = 'build/gulpfile.reh.js';
+let content = fs.readFileSync(file, 'utf8');
+
+// Check if the fix is already applied
+if (content.includes("dockerPlatform") && content.includes("--platform=linux/arm64")) {
+  console.log('Fix already present');
+  process.exit(0);
+}
+
+// Find the extractAlpinefromDocker function and apply the fix
+const functionPattern = /function extractAlpinefromDocker\(nodeVersion, platform, arch\) \{([\s\S]*?)\n\treturn es\.readArray/;
+const match = content.match(functionPattern);
+
+if (match) {
+  let functionBody = match[1];
+
+  // Check if already fixed
+  if (functionBody.includes('dockerPlatform')) {
+    console.log('Fix already present in function');
+    process.exit(0);
+  }
+
+  // Apply the fix: replace the simple imageName assignment with the full logic
+  const oldPattern = /const imageName = arch === 'arm64' \? 'arm64v8\/node' : 'node';/;
+  const newCode = `let imageName = 'node';\n\tlet dockerPlatform = '';\n\n\tif (arch === 'arm64') {\n\t\timageName = 'arm64v8/node';\n\n\t\tconst architecture = cp.execSync(\`docker info --format '{{json .Architecture}}'\`, { encoding: 'utf8' }).trim();\n\t\tif (architecture != '"aarch64"') {\n\t\t\tdockerPlatform = '--platform=linux/arm64';\n\t\t}\n\t}`;
+
+  if (oldPattern.test(functionBody)) {
+    functionBody = functionBody.replace(oldPattern, newCode);
+    // Also update the docker run command
+    functionBody = functionBody.replace(
+      /const contents = cp\.execSync\(`docker run --rm \${imageName}/,
+      'const contents = cp.execSync(`docker run --rm ${dockerPlatform} ${imageName}'
+    );
+    content = content.replace(functionPattern, `function extractAlpinefromDocker(nodeVersion, platform, arch) {${functionBody}\n\treturn es.readArray`);
+    fs.writeFileSync(file, content, 'utf8');
+    console.log('Manually applied Alpine ARM64 Docker platform fix');
+  } else {
+    console.log('Could not find expected pattern to replace');
+    process.exit(1);
+  }
+} else {
+  console.log('Could not find extractAlpinefromDocker function');
+  process.exit(1);
+}
+ALPINE_FIX
+            # Verify the fix was applied
+            if grep -q "dockerPlatform.*--platform=linux/arm64" build/gulpfile.reh.js 2>/dev/null || grep -q "docker run --rm.*dockerPlatform" build/gulpfile.reh.js 2>/dev/null; then
+              echo "Docker platform fix verified in gulpfile.reh.js after manual application"
+            else
+              echo "ERROR: Failed to apply Docker platform fix"
+              exit 1
+            fi
+          fi
+        elif [[ "${PATCH_EXIT:-0}" -eq 0 ]]; then
           echo "Successfully applied fix-node-docker.patch"
           # Verify it was applied
-          if grep -q "dockerPlatform" build/gulpfile.reh.js 2>/dev/null; then
+          if grep -q "dockerPlatform.*--platform=linux/arm64" build/gulpfile.reh.js 2>/dev/null || grep -q "docker run --rm.*dockerPlatform" build/gulpfile.reh.js 2>/dev/null; then
             echo "Docker platform patch verified in gulpfile.reh.js after application"
           else
-            echo "ERROR: Patch applied but dockerPlatform still not found in gulpfile.reh.js"
+            echo "ERROR: Patch applied but dockerPlatform code still not found in gulpfile.reh.js"
             exit 1
           fi
         else
-          echo "Failed to apply fix-node-docker.patch"
-          exit 1
+          echo "Failed to apply fix-node-docker.patch, attempting manual fix..."
+          # Try manual fix as fallback
+          node << 'ALPINE_FIX'
+const fs = require('fs');
+const file = 'build/gulpfile.reh.js';
+let content = fs.readFileSync(file, 'utf8');
+if (!content.includes("dockerPlatform") || !content.includes("--platform=linux/arm64")) {
+  const functionPattern = /function extractAlpinefromDocker\(nodeVersion, platform, arch\) \{([\s\S]*?)\n\treturn es\.readArray/;
+  const match = content.match(functionPattern);
+  if (match) {
+    let functionBody = match[1];
+    const oldPattern = /const imageName = arch === 'arm64' \? 'arm64v8\/node' : 'node';/;
+    const newCode = `let imageName = 'node';\n\tlet dockerPlatform = '';\n\n\tif (arch === 'arm64') {\n\t\timageName = 'arm64v8/node';\n\n\t\tconst architecture = cp.execSync(\`docker info --format '{{json .Architecture}}'\`, { encoding: 'utf8' }).trim();\n\t\tif (architecture != '"aarch64"') {\n\t\t\tdockerPlatform = '--platform=linux/arm64';\n\t\t}\n\t}`;
+    if (oldPattern.test(functionBody)) {
+      functionBody = functionBody.replace(oldPattern, newCode);
+      functionBody = functionBody.replace(
+        /const contents = cp\.execSync\(`docker run --rm \${imageName}/,
+        'const contents = cp.execSync(`docker run --rm ${dockerPlatform} ${imageName}'
+      );
+      content = content.replace(functionPattern, `function extractAlpinefromDocker(nodeVersion, platform, arch) {${functionBody}\n\treturn es.readArray`);
+      fs.writeFileSync(file, content, 'utf8');
+      console.log('Manually applied Alpine ARM64 Docker platform fix');
+    }
+  }
+}
+ALPINE_FIX
+          if grep -q "dockerPlatform.*--platform=linux/arm64" build/gulpfile.reh.js 2>/dev/null || grep -q "docker run --rm.*dockerPlatform" build/gulpfile.reh.js 2>/dev/null; then
+            echo "Docker platform fix verified after manual application"
+          else
+            echo "ERROR: All attempts to apply Docker platform fix failed"
+            exit 1
+          fi
         fi
       else
         echo "ERROR: fix-node-docker.patch not found at ${PATCH_PATH}"
@@ -106,16 +203,6 @@ if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
       fi
     else
       echo "Docker platform patch verified in gulpfile.reh.js"
-      # Additional check: ensure the dockerPlatform variable is used correctly
-      # The patch should add --platform=linux/arm64 when not on an ARM64 host
-      if grep -q "dockerPlatform" build/gulpfile.reh.js 2>/dev/null; then
-        echo "Verifying dockerPlatform usage in extractAlpinefromDocker function..."
-        # Check if the dockerPlatform is being used in the docker run command
-        if ! grep -q "docker run --rm.*dockerPlatform" build/gulpfile.reh.js 2>/dev/null && ! grep -q "\`docker run --rm \${dockerPlatform}" build/gulpfile.reh.js 2>/dev/null; then
-          echo "WARNING: dockerPlatform variable found but may not be used correctly in docker command"
-          echo "The patch may need to be updated to ensure --platform=linux/arm64 is always added for ARM64 on x64 hosts"
-        fi
-      fi
     fi
   fi
 

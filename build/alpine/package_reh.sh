@@ -74,6 +74,51 @@ if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
     "
   fi
 
+  # For Alpine ARM64, verify the Docker platform patch is applied
+  # This is critical for cross-architecture builds (ARM64 on x64 hosts)
+  if [[ "${VSCODE_ARCH}" == "arm64" ]]; then
+    echo "Verifying Docker platform patch for Alpine ARM64..."
+    if ! grep -q "dockerPlatform" build/gulpfile.reh.js 2>/dev/null; then
+      echo "ERROR: Docker platform patch not found in gulpfile.reh.js"
+      echo "The fix-node-docker.patch may not have been applied correctly."
+      echo "This is required for Alpine ARM64 REH builds on x64 hosts."
+      echo "Attempting to apply the patch now..."
+      PATCH_PATH="../patches/alpine/reh/fix-node-docker.patch"
+      if [[ -f "${PATCH_PATH}" ]]; then
+        echo "Found patch at ${PATCH_PATH}, applying..."
+        if apply_patch "${PATCH_PATH}"; then
+          echo "Successfully applied fix-node-docker.patch"
+          # Verify it was applied
+          if grep -q "dockerPlatform" build/gulpfile.reh.js 2>/dev/null; then
+            echo "Docker platform patch verified in gulpfile.reh.js after application"
+          else
+            echo "ERROR: Patch applied but dockerPlatform still not found in gulpfile.reh.js"
+            exit 1
+          fi
+        else
+          echo "Failed to apply fix-node-docker.patch"
+          exit 1
+        fi
+      else
+        echo "ERROR: fix-node-docker.patch not found at ${PATCH_PATH}"
+        echo "This patch is required for Alpine ARM64 REH builds."
+        exit 1
+      fi
+    else
+      echo "Docker platform patch verified in gulpfile.reh.js"
+      # Additional check: ensure the dockerPlatform variable is used correctly
+      # The patch should add --platform=linux/arm64 when not on an ARM64 host
+      if grep -q "dockerPlatform" build/gulpfile.reh.js 2>/dev/null; then
+        echo "Verifying dockerPlatform usage in extractAlpinefromDocker function..."
+        # Check if the dockerPlatform is being used in the docker run command
+        if ! grep -q "docker run --rm.*dockerPlatform" build/gulpfile.reh.js 2>/dev/null && ! grep -q "\`docker run --rm \${dockerPlatform}" build/gulpfile.reh.js 2>/dev/null; then
+          echo "WARNING: dockerPlatform variable found but may not be used correctly in docker command"
+          echo "The patch may need to be updated to ensure --platform=linux/arm64 is always added for ARM64 on x64 hosts"
+        fi
+      fi
+    fi
+  fi
+
   npm run gulp "vscode-reh-${PA_NAME}-min-ci"
 
   pushd "../vscode-reh-${PA_NAME}"

@@ -29,6 +29,7 @@ GLIBC_VERSION="2.28"
 GLIBCXX_VERSION="3.4.26"
 NODE_VERSION="20.18.2"
 
+# Default Node.js URL configuration (can be overridden per architecture)
 export VSCODE_NODEJS_URLROOT='/download/release'
 export VSCODE_NODEJS_URLSUFFIX=''
 
@@ -71,12 +72,16 @@ elif [[ "${VSCODE_ARCH}" == "riscv64" ]]; then
 
   export VSCODE_SKIP_SETUPENV=1
   export VSCODE_NODEJS_SITE='https://unofficial-builds.nodejs.org'
+  export VSCODE_NODEJS_URLROOT='/download/release'
+  export VSCODE_NODEJS_URLSUFFIX=''
 elif [[ "${VSCODE_ARCH}" == "loong64" ]]; then
   NODE_VERSION="20.16.0"
   VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME="vscodium/vscodium-linux-build-agent:beige-devtoolset-loong64"
 
   export VSCODE_SKIP_SETUPENV=1
   export VSCODE_NODEJS_SITE='https://unofficial-builds.nodejs.org'
+  export VSCODE_NODEJS_URLROOT='/download/release'
+  export VSCODE_NODEJS_URLSUFFIX=''
 elif [[ "${VSCODE_ARCH}" == "s390x" ]]; then
   VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME="vscodium/vscodium-linux-build-agent:focal-devtoolset-s390x"
 
@@ -90,6 +95,12 @@ export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 export VSCODE_PLATFORM='linux'
 export VSCODE_SKIP_NODE_VERSION_CHECK=1
 # Don't override VSCODE_SYSROOT_PREFIX - let setup-env.sh use the correct defaults
+
+# Ensure Node.js environment variables are exported for gulp tasks
+# These are needed for alternative architectures (riscv64, loong64) that use unofficial-builds.nodejs.org
+export VSCODE_NODEJS_SITE="${VSCODE_NODEJS_SITE:-}"
+export VSCODE_NODEJS_URLROOT="${VSCODE_NODEJS_URLROOT:-/download/release}"
+export VSCODE_NODEJS_URLSUFFIX="${VSCODE_NODEJS_URLSUFFIX:-}"
 
 EXPECTED_GLIBC_VERSION="${EXPECTED_GLIBC_VERSION:=GLIBC_VERSION}"
 VSCODE_HOST_MOUNT="$( pwd )"
@@ -165,11 +176,38 @@ if [[ -z "${VSCODE_SKIP_SETUPENV}" ]]; then
   fi
 fi
 
+# For ARM32 (armhf), verify Node.js binary is valid before proceeding
+# The Docker container may have a corrupted or wrong-architecture Node.js binary
+if [[ "${VSCODE_ARCH}" == "armhf" ]]; then
+  echo "Verifying Node.js binary for ARM32..."
+  if command -v node >/dev/null 2>&1; then
+    # Try to run node --version to verify the binary works
+    if ! node --version >/dev/null 2>&1; then
+      echo "ERROR: Node.js binary is corrupted or wrong architecture for ARM32"
+      echo "Attempting to use system Node.js or download correct binary..."
+      # Remove corrupted binary from PATH if it exists in .build directory
+      if [[ -n "${PATH}" ]] && echo "${PATH}" | grep -q "nodejs-musl"; then
+        echo "Warning: PATH contains nodejs-musl, which may be incompatible with ARM32"
+        # Try to find a working Node.js binary
+        if command -v /usr/bin/node >/dev/null 2>&1; then
+          export PATH="/usr/bin:${PATH}"
+          echo "Using /usr/bin/node instead"
+        fi
+      fi
+    else
+      echo "✓ Node.js binary verified: $(node --version)"
+    fi
+  else
+    echo "WARNING: Node.js not found in PATH"
+  fi
+fi
+
 # For alternative architectures, skip postinstall scripts to avoid unsupported platform errors
 # s390x needs this because native modules like @parcel/watcher try to build with s390x-specific
 # compiler flags on x64 hosts, which fails. Skipping scripts allows the build to continue.
+# ARM32 (armhf) also needs this to avoid Node.js binary compatibility issues in Docker containers.
 NPM_CI_OPTS=""
-if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]]; then
+if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]]; then
   NPM_CI_OPTS="--ignore-scripts"
   echo "Skipping postinstall scripts for ${VSCODE_ARCH} (unsupported by some packages or cross-compilation issues)"
 fi
@@ -243,6 +281,71 @@ if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
     fi
     echo "ppc64le support verified in gulpfile.reh.js"
   fi
+
+  # Verify that s390x is supported in gulpfile.reh.js before attempting build
+  # If the patch wasn't applied, the build will fail with "Task never defined"
+  if [[ "${VSCODE_ARCH}" == "s390x" ]]; then
+    echo "Verifying s390x support in gulpfile.reh.js..."
+    if ! grep -q "'s390x'" build/gulpfile.reh.js 2>/dev/null && ! grep -q '"s390x"' build/gulpfile.reh.js 2>/dev/null; then
+      echo "ERROR: s390x architecture not found in gulpfile.reh.js BUILD_TARGETS"
+      echo "The arch-4-s390x.patch may not have been applied correctly."
+      echo "This is required for REH builds on s390x."
+      echo "Attempting to apply the patch now..."
+      # Try to apply the patch if it exists
+      # The patch should be in the builder root, not in vscode directory
+      # We're currently in the vscode directory, so we need to go up to find the patch
+      PATCH_PATH="../patches/linux/arch-4-s390x.patch"
+      if [[ -f "${PATCH_PATH}" ]]; then
+        echo "Found patch at ${PATCH_PATH}, applying..."
+        if apply_patch "${PATCH_PATH}"; then
+          echo "Successfully applied arch-4-s390x.patch"
+          # Verify it was applied
+          if grep -q "'s390x'" build/gulpfile.reh.js 2>/dev/null || grep -q '"s390x"' build/gulpfile.reh.js 2>/dev/null; then
+            echo "s390x support verified in gulpfile.reh.js after patch application"
+          else
+            echo "ERROR: Patch applied but s390x still not found in gulpfile.reh.js"
+            exit 1
+          fi
+        else
+          echo "Failed to apply arch-4-s390x.patch"
+          exit 1
+        fi
+      else
+        echo "ERROR: arch-4-s390x.patch not found at ${PATCH_PATH}"
+        echo "This patch is required for REH builds on s390x."
+        exit 1
+      fi
+    else
+      echo "s390x support verified in gulpfile.reh.js"
+    fi
+  fi
+
+  # Verify that Node.js site patch is applied for riscv64 and loong64
+  if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]]; then
+    echo "Verifying Node.js site patch for ${VSCODE_ARCH}..."
+    if ! grep -q "VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+      echo "ERROR: Node.js site patch not found in gulpfile.reh.js"
+      echo "The fix-nodejs-site-loong64.patch may not have been applied correctly."
+      echo "This is required for REH builds on ${VSCODE_ARCH}."
+      exit 1
+    fi
+    echo "Node.js site patch verified in gulpfile.reh.js"
+    # Ensure environment variables are exported for the gulp task
+    # These must be explicitly exported right before the gulp task runs
+    export VSCODE_NODEJS_SITE="${VSCODE_NODEJS_SITE}"
+    export VSCODE_NODEJS_URLROOT="${VSCODE_NODEJS_URLROOT}"
+    export VSCODE_NODEJS_URLSUFFIX="${VSCODE_NODEJS_URLSUFFIX}"
+    echo "Node.js environment variables for gulp task:"
+    echo "  VSCODE_NODEJS_SITE=${VSCODE_NODEJS_SITE}"
+    echo "  VSCODE_NODEJS_URLROOT=${VSCODE_NODEJS_URLROOT}"
+    echo "  VSCODE_NODEJS_URLSUFFIX=${VSCODE_NODEJS_URLSUFFIX}"
+  fi
+
+  # Export all Node.js environment variables before running gulp
+  # This ensures they're available to the Node.js process running gulp
+  export VSCODE_NODEJS_SITE="${VSCODE_NODEJS_SITE:-}"
+  export VSCODE_NODEJS_URLROOT="${VSCODE_NODEJS_URLROOT:-/download/release}"
+  export VSCODE_NODEJS_URLSUFFIX="${VSCODE_NODEJS_URLSUFFIX:-}"
 
   npm run gulp "vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
 

@@ -42,11 +42,11 @@ if [[ "${OS_NAME}" == "osx" ]]; then
     export CODESIGN_IDENTITY AGENT_TEMPDIRECTORY
 
     DEBUG="electron-osx-sign*" node vscode/build/darwin/sign.js "$( pwd )"
-    
+
     # Verify code signing succeeded
     echo "+ verifying code signature"
     cd "VSCode-darwin-${VSCODE_ARCH}"
-    
+
     # Find the app bundle (should be only one)
     APP_BUNDLE=$( find . -maxdepth 1 -name "*.app" -type d | head -n 1 )
     if [[ -z "${APP_BUNDLE}" ]]; then
@@ -54,10 +54,10 @@ if [[ "${OS_NAME}" == "osx" ]]; then
       ls -la
       exit 1
     fi
-    
+
     # Normalize path (remove leading ./ if present)
     APP_BUNDLE="${APP_BUNDLE#./}"
-    
+
     # Verify the app is properly signed
     echo "+ checking code signature validity..."
     if ! codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}" 2>&1; then
@@ -67,18 +67,18 @@ if [[ "${OS_NAME}" == "osx" ]]; then
       exit 1
     fi
     echo "✓ Code signature is valid"
-    
+
     # Check signature details
     echo "+ checking signature details..."
     codesign -dv --verbose=4 "${APP_BUNDLE}" 2>&1 | head -n 5
-    
+
     # Check for entitlements (non-fatal if missing)
     if codesign -d --entitlements :- "${APP_BUNDLE}" > /dev/null 2>&1; then
       echo "+ entitlements found"
     else
       echo "Warning: Could not extract entitlements (this may be normal)"
     fi
-    
+
     # Verify architecture of key binaries
     echo "+ verifying binary architectures..."
     MAIN_EXECUTABLE="${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
@@ -97,7 +97,7 @@ if [[ "${OS_NAME}" == "osx" ]]; then
     else
       echo "Warning: Main executable not found at ${MAIN_EXECUTABLE}"
     fi
-    
+
     # Check CLI binary architecture if it exists
     TUNNEL_APP_NAME=$( node -p "require('../../product.json').tunnelApplicationName" 2>/dev/null || echo "" )
     if [[ -n "${TUNNEL_APP_NAME}" ]]; then
@@ -118,7 +118,7 @@ if [[ "${OS_NAME}" == "osx" ]]; then
         echo "Warning: CLI binary not found at ${CLI_BINARY}"
       fi
     fi
-    
+
     echo "✓ Code signing verified successfully"
 
     echo "+ notarize"
@@ -137,18 +137,18 @@ if [[ "${OS_NAME}" == "osx" ]]; then
       echo "Error: Failed to store notarization credentials"
       exit 1
     fi
-    
+
     # Submit for notarization
     echo "+ submitting for notarization (this may take several minutes)..."
     NOTARIZATION_OUTPUT=$( xcrun notarytool submit "${ZIP_FILE}" --keychain-profile "${APP_NAME}" --wait --keychain "${KEYCHAIN}" 2>&1 )
     NOTARIZATION_EXIT_CODE=$?
-    
+
     if [[ ${NOTARIZATION_EXIT_CODE} -ne 0 ]]; then
       echo "Error: Notarization submission failed"
       echo "${NOTARIZATION_OUTPUT}"
       exit 1
     fi
-    
+
     # Check notarization status
     if echo "${NOTARIZATION_OUTPUT}" | grep -qi "status:.*Accepted"; then
       echo "✓ Notarization accepted"
@@ -166,19 +166,19 @@ if [[ "${OS_NAME}" == "osx" ]]; then
       echo "Error: Failed to staple notarization ticket"
       exit 1
     fi
-    
+
     # Verify stapling succeeded
     if ! xcrun stapler validate "${APP_BUNDLE}"; then
       echo "Error: Stapling validation failed"
       exit 1
     fi
     echo "✓ Stapling verified successfully"
-    
+
     # Final verification: check Gatekeeper assessment
     echo "+ final Gatekeeper verification"
     SPCTL_OUTPUT=$( spctl --assess --verbose "${APP_BUNDLE}" 2>&1 )
     SPCTL_EXIT_CODE=$?
-    
+
     if [[ ${SPCTL_EXIT_CODE} -eq 0 ]]; then
       echo "✓ Gatekeeper assessment passed"
     else
@@ -201,6 +201,12 @@ if [[ "${OS_NAME}" == "osx" ]]; then
 
   if [[ "${SHOULD_BUILD_DMG}" != "no" ]]; then
     echo "Building and moving DMG"
+    # Clean up any stale volumes before creating DMG
+    # This prevents "hdiutil detach failed - No such file or directory" errors
+    if [[ -d "/Volumes/${APP_NAME}" ]]; then
+      echo "Cleaning up stale volume /Volumes/${APP_NAME}..."
+      hdiutil detach "/Volumes/${APP_NAME}" -force 2>/dev/null || true
+    fi
     pushd "VSCode-darwin-${VSCODE_ARCH}"
     if [[ -n "${CODESIGN_IDENTITY}" ]]; then
       npx create-dmg ./*.app .

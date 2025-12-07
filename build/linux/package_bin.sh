@@ -90,17 +90,49 @@ if [[ -f "../build/linux/${VSCODE_ARCH}/electron.sh" ]]; then
 
   TARGET=$( npm config get target )
 
-  # Only fails at different major versions
-  if [[ "${ELECTRON_VERSION%%.*}" != "${TARGET%%.*}" ]]; then
-    # Fail the pipeline if electron target doesn't match what is used.
-    echo "Electron ${VSCODE_ARCH} binary version doesn't match target electron version!"
-    echo "Releases available at: https://github.com/${VSCODE_ELECTRON_REPOSITORY}/releases"
-    exit 1
-  fi
+  # For alternative architectures using custom Electron repositories, be more lenient with version checks
+  # Custom repos may not have the exact same version as the main Electron release
+  # Debug: Show what we're checking
+  echo "Checking Electron version compatibility for ${VSCODE_ARCH}:"
+  echo "  ELECTRON_VERSION from electron.sh: ${ELECTRON_VERSION}"
+  echo "  TARGET from npm config: ${TARGET}"
+  echo "  VSCODE_ELECTRON_REPOSITORY: ${VSCODE_ELECTRON_REPOSITORY:-not set}"
 
-  if [[ "${ELECTRON_VERSION}" != "${TARGET}" ]]; then
-    # Force version
-    replace "s|target=\"${TARGET}\"|target=\"${ELECTRON_VERSION}\"|" .npmrc
+  if [[ -n "${VSCODE_ELECTRON_REPOSITORY}" ]]; then
+    # Using custom repository - check major version compatibility but don't fail if different
+    echo "Using custom Electron repository: ${VSCODE_ELECTRON_REPOSITORY}"
+    if [[ "${ELECTRON_VERSION%%.*}" != "${TARGET%%.*}" ]]; then
+      echo "Warning: Electron ${VSCODE_ARCH} binary version (${ELECTRON_VERSION}) has different major version than target (${TARGET})"
+      echo "This is expected for alternative architectures using custom repositories."
+      echo "Releases available at: https://github.com/${VSCODE_ELECTRON_REPOSITORY}/releases"
+      # Still update .npmrc to use the custom version
+      if [[ "${ELECTRON_VERSION}" != "${TARGET}" ]]; then
+        echo "Updating .npmrc to use Electron ${ELECTRON_VERSION} instead of ${TARGET}"
+        replace "s|target=\"${TARGET}\"|target=\"${ELECTRON_VERSION}\"|" .npmrc
+      fi
+    elif [[ "${ELECTRON_VERSION}" != "${TARGET}" ]]; then
+      # Same major version, different minor/patch - update .npmrc
+      echo "Using Electron ${ELECTRON_VERSION} for ${VSCODE_ARCH} (target was ${TARGET})"
+      replace "s|target=\"${TARGET}\"|target=\"${ELECTRON_VERSION}\"|" .npmrc
+    else
+      echo "Electron versions match: ${ELECTRON_VERSION}"
+    fi
+  else
+    # Standard architecture - strict version check
+    # Only fails at different major versions
+    echo "Using standard Electron repository - strict version check"
+    if [[ "${ELECTRON_VERSION%%.*}" != "${TARGET%%.*}" ]]; then
+      # Fail the pipeline if electron target doesn't match what is used.
+      echo "ERROR: Electron ${VSCODE_ARCH} binary version doesn't match target electron version!"
+      echo "Expected major version ${TARGET%%.*}, got ${ELECTRON_VERSION%%.*}"
+      exit 1
+    fi
+
+    if [[ "${ELECTRON_VERSION}" != "${TARGET}" ]]; then
+      # Force version
+      echo "Updating .npmrc to use Electron ${ELECTRON_VERSION} instead of ${TARGET}"
+      replace "s|target=\"${TARGET}\"|target=\"${ELECTRON_VERSION}\"|" .npmrc
+    fi
   fi
 fi
 

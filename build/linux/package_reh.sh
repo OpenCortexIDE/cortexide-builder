@@ -166,10 +166,12 @@ if [[ -z "${VSCODE_SKIP_SETUPENV}" ]]; then
 fi
 
 # For alternative architectures, skip postinstall scripts to avoid unsupported platform errors
+# s390x needs this because native modules like @parcel/watcher try to build with s390x-specific
+# compiler flags on x64 hosts, which fails. Skipping scripts allows the build to continue.
 NPM_CI_OPTS=""
-if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]]; then
+if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]]; then
   NPM_CI_OPTS="--ignore-scripts"
-  echo "Skipping postinstall scripts for ${VSCODE_ARCH} (unsupported by some packages)"
+  echo "Skipping postinstall scripts for ${VSCODE_ARCH} (unsupported by some packages or cross-compilation issues)"
 fi
 
 for i in {1..5}; do # try 5 times
@@ -227,6 +229,19 @@ if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
       fs.writeFileSync(path, content, 'utf8');
       console.log('fetch.js fixes applied successfully');
     "
+  fi
+
+  # Verify that ppc64le is supported in gulpfile.reh.js before attempting build
+  # If the patch wasn't applied, the build will fail with "Invalid glob argument"
+  if [[ "${VSCODE_ARCH}" == "ppc64le" ]]; then
+    echo "Verifying ppc64le support in gulpfile.reh.js..."
+    if ! grep -q "'ppc64le'" build/gulpfile.reh.js 2>/dev/null && ! grep -q '"ppc64le"' build/gulpfile.reh.js 2>/dev/null; then
+      echo "ERROR: ppc64le architecture not found in gulpfile.reh.js BUILD_TARGETS"
+      echo "The arch-1-ppc64le.patch may not have been applied correctly."
+      echo "This is required for REH builds on ppc64le."
+      exit 1
+    fi
+    echo "ppc64le support verified in gulpfile.reh.js"
   fi
 
   npm run gulp "vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"

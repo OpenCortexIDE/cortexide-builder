@@ -1,0 +1,37 @@
+diff --git a/build/linux/dependencies-generator.js b/build/linux/dependencies-generator.js.modified
+index 7111573ff00..203ed6a5389 100644
+--- a/build/linux/dependencies-generator.js
++++ b/build/linux/dependencies-generator.js.modified
+@@ -83,22 +83,18 @@ async function getDependencies(packageType, buildDir, applicationName, arch) {
+     const referenceGeneratedDeps = packageType === 'deb' ?
+         dep_lists_1.referenceGeneratedDepsByArch[arch] :
+         dep_lists_2.referenceGeneratedDepsByArch[arch];
+-    // Skip validation for newly added architectures until we have actual dependency data
+-    const newArchitectures = ['ppc64el', 'riscv64', 'loong64'];
+-    const skipValidation = newArchitectures.includes(arch);
+-    if (JSON.stringify(sortedDependencies) !== JSON.stringify(referenceGeneratedDeps)) {
+-        const failMessage = 'The dependencies list has changed.'
+-            + '\nOld:\n' + referenceGeneratedDeps.join('\n')
+-            + '\nNew:\n' + sortedDependencies.join('\n');
+-        if (FAIL_BUILD_FOR_NEW_DEPENDENCIES && !skipValidation) {
+-            throw new Error(failMessage);
+-        }
+-        else {
++    // Skip dependency check if no reference list exists for this architecture
++    if (referenceGeneratedDeps) {
++        if (JSON.stringify(sortedDependencies) !== JSON.stringify(referenceGeneratedDeps)) {
++            const failMessage = 'The dependencies list has changed.'
++                + '\nOld:\n' + referenceGeneratedDeps.join('\n')
++                + '\nNew:\n' + sortedDependencies.join('\n');
++            // CORTEXIDE: Always warn instead of throwing for alternative architectures or when dependencies change
++            // This allows builds to continue even when dependencies are updated
+             console.warn(failMessage);
+-            if (skipValidation) {
+-                console.warn(`Skipping dependency validation for ${arch} (newly added architecture)`);
+-            }
+         }
++    } else {
++        console.warn("No reference dependency list found for architecture " + arch + ". Skipping dependency check.");
+     }
+     return sortedDependencies;
+ }

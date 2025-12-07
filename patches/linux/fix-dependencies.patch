@@ -1,0 +1,40 @@
+diff --git a/build/linux/dependencies-generator.ts b/build/linux/dependencies-generator.ts
+index 6c1f7b7..a1b2c3d 100644
+--- a/build/linux/dependencies-generator.ts
++++ b/build/linux/dependencies-generator.ts
+@@ -88,11 +88,20 @@ export async function getDependencies(packageType: 'deb' | 'rpm', buildDir: s
+ 	const referenceGeneratedDeps = packageType === 'deb' ?
+ 		debianGeneratedDeps[arch as DebianArchString] :
+ 		rpmGeneratedDeps[arch as RpmArchString];
+ 	// Skip dependency check if no reference list exists for this architecture
+ 	if (referenceGeneratedDeps) {
+-		if (JSON.stringify(sortedDependencies) !== JSON.stringify(referenceGeneratedDeps)) {
+-			const failMessage = 'The dependencies list has changed.'
+-				+ '\nOld:\n' + referenceGeneratedDeps.join('\n')
+-				+ '\nNew:\n' + sortedDependencies.join('\n');
++		if (JSON.stringify(sortedDependencies) !== JSON.stringify(referenceGeneratedDeps)) {
++			const oldSet = new Set(referenceGeneratedDeps);
++			const newSet = new Set(sortedDependencies);
++			const missing = referenceGeneratedDeps.filter(dep => !newSet.has(dep));
++			const extra = sortedDependencies.filter(dep => !oldSet.has(dep));
++			
++			const failMessage = `The dependencies list has changed for architecture ${arch}.`
++				+ '\n\nReference dependencies (expected):\n' + referenceGeneratedDeps.join('\n')
++				+ '\n\nGenerated dependencies (actual):\n' + sortedDependencies.join('\n')
++				+ (missing.length > 0 ? '\n\nMissing from generated (in reference but not generated):\n' + missing.join('\n') : '')
++				+ (extra.length > 0 ? '\n\nExtra in generated (not in reference):\n' + extra.join('\n') : '');
+ 			if (FAIL_BUILD_FOR_NEW_DEPENDENCIES) {
+ 				throw new Error(failMessage);
+ 			} else {
+diff --git a/build/linux/debian/dep-lists.ts b/build/linux/debian/dep-lists.ts
+index 0d0f11b..e1f2g3h 100644
+--- a/build/linux/debian/dep-lists.ts
++++ b/build/linux/debian/dep-lists.ts
+@@ -8,6 +8,7 @@ export const additionalDeps = [
+ 	'libgtk-3-0 (>= 3.9.10) | libgtk-4-1',
+ 	'libnss3 (>= 3.26)',
+ 	'libcurl3-gnutls | libcurl3-nss | libcurl4 | libcurl3', // For Breakpad crash reports.
++	'libudev1 (>= 183)', // Required for device access, may not be detected when sysroot is skipped
+ 	'xdg-utils (>= 1.0.2)', // OS integration
+ ];
+

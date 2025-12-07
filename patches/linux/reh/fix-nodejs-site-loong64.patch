@@ -1,0 +1,37 @@
+diff --git a/build/gulpfile.reh.js b/build/gulpfile.reh.js
+index c1d64c0..5ac9f95 100644
+--- a/build/gulpfile.reh.js
++++ b/build/gulpfile.reh.js
+@@ -232,9 +232,23 @@ function nodejs(platform, arch) {
+ 		case 'linux':
+-			return (product.nodejsRepository !== 'https://nodejs.org' ?
+-				fetchGithub(product.nodejsRepository, { version: `${nodeVersion}-${internalNodeVersion}`, name: expectedName, checksumSha256 }) :
+-				fetchUrls(`/dist/v${nodeVersion}/node-v${nodeVersion}-${platform}-${arch}.tar.gz`, { base: 'https://nodejs.org', checksumSha256 })
+-			).pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+-				.pipe(filter('**/node'))
+-				.pipe(util.setExecutableBit('**'))
+-				.pipe(rename('node'));
++			// Support custom Node.js download sites for alternative architectures
++			// (e.g., loong64, riscv64 use unofficial-builds.nodejs.org)
++			if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
++				return fetchUrls(`${process.env.VSCODE_NODEJS_URLROOT}/v${nodeVersion}/node-v${nodeVersion}-${platform}-${arch}${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
++					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
++					.pipe(filter('**/node'))
++					.pipe(util.setExecutableBit('**'))
++					.pipe(rename('node'));
++			}
++			if (product.nodejsRepository !== 'https://nodejs.org') {
++				return fetchGithub(product.nodejsRepository, { version: `${nodeVersion}-${internalNodeVersion}`, name: expectedName, checksumSha256 })
++					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
++					.pipe(filter('**/node'))
++					.pipe(util.setExecutableBit('**'))
++					.pipe(rename('node'));
++			}
++			else {
++				return fetchUrls(`/dist/v${nodeVersion}/node-v${nodeVersion}-${platform}-${arch}.tar.gz`, { base: 'https://nodejs.org', checksumSha256 })
++					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
++					.pipe(filter('**/node'))
++					.pipe(util.setExecutableBit('**'))
++					.pipe(rename('node'));
++			}
+ 		case 'alpine':

@@ -76,6 +76,9 @@ else
   CORTEXIDE_BRANCH="main"
   echo "Local CortexIDE repo not found, cloning from GitHub ${CORTEXIDE_BRANCH}..."
   
+  # Remove existing vscode directory if it exists
+  rm -rf vscode
+  
   mkdir -p vscode
   cd vscode || { echo "'vscode' dir not found"; exit 1; }
   

@@ -24,12 +24,26 @@ apply_patch() {
 
   cp $1{,.bak}
 
-  replace "s|!!APP_NAME!!|${APP_NAME}|g" "$1"
-  replace "s|!!APP_NAME_LC!!|${APP_NAME_LC}|g" "$1"
-  replace "s|!!BINARY_NAME!!|${BINARY_NAME}|g" "$1"
-  replace "s|!!GH_REPO_PATH!!|${GH_REPO_PATH}|g" "$1"
-  replace "s|!!ORG_NAME!!|${ORG_NAME}|g" "$1"
-  replace "s|!!RELEASE_VERSION!!|${RELEASE_VERSION}|g" "$1"
+  # Only replace template variables if they exist in the patch file
+  # This prevents corrupting patches that don't use template variables
+  if grep -q "!!APP_NAME!!" "$1" 2>/dev/null; then
+    replace "s|!!APP_NAME!!|${APP_NAME}|g" "$1"
+  fi
+  if grep -q "!!APP_NAME_LC!!" "$1" 2>/dev/null; then
+    replace "s|!!APP_NAME_LC!!|${APP_NAME_LC}|g" "$1"
+  fi
+  if grep -q "!!BINARY_NAME!!" "$1" 2>/dev/null; then
+    replace "s|!!BINARY_NAME!!|${BINARY_NAME}|g" "$1"
+  fi
+  if grep -q "!!GH_REPO_PATH!!" "$1" 2>/dev/null; then
+    replace "s|!!GH_REPO_PATH!!|${GH_REPO_PATH}|g" "$1"
+  fi
+  if grep -q "!!ORG_NAME!!" "$1" 2>/dev/null; then
+    replace "s|!!ORG_NAME!!|${ORG_NAME}|g" "$1"
+  fi
+  if grep -q "!!RELEASE_VERSION!!" "$1" 2>/dev/null; then
+    replace "s|!!RELEASE_VERSION!!|${RELEASE_VERSION}|g" "$1"
+  fi
 
   # Try to apply the patch, capturing errors
   PATCH_ERROR=$(git apply --ignore-whitespace "$1" 2>&1) || PATCH_FAILED=1
@@ -49,7 +63,7 @@ apply_patch() {
       # Try with --reject to see if we can partially apply
       echo "Warning: Patch may have conflicts, attempting partial apply..."
       git apply --reject --ignore-whitespace "$1" 2>&1 || true
-      
+
       # Check if we have .rej files (unresolved conflicts)
       if find . -name "*.rej" -type f 2>/dev/null | grep -q .; then
         [[ -z "$silent_mode" ]] && echo "Warning: Patch has conflicts, but CortexIDE may already have these changes."

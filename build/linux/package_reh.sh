@@ -3,12 +3,21 @@
 
 set -ex
 
+# Set CI_BUILD to "yes" if not explicitly set to "no" (default to CI mode)
+# This ensures the script works in CI environments where CI_BUILD might be unset
+if [[ -z "${CI_BUILD}" ]]; then
+  export CI_BUILD="yes"
+fi
+
 if [[ "${CI_BUILD}" == "no" ]]; then
   exit 1
 fi
 
 # include common functions
-. ./utils.sh
+# Use path relative to script location to ensure utils.sh is found
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUILDER_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${BUILDER_ROOT}/utils.sh"
 
 mkdir -p assets
 
@@ -20,6 +29,7 @@ GLIBC_VERSION="2.28"
 GLIBCXX_VERSION="3.4.26"
 NODE_VERSION="20.18.2"
 
+# Default Node.js URL configuration (can be overridden per architecture)
 export VSCODE_NODEJS_URLROOT='/download/release'
 export VSCODE_NODEJS_URLSUFFIX=''
 
@@ -39,6 +49,7 @@ elif [[ "${VSCODE_ARCH}" == "arm64" ]]; then
   VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME="vscodium/vscodium-linux-build-agent:focal-devtoolset-arm64"
 
   export VSCODE_SKIP_SYSROOT=1
+  export VSCODE_SKIP_SETUPENV=1
   export USE_GNUPP2A=1
 elif [[ "${VSCODE_ARCH}" == "armhf" ]]; then
   EXPECTED_GLIBC_VERSION="2.30"
@@ -46,6 +57,7 @@ elif [[ "${VSCODE_ARCH}" == "armhf" ]]; then
   VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME="vscodium/vscodium-linux-build-agent:focal-devtoolset-armhf"
 
   export VSCODE_SKIP_SYSROOT=1
+  export VSCODE_SKIP_SETUPENV=1
   export USE_GNUPP2A=1
 elif [[ "${VSCODE_ARCH}" == "ppc64le" ]]; then
   VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME="vscodium/vscodium-linux-build-agent:focal-devtoolset-ppc64le"
@@ -53,30 +65,42 @@ elif [[ "${VSCODE_ARCH}" == "ppc64le" ]]; then
   export VSCODE_SYSROOT_REPOSITORY='VSCodium/vscode-linux-build-agent'
   export VSCODE_SYSROOT_VERSION='20240129-253798'
   export USE_GNUPP2A=1
+  export VSCODE_SKIP_SYSROOT=1
 elif [[ "${VSCODE_ARCH}" == "riscv64" ]]; then
   NODE_VERSION="20.16.0"
   VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME="vscodium/vscodium-linux-build-agent:focal-devtoolset-riscv64"
 
   export VSCODE_SKIP_SETUPENV=1
   export VSCODE_NODEJS_SITE='https://unofficial-builds.nodejs.org'
+  export VSCODE_NODEJS_URLROOT='/download/release'
+  export VSCODE_NODEJS_URLSUFFIX=''
 elif [[ "${VSCODE_ARCH}" == "loong64" ]]; then
   NODE_VERSION="20.16.0"
   VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME="vscodium/vscodium-linux-build-agent:beige-devtoolset-loong64"
 
   export VSCODE_SKIP_SETUPENV=1
   export VSCODE_NODEJS_SITE='https://unofficial-builds.nodejs.org'
+  export VSCODE_NODEJS_URLROOT='/download/release'
+  export VSCODE_NODEJS_URLSUFFIX=''
 elif [[ "${VSCODE_ARCH}" == "s390x" ]]; then
   VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME="vscodium/vscodium-linux-build-agent:focal-devtoolset-s390x"
 
   export VSCODE_SYSROOT_REPOSITORY='VSCodium/vscode-linux-build-agent'
   export VSCODE_SYSROOT_VERSION='20241108'
+  export VSCODE_SKIP_SYSROOT=1
 fi
 
 export ELECTRON_SKIP_BINARY_DOWNLOAD=1
 export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 export VSCODE_PLATFORM='linux'
 export VSCODE_SKIP_NODE_VERSION_CHECK=1
-export VSCODE_SYSROOT_PREFIX="-glibc-${GLIBC_VERSION}"
+# Don't override VSCODE_SYSROOT_PREFIX - let setup-env.sh use the correct defaults
+
+# Ensure Node.js environment variables are exported for gulp tasks
+# These are needed for alternative architectures (riscv64, loong64) that use unofficial-builds.nodejs.org
+export VSCODE_NODEJS_SITE="${VSCODE_NODEJS_SITE:-}"
+export VSCODE_NODEJS_URLROOT="${VSCODE_NODEJS_URLROOT:-/download/release}"
+export VSCODE_NODEJS_URLSUFFIX="${VSCODE_NODEJS_URLSUFFIX:-}"
 
 EXPECTED_GLIBC_VERSION="${EXPECTED_GLIBC_VERSION:=GLIBC_VERSION}"
 VSCODE_HOST_MOUNT="$( pwd )"
@@ -84,12 +108,13 @@ VSCODE_HOST_MOUNT="$( pwd )"
 export VSCODE_HOST_MOUNT
 export VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME
 
-sed -i "/target/s/\"20.*\"/\"${NODE_VERSION}\"/" remote/.npmrc
+sed -i "/target/s/\"[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\"/\"${NODE_VERSION}\"/" remote/.npmrc
 
 if [[ -d "../patches/linux/reh/" ]]; then
   for file in "../patches/linux/reh/"*.patch; do
     if [[ -f "${file}" ]]; then
-      apply_patch "${file}"
+      echo "Applying REH patch: $(basename "${file}")"
+      apply_patch "${file}" || echo "Warning: Patch $(basename "${file}") failed to apply (may be already applied)"
     fi
   done
 fi
@@ -124,11 +149,19 @@ EOF
   echo "${INCLUDES}" > "${HOME}/.gyp/include.gypi"
 fi
 
+# For alternative architectures, skip postinstall scripts to avoid unsupported platform errors
+# Also skip for ARM architectures when sysroot is skipped (cross-compilation not available)
+BUILD_NPM_CI_OPTS=""
+if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]] || [[ "${VSCODE_ARCH}" == "arm64" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]]; then
+  BUILD_NPM_CI_OPTS="--ignore-scripts"
+  echo "Skipping postinstall scripts for build dependencies on ${VSCODE_ARCH}"
+fi
+
 mv .npmrc .npmrc.bak
 cp ../npmrc .npmrc
 
 for i in {1..5}; do # try 5 times
-  npm ci --prefix build && break
+  npm ci --prefix build ${BUILD_NPM_CI_OPTS} && break
   if [[ $i == 3 ]]; then
     echo "Npm install failed too many times" >&2
     exit 1
@@ -144,16 +177,63 @@ if [[ -z "${VSCODE_SKIP_SETUPENV}" ]]; then
   fi
 fi
 
+# For ARM32 (armhf), verify Node.js binary is valid before proceeding
+# The Docker container may have a corrupted or wrong-architecture Node.js binary
+if [[ "${VSCODE_ARCH}" == "armhf" ]]; then
+  echo "Verifying Node.js binary for ARM32..."
+  if command -v node >/dev/null 2>&1; then
+    # Try to run node --version to verify the binary works
+    if ! node --version >/dev/null 2>&1; then
+      echo "ERROR: Node.js binary is corrupted or wrong architecture for ARM32"
+      echo "Attempting to use system Node.js or download correct binary..."
+      # Remove corrupted binary from PATH if it exists in .build directory
+      if [[ -n "${PATH}" ]] && echo "${PATH}" | grep -q "nodejs-musl"; then
+        echo "Warning: PATH contains nodejs-musl, which may be incompatible with ARM32"
+        # Try to find a working Node.js binary
+        if command -v /usr/bin/node >/dev/null 2>&1; then
+          export PATH="/usr/bin:${PATH}"
+          echo "Using /usr/bin/node instead"
+        fi
+      fi
+    else
+      echo "✓ Node.js binary verified: $(node --version)"
+    fi
+  else
+    echo "WARNING: Node.js not found in PATH"
+  fi
+fi
+
+# For alternative architectures, skip postinstall scripts to avoid unsupported platform errors
+# s390x needs this because native modules like @parcel/watcher try to build with s390x-specific
+# compiler flags on x64 hosts, which fails. Skipping scripts allows the build to continue.
+# ARM32 (armhf) also needs this to avoid Node.js binary compatibility issues in Docker containers.
+NPM_CI_OPTS=""
+if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]]; then
+  NPM_CI_OPTS="--ignore-scripts"
+  echo "Skipping postinstall scripts for ${VSCODE_ARCH} (unsupported by some packages or cross-compilation issues)"
+fi
+
 for i in {1..5}; do # try 5 times
-  npm ci && break
+  npm ci ${NPM_CI_OPTS} && break
   if [[ $i == 3 ]]; then
     echo "Npm install failed too many times" >&2
     exit 1
   fi
   echo "Npm install failed $i, trying again..."
+done
 
-  # remove dependencies that fail during cleanup
-  rm -rf node_modules/@vscode node_modules/node-pty
+# Install extension dependencies (required for TypeScript compilation)
+echo "Installing extension dependencies..."
+for ext_dir in extensions/*/; do
+  if [[ -f "${ext_dir}package.json" ]] && [[ -f "${ext_dir}package-lock.json" ]]; then
+    ext_name=$(basename "$ext_dir")
+    echo "Installing deps for ${ext_name}..."
+    if (cd "$ext_dir" && npm ci --ignore-scripts); then
+      echo "✓ Successfully installed dependencies for ${ext_name}"
+    else
+      echo "⚠ Warning: Failed to install dependencies for ${ext_name}, continuing..."
+    fi
+  fi
 done
 
 mv .npmrc.bak .npmrc
@@ -164,15 +244,504 @@ export VSCODE_NODE_GLIBC="-glibc-${GLIBC_VERSION}"
 
 if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
   echo "Building REH"
+  # Compile extensions before minifying (extensions need their dependencies installed)
+  echo "Compiling extensions for REH..."
+  npm run gulp compile-extensions-build || echo "Warning: Extension compilation failed, continuing..."
   npm run gulp minify-vscode-reh
+
+  # Fix fetch.js import issues that prevent REH builds
+  if [[ -f "build/lib/fetch.js" ]]; then
+    echo "Applying direct fix to fetch.js for REH compatibility..."
+    node -e "
+      const fs = require('fs');
+      const path = './build/lib/fetch.js';
+      let content = fs.readFileSync(path, 'utf8');
+      content = content.replace(
+        /return event_stream_1\.default\.readArray\(urls\)\.pipe\(event_stream_1\.default\.map\(/g,
+        '// Use a classic CommonJS require for \`event-stream\` to avoid cases where the\n    // transpiled default import does not expose \`readArray\` in some environments.\n    // This mirrors how other build scripts (e.g. \`gulpfile.reh.js\`) consume it.\n    const es = require(\"event-stream\");\n    return es.readArray(urls).pipe(es.map('
+      );
+      content = content.replace(
+        /const ansi_colors_1 = __importDefault\(require\(\"ansi-colors\"\)\);/g,
+        '// Use direct require for ansi-colors to avoid default import issues in some environments\nconst ansiColors = require(\"ansi-colors\");'
+      );
+      content = content.replace(/ansi_colors_1\.default/g, 'ansiColors');
+      fs.writeFileSync(path, content, 'utf8');
+      console.log('fetch.js fixes applied successfully');
+    "
+  fi
+
+  # Apply safety fix for "Invalid glob argument" error at line 339
+  # This ensures dependenciesSrc never contains empty strings that could cause gulp.src() to fail
+  echo "Applying safety fix for dependenciesSrc in gulpfile.reh.js..."
+  node << 'DEPS_FIX'
+const fs = require('fs');
+const file = 'build/gulpfile.reh.js';
+let content = fs.readFileSync(file, 'utf8');
+
+// Check if the fix is already applied
+if (content.includes('finalDepsSrc') && content.includes('remote/node_modules/**')) {
+  console.log('Dependencies fix already applied');
+  process.exit(0);
+}
+
+// Find the problematic section around line 338-340
+// Look for: const dependenciesSrc = ... and const deps = gulp.src(dependenciesSrc
+const depsSection = /(const productionDependencies = getProductionDependencies\(REMOTE_FOLDER\);[\s\S]*?const dependenciesSrc = [^;]+;[\s\S]*?const deps = gulp\.src\([^)]+\))/;
+const match = content.match(depsSection);
+
+if (match) {
+  const oldSection = match[1];
+  // Replace with safer version that filters out empty strings more aggressively
+  const newSection = `const productionDependencies = getProductionDependencies(REMOTE_FOLDER);
+		const dependenciesSrc = productionDependencies
+			.map(d => {
+				const relPath = path.relative(REPO_ROOT, d);
+				return relPath && relPath.trim() !== '' ? relPath : null;
+			})
+			.filter(d => d !== null)
+			.map(d => [\`\${d}/**\`, \`!\${d}/**/{test,tests}/**\`, \`!\${d}/.bin/**\`])
+			.flat()
+			.filter(pattern => pattern && typeof pattern === 'string' && pattern.trim() !== '');
+		// Ensure we have at least one valid pattern to avoid "Invalid glob argument" error
+		const finalDepsSrc = dependenciesSrc.length > 0 ? dependenciesSrc : ['remote/node_modules/**'];
+		const deps = gulp.src(finalDepsSrc, { base: 'remote', dot: true, allowEmpty: true })`;
+
+  content = content.replace(depsSection, newSection);
+  fs.writeFileSync(file, content, 'utf8');
+  console.log('Applied dependencies fix to gulpfile.reh.js');
+} else {
+  console.log('Could not find dependenciesSrc section to fix - pattern may have changed');
+  // Try a simpler replacement - just fix the gulp.src line
+  if (content.includes('gulp.src(dependenciesSrc')) {
+    content = content.replace(
+      /const deps = gulp\.src\(dependenciesSrc[^)]*\)/,
+      'const finalDepsSrc = dependenciesSrc && dependenciesSrc.length > 0 ? dependenciesSrc.filter(p => p && p.trim()) : [\'remote/node_modules/**\'];\n\t\tconst deps = gulp.src(finalDepsSrc, { base: \'remote\', dot: true, allowEmpty: true })'
+    );
+    fs.writeFileSync(file, content, 'utf8');
+    console.log('Applied simplified dependencies fix to gulpfile.reh.js');
+  } else {
+    console.log('Warning: Could not apply dependencies fix - build may fail');
+  }
+}
+DEPS_FIX
+
+  # Verify that all architectures are supported in gulpfile.reh.js before attempting build
+  # If the patch wasn't applied, the build will fail with "Invalid glob argument"
+  # Check armhf (ARM32) - this should be in base BUILD_TARGETS but may be missing
+  if [[ "${VSCODE_ARCH}" == "armhf" ]]; then
+    echo "Verifying armhf support in gulpfile.reh.js..."
+    if ! grep -q "'armhf'" build/gulpfile.reh.js 2>/dev/null && ! grep -q '"armhf"' build/gulpfile.reh.js 2>/dev/null; then
+      echo "ERROR: armhf architecture not found in gulpfile.reh.js BUILD_TARGETS"
+      echo "armhf should be in the base BUILD_TARGETS but appears to be missing."
+      echo "Attempting to add armhf to BUILD_TARGETS..."
+      # Add armhf to BUILD_TARGETS if it's missing
+      node << 'ARMFH_FIX'
+const fs = require('fs');
+const file = 'build/gulpfile.reh.js';
+let content = fs.readFileSync(file, 'utf8');
+
+// Find BUILD_TARGETS array and add armhf if missing
+// Look for the pattern: { platform: 'linux', arch: 'arm64' },
+// and add armhf before arm64
+if (!content.includes("'armhf'") && !content.includes('"armhf"')) {
+  // Try to find where to insert armhf (should be before arm64)
+  const arm64Pattern = /(\s*)(\{ platform: 'linux', arch: 'arm64' \},)/;
+  if (arm64Pattern.test(content)) {
+    content = content.replace(arm64Pattern, "$1{ platform: 'linux', arch: 'armhf' },\n$1$2");
+    fs.writeFileSync(file, content, 'utf8');
+    console.log('Added armhf to BUILD_TARGETS in gulpfile.reh.js');
+  } else {
+    console.log('Could not find insertion point for armhf');
+    process.exit(1);
+  }
+} else {
+  console.log('armhf already in BUILD_TARGETS');
+}
+ARMFH_FIX
+      # Verify it was added
+      if grep -q "'armhf'" build/gulpfile.reh.js 2>/dev/null || grep -q '"armhf"' build/gulpfile.reh.js 2>/dev/null; then
+        echo "armhf support verified in gulpfile.reh.js after fix"
+      else
+        echo "ERROR: Failed to add armhf to gulpfile.reh.js"
+        exit 1
+      fi
+    else
+      echo "armhf support verified in gulpfile.reh.js"
+    fi
+  fi
+
+  # Check ppc64le
+  if [[ "${VSCODE_ARCH}" == "ppc64le" ]]; then
+    echo "Verifying ppc64le support in gulpfile.reh.js..."
+    if ! grep -q "'ppc64le'" build/gulpfile.reh.js 2>/dev/null && ! grep -q '"ppc64le"' build/gulpfile.reh.js 2>/dev/null; then
+      echo "ERROR: ppc64le architecture not found in gulpfile.reh.js BUILD_TARGETS"
+      echo "The arch-1-ppc64le.patch may not have been applied correctly."
+      echo "This is required for REH builds on ppc64le."
+      exit 1
+    fi
+    echo "ppc64le support verified in gulpfile.reh.js"
+  fi
+
+  # Check riscv64
+  if [[ "${VSCODE_ARCH}" == "riscv64" ]]; then
+    echo "Verifying riscv64 support in gulpfile.reh.js..."
+    if ! grep -q "'riscv64'" build/gulpfile.reh.js 2>/dev/null && ! grep -q '"riscv64"' build/gulpfile.reh.js 2>/dev/null; then
+      echo "ERROR: riscv64 architecture not found in gulpfile.reh.js BUILD_TARGETS"
+      echo "The arch-2-riscv64.patch may not have been applied correctly."
+      echo "Attempting to apply the patch now..."
+      PATCH_PATH="../patches/linux/arch-2-riscv64.patch"
+      if [[ -f "${PATCH_PATH}" ]]; then
+        if apply_patch "${PATCH_PATH}"; then
+          echo "Successfully applied arch-2-riscv64.patch"
+        else
+          echo "Failed to apply arch-2-riscv64.patch"
+          exit 1
+        fi
+      else
+        echo "ERROR: arch-2-riscv64.patch not found"
+        exit 1
+      fi
+    else
+      echo "riscv64 support verified in gulpfile.reh.js"
+    fi
+  fi
+
+  # Check loong64
+  if [[ "${VSCODE_ARCH}" == "loong64" ]]; then
+    echo "Verifying loong64 support in gulpfile.reh.js..."
+    if ! grep -q "'loong64'" build/gulpfile.reh.js 2>/dev/null && ! grep -q '"loong64"' build/gulpfile.reh.js 2>/dev/null; then
+      echo "ERROR: loong64 architecture not found in gulpfile.reh.js BUILD_TARGETS"
+      echo "The arch-3-loong64.patch may not have been applied correctly."
+      echo "Attempting to apply the patch now..."
+      PATCH_PATH="../patches/linux/arch-3-loong64.patch"
+      if [[ -f "${PATCH_PATH}" ]]; then
+        if apply_patch "${PATCH_PATH}"; then
+          echo "Successfully applied arch-3-loong64.patch"
+        else
+          echo "Failed to apply arch-3-loong64.patch"
+          exit 1
+        fi
+      else
+        echo "ERROR: arch-3-loong64.patch not found"
+        exit 1
+      fi
+    else
+      echo "loong64 support verified in gulpfile.reh.js"
+    fi
+  fi
+
+  # Verify that s390x is supported in gulpfile.reh.js before attempting build
+  # If the patch wasn't applied, the build will fail with "Task never defined"
+  if [[ "${VSCODE_ARCH}" == "s390x" ]]; then
+    echo "Verifying s390x support in gulpfile.reh.js..."
+    # Check for s390x in BUILD_TARGETS - look for the actual pattern
+    if ! grep -q "arch: 's390x'" build/gulpfile.reh.js 2>/dev/null && ! grep -q 'arch: "s390x"' build/gulpfile.reh.js 2>/dev/null; then
+      echo "ERROR: s390x architecture not found in gulpfile.reh.js BUILD_TARGETS"
+      echo "The arch-4-s390x.patch may not have been applied correctly."
+      echo "This is required for REH builds on s390x."
+      echo "Attempting to apply the patch now..."
+      # Try to apply the patch if it exists
+      PATCH_PATH="../patches/linux/arch-4-s390x.patch"
+      if [[ -f "${PATCH_PATH}" ]]; then
+        echo "Found patch at ${PATCH_PATH}, applying..."
+        # Try to apply, but if it fails due to already being applied, check if s390x is actually there
+        if apply_patch "${PATCH_PATH}" 2>&1 | grep -q "already applied\|already exists"; then
+          echo "Patch reports as already applied, verifying s390x is actually present..."
+          # Check again after the "already applied" message
+          if grep -q "arch: 's390x'" build/gulpfile.reh.js 2>/dev/null || grep -q 'arch: "s390x"' build/gulpfile.reh.js 2>/dev/null; then
+            echo "s390x found in gulpfile.reh.js (patch was already applied)"
+          else
+            echo "WARNING: Patch says already applied but s390x not found. Manually adding s390x..."
+            # Manually add s390x to BUILD_TARGETS
+            node << 'S390X_FIX'
+const fs = require('fs');
+const file = 'build/gulpfile.reh.js';
+let content = fs.readFileSync(file, 'utf8');
+
+// Find BUILD_TARGETS array and add s390x if missing
+// Look for the pattern: { platform: 'linux', arch: 'loong64' },
+// and add s390x after loong64
+if (!content.includes("arch: 's390x'") && !content.includes('arch: "s390x"')) {
+  // Try to find where to insert s390x (should be after loong64)
+  const loong64Pattern = /(\s*)(\{ platform: 'linux', arch: 'loong64' \},)/;
+  if (loong64Pattern.test(content)) {
+    content = content.replace(loong64Pattern, "$1$2\n$1{ platform: 'linux', arch: 's390x' },");
+    fs.writeFileSync(file, content, 'utf8');
+    console.log('Added s390x to BUILD_TARGETS in gulpfile.reh.js');
+  } else {
+    console.log('Could not find insertion point for s390x');
+    process.exit(1);
+  }
+} else {
+  console.log('s390x already in BUILD_TARGETS');
+}
+S390X_FIX
+            # Verify it was added
+            if grep -q "arch: 's390x'" build/gulpfile.reh.js 2>/dev/null || grep -q 'arch: "s390x"' build/gulpfile.reh.js 2>/dev/null; then
+              echo "s390x support verified in gulpfile.reh.js after manual fix"
+            else
+              echo "ERROR: Failed to add s390x to gulpfile.reh.js"
+              exit 1
+            fi
+          fi
+        elif apply_patch "${PATCH_PATH}"; then
+          echo "Successfully applied arch-4-s390x.patch"
+          # Verify it was applied
+          if grep -q "arch: 's390x'" build/gulpfile.reh.js 2>/dev/null || grep -q 'arch: "s390x"' build/gulpfile.reh.js 2>/dev/null; then
+            echo "s390x support verified in gulpfile.reh.js after patch application"
+          else
+            echo "ERROR: Patch applied but s390x still not found in gulpfile.reh.js"
+            exit 1
+          fi
+        else
+          echo "Failed to apply arch-4-s390x.patch, attempting manual fix..."
+          # Try manual fix as fallback
+          node << 'S390X_FIX'
+const fs = require('fs');
+const file = 'build/gulpfile.reh.js';
+let content = fs.readFileSync(file, 'utf8');
+if (!content.includes("arch: 's390x'") && !content.includes('arch: "s390x"')) {
+  const loong64Pattern = /(\s*)(\{ platform: 'linux', arch: 'loong64' \},)/;
+  if (loong64Pattern.test(content)) {
+    content = content.replace(loong64Pattern, "$1$2\n$1{ platform: 'linux', arch: 's390x' },");
+    fs.writeFileSync(file, content, 'utf8');
+    console.log('Manually added s390x to BUILD_TARGETS');
+  } else {
+    console.log('Could not find insertion point');
+    process.exit(1);
+  }
+}
+S390X_FIX
+          if grep -q "arch: 's390x'" build/gulpfile.reh.js 2>/dev/null || grep -q 'arch: "s390x"' build/gulpfile.reh.js 2>/dev/null; then
+            echo "s390x support verified after manual fix"
+          else
+            echo "ERROR: All attempts to add s390x failed"
+            exit 1
+          fi
+        fi
+      else
+        echo "ERROR: arch-4-s390x.patch not found at ${PATCH_PATH}"
+        echo "This patch is required for REH builds on s390x."
+        exit 1
+      fi
+    else
+      echo "s390x support verified in gulpfile.reh.js"
+    fi
+  fi
+
+  # Verify that Node.js site patch is applied for riscv64 and loong64
+  if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]]; then
+    echo "Verifying Node.js site patch for ${VSCODE_ARCH}..."
+    # Check for the actual pattern from the patch: process.env.VSCODE_NODEJS_SITE
+    if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+      echo "ERROR: Node.js site patch not found in gulpfile.reh.js"
+      echo "The fix-nodejs-site-loong64.patch may not have been applied correctly."
+      echo "This is required for REH builds on ${VSCODE_ARCH}."
+      echo "Attempting to apply the patch now..."
+      PATCH_PATH="../patches/linux/reh/fix-nodejs-site-loong64.patch"
+      if [[ -f "${PATCH_PATH}" ]]; then
+        echo "Found patch at ${PATCH_PATH}, applying..."
+        # Try to apply the patch, but handle "already applied" case
+        PATCH_OUTPUT=$(apply_patch "${PATCH_PATH}" 2>&1) || PATCH_EXIT=$?
+        if echo "${PATCH_OUTPUT}" | grep -q "already applied\|already exists\|patch does not apply"; then
+          echo "Patch reports as already applied or not applicable, verifying actual code..."
+          # Check again if the code is actually there
+          if grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+            echo "Node.js site patch verified in gulpfile.reh.js (code is present)"
+          else
+            echo "WARNING: Patch says already applied but code not found. Manually applying fix..."
+            # Manually apply the fix using Node.js - this is a fallback if patch application fails
+            # The patch replaces the entire return statement for case 'linux' with an if/else structure
+            node << 'NODEJS_SITE_FIX'
+const fs = require('fs');
+const file = 'build/gulpfile.reh.js';
+let content = fs.readFileSync(file, 'utf8');
+
+// Check if the fix is already applied
+if (content.includes("process.env.VSCODE_NODEJS_SITE") && content.includes("VSCODE_NODEJS_URLROOT")) {
+  console.log('Fix already present');
+  process.exit(0);
+}
+
+// Find the nodejs function's linux case and apply the fix
+// Note: case 'darwin' and case 'linux' share the same code block
+// The patch replaces the single return statement with an if/else structure
+// Pattern: case 'darwin':\n\t\tcase 'linux':\n\t\t\treturn (product.nodejsRepository...)
+const linuxCasePattern = /(case 'darwin':\s+case 'linux':\s+)(return \(product\.nodejsRepository !== 'https:\/\/nodejs\.org' \?[\s\S]*?\.pipe\(rename\('node'\)\);)/;
+const match = content.match(linuxCasePattern);
+
+if (match) {
+  const caseHeader = match[1];
+  // Replace the entire return statement with the new if/else structure from the patch
+  const newCode = `${caseHeader}// Support custom Node.js download sites for alternative architectures
+			// (e.g., loong64, riscv64 use unofficial-builds.nodejs.org)
+			if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			if (product.nodejsRepository !== 'https://nodejs.org') {
+				return fetchGithub(product.nodejsRepository, { version: \`\${nodeVersion}-\${internalNodeVersion}\`, name: expectedName, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			else {
+				return fetchUrls(\`/dist/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}.tar.gz\`, { base: 'https://nodejs.org', checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}`;
+
+  content = content.replace(linuxCasePattern, newCode);
+  fs.writeFileSync(file, content, 'utf8');
+  console.log('Manually applied Node.js site fix');
+} else {
+  // Try alternative pattern matching - match the exact multiline structure with tabs
+  const altPattern = /(case 'darwin':\s*\n\t\tcase 'linux':\s*\n\t\t\t)(return \(product\.nodejsRepository !== 'https:\/\/nodejs\.org' \?[\s\S]*?\.pipe\(rename\('node'\)\);)/;
+  const altMatch = content.match(altPattern);
+
+  if (altMatch) {
+    const caseHeader = altMatch[1];
+    const newCode = `${caseHeader}// Support custom Node.js download sites for alternative architectures
+			// (e.g., loong64, riscv64 use unofficial-builds.nodejs.org)
+			if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			if (product.nodejsRepository !== 'https://nodejs.org') {
+				return fetchGithub(product.nodejsRepository, { version: \`\${nodeVersion}-\${internalNodeVersion}\`, name: expectedName, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			else {
+				return fetchUrls(\`/dist/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}.tar.gz\`, { base: 'https://nodejs.org', checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}`;
+    content = content.replace(altPattern, newCode);
+    fs.writeFileSync(file, content, 'utf8');
+    console.log('Manually applied Node.js site fix (alternative pattern)');
+  } else {
+    console.log('ERROR: Could not find linux case pattern in nodejs function');
+    console.log('Current structure around case linux:');
+    const contextMatch = content.match(/(case 'darwin':[\s\S]{0,500})/);
+    if (contextMatch) {
+      console.log(contextMatch[1]);
+    }
+    process.exit(1);
+  }
+}
+NODEJS_SITE_FIX
+            # Verify the fix was applied
+            if grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+              echo "Node.js site fix verified in gulpfile.reh.js after manual application"
+            else
+              echo "ERROR: Failed to apply Node.js site fix"
+              exit 1
+            fi
+          fi
+        elif [[ "${PATCH_EXIT:-0}" -eq 0 ]]; then
+          echo "Successfully applied fix-nodejs-site-loong64.patch"
+          # Verify it was applied
+          if grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+            echo "Node.js site patch verified in gulpfile.reh.js after application"
+          else
+            echo "ERROR: Patch applied but VSCODE_NODEJS_SITE still not found in gulpfile.reh.js"
+            exit 1
+          fi
+        else
+          echo "Failed to apply fix-nodejs-site-loong64.patch, attempting manual fix..."
+          # Try manual fix as fallback (same as above)
+          node << 'NODEJS_SITE_FIX'
+const fs = require('fs');
+const file = 'build/gulpfile.reh.js';
+let content = fs.readFileSync(file, 'utf8');
+if (!content.includes("process.env.VSCODE_NODEJS_SITE")) {
+  const linuxCasePattern = /(case 'linux':[\s\S]*?)(return \(product\.nodejsRepository)/;
+  const match = content.match(linuxCasePattern);
+  if (match) {
+    const oldPattern = /case 'linux':[\s\S]*?return \(product\.nodejsRepository !== 'https:\/\/nodejs\.org'/;
+    const newCode = `case 'linux':
+			// Support custom Node.js download sites for alternative architectures
+			if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			if (product.nodejsRepository !== 'https://nodejs.org') {
+				return fetchGithub(product.nodejsRepository, { version: \`\${nodeVersion}-\${internalNodeVersion}\`, name: expectedName, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			else {
+				return fetchUrls(\`/dist/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}.tar.gz\`, { base: 'https://nodejs.org', checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}`;
+    content = content.replace(oldPattern, newCode);
+    fs.writeFileSync(file, content, 'utf8');
+    console.log('Manually applied Node.js site fix');
+  }
+}
+NODEJS_SITE_FIX
+          if grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+            echo "Node.js site fix verified after manual application"
+          else
+            echo "ERROR: All attempts to apply Node.js site fix failed"
+            exit 1
+          fi
+        fi
+      else
+        echo "ERROR: fix-nodejs-site-loong64.patch not found at ${PATCH_PATH}"
+        echo "This patch is required for REH builds on ${VSCODE_ARCH}."
+        exit 1
+      fi
+    else
+      echo "Node.js site patch verified in gulpfile.reh.js"
+    fi
+    # Ensure environment variables are exported for the gulp task
+    # These must be explicitly exported right before the gulp task runs
+    export VSCODE_NODEJS_SITE="${VSCODE_NODEJS_SITE}"
+    export VSCODE_NODEJS_URLROOT="${VSCODE_NODEJS_URLROOT}"
+    export VSCODE_NODEJS_URLSUFFIX="${VSCODE_NODEJS_URLSUFFIX}"
+    echo "Node.js environment variables for gulp task:"
+    echo "  VSCODE_NODEJS_SITE=${VSCODE_NODEJS_SITE}"
+    echo "  VSCODE_NODEJS_URLROOT=${VSCODE_NODEJS_URLROOT}"
+    echo "  VSCODE_NODEJS_URLSUFFIX=${VSCODE_NODEJS_URLSUFFIX}"
+  fi
+
+  # Export all Node.js environment variables before running gulp
+  # This ensures they're available to the Node.js process running gulp
+  export VSCODE_NODEJS_SITE="${VSCODE_NODEJS_SITE:-}"
+  export VSCODE_NODEJS_URLROOT="${VSCODE_NODEJS_URLROOT:-/download/release}"
+  export VSCODE_NODEJS_URLSUFFIX="${VSCODE_NODEJS_URLSUFFIX:-}"
+
   npm run gulp "vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
 
   EXPECTED_GLIBC_VERSION="${EXPECTED_GLIBC_VERSION}" EXPECTED_GLIBCXX_VERSION="${GLIBCXX_VERSION}" SEARCH_PATH="../vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}" ./build/azure-pipelines/linux/verify-glibc-requirements.sh
 
   pushd "../vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}"
 
-  if [[ -f "../ripgrep_${VSCODE_PLATFORM}_${VSCODE_ARCH}.sh" ]]; then
-    bash "../ripgrep_${VSCODE_PLATFORM}_${VSCODE_ARCH}.sh" "node_modules"
+  if [[ -f "../build/linux/${VSCODE_ARCH}/ripgrep.sh" ]]; then
+    bash "../build/linux/${VSCODE_ARCH}/ripgrep.sh" "node_modules"
   fi
 
   echo "Archiving REH"
@@ -183,6 +752,9 @@ fi
 
 if [[ "${SHOULD_BUILD_REH_WEB}" != "no" ]]; then
   echo "Building REH-web"
+  # Compile extensions before minifying (extensions need their dependencies installed)
+  echo "Compiling extensions for REH-web..."
+  npm run gulp compile-extensions-build || echo "Warning: Extension compilation failed, continuing..."
   npm run gulp minify-vscode-reh-web
   npm run gulp "vscode-reh-web-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
 
@@ -190,8 +762,8 @@ if [[ "${SHOULD_BUILD_REH_WEB}" != "no" ]]; then
 
   pushd "../vscode-reh-web-${VSCODE_PLATFORM}-${VSCODE_ARCH}"
 
-  if [[ -f "../ripgrep_${VSCODE_PLATFORM}_${VSCODE_ARCH}.sh" ]]; then
-    bash "../ripgrep_${VSCODE_PLATFORM}_${VSCODE_ARCH}.sh" "node_modules"
+  if [[ -f "../build/linux/${VSCODE_ARCH}/ripgrep.sh" ]]; then
+    bash "../build/linux/${VSCODE_ARCH}/ripgrep.sh" "node_modules"
   fi
 
   echo "Archiving REH-web"

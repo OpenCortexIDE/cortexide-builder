@@ -113,7 +113,8 @@ sed -i "/target/s/\"[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\"/\"${NODE_VERSION}\"/
 if [[ -d "../patches/linux/reh/" ]]; then
   for file in "../patches/linux/reh/"*.patch; do
     if [[ -f "${file}" ]]; then
-      apply_patch "${file}"
+      echo "Applying REH patch: $(basename "${file}")"
+      apply_patch "${file}" || echo "Warning: Patch $(basename "${file}") failed to apply (may be already applied)"
     fi
   done
 fi
@@ -269,8 +270,52 @@ if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
     "
   fi
 
-  # Verify that ppc64le is supported in gulpfile.reh.js before attempting build
+  # Verify that all architectures are supported in gulpfile.reh.js before attempting build
   # If the patch wasn't applied, the build will fail with "Invalid glob argument"
+  # Check armhf (ARM32) - this should be in base BUILD_TARGETS but may be missing
+  if [[ "${VSCODE_ARCH}" == "armhf" ]]; then
+    echo "Verifying armhf support in gulpfile.reh.js..."
+    if ! grep -q "'armhf'" build/gulpfile.reh.js 2>/dev/null && ! grep -q '"armhf"' build/gulpfile.reh.js 2>/dev/null; then
+      echo "ERROR: armhf architecture not found in gulpfile.reh.js BUILD_TARGETS"
+      echo "armhf should be in the base BUILD_TARGETS but appears to be missing."
+      echo "Attempting to add armhf to BUILD_TARGETS..."
+      # Add armhf to BUILD_TARGETS if it's missing
+      node << 'ARMFH_FIX'
+const fs = require('fs');
+const file = 'build/gulpfile.reh.js';
+let content = fs.readFileSync(file, 'utf8');
+
+// Find BUILD_TARGETS array and add armhf if missing
+// Look for the pattern: { platform: 'linux', arch: 'arm64' },
+// and add armhf before arm64
+if (!content.includes("'armhf'") && !content.includes('"armhf"')) {
+  // Try to find where to insert armhf (should be before arm64)
+  const arm64Pattern = /(\s*)(\{ platform: 'linux', arch: 'arm64' \},)/;
+  if (arm64Pattern.test(content)) {
+    content = content.replace(arm64Pattern, "$1{ platform: 'linux', arch: 'armhf' },\n$1$2");
+    fs.writeFileSync(file, content, 'utf8');
+    console.log('Added armhf to BUILD_TARGETS in gulpfile.reh.js');
+  } else {
+    console.log('Could not find insertion point for armhf');
+    process.exit(1);
+  }
+} else {
+  console.log('armhf already in BUILD_TARGETS');
+}
+ARMFH_FIX
+      # Verify it was added
+      if grep -q "'armhf'" build/gulpfile.reh.js 2>/dev/null || grep -q '"armhf"' build/gulpfile.reh.js 2>/dev/null; then
+        echo "armhf support verified in gulpfile.reh.js after fix"
+      else
+        echo "ERROR: Failed to add armhf to gulpfile.reh.js"
+        exit 1
+      fi
+    else
+      echo "armhf support verified in gulpfile.reh.js"
+    fi
+  fi
+
+  # Check ppc64le
   if [[ "${VSCODE_ARCH}" == "ppc64le" ]]; then
     echo "Verifying ppc64le support in gulpfile.reh.js..."
     if ! grep -q "'ppc64le'" build/gulpfile.reh.js 2>/dev/null && ! grep -q '"ppc64le"' build/gulpfile.reh.js 2>/dev/null; then
@@ -282,33 +327,142 @@ if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
     echo "ppc64le support verified in gulpfile.reh.js"
   fi
 
+  # Check riscv64
+  if [[ "${VSCODE_ARCH}" == "riscv64" ]]; then
+    echo "Verifying riscv64 support in gulpfile.reh.js..."
+    if ! grep -q "'riscv64'" build/gulpfile.reh.js 2>/dev/null && ! grep -q '"riscv64"' build/gulpfile.reh.js 2>/dev/null; then
+      echo "ERROR: riscv64 architecture not found in gulpfile.reh.js BUILD_TARGETS"
+      echo "The arch-2-riscv64.patch may not have been applied correctly."
+      echo "Attempting to apply the patch now..."
+      PATCH_PATH="../patches/linux/arch-2-riscv64.patch"
+      if [[ -f "${PATCH_PATH}" ]]; then
+        if apply_patch "${PATCH_PATH}"; then
+          echo "Successfully applied arch-2-riscv64.patch"
+        else
+          echo "Failed to apply arch-2-riscv64.patch"
+          exit 1
+        fi
+      else
+        echo "ERROR: arch-2-riscv64.patch not found"
+        exit 1
+      fi
+    else
+      echo "riscv64 support verified in gulpfile.reh.js"
+    fi
+  fi
+
+  # Check loong64
+  if [[ "${VSCODE_ARCH}" == "loong64" ]]; then
+    echo "Verifying loong64 support in gulpfile.reh.js..."
+    if ! grep -q "'loong64'" build/gulpfile.reh.js 2>/dev/null && ! grep -q '"loong64"' build/gulpfile.reh.js 2>/dev/null; then
+      echo "ERROR: loong64 architecture not found in gulpfile.reh.js BUILD_TARGETS"
+      echo "The arch-3-loong64.patch may not have been applied correctly."
+      echo "Attempting to apply the patch now..."
+      PATCH_PATH="../patches/linux/arch-3-loong64.patch"
+      if [[ -f "${PATCH_PATH}" ]]; then
+        if apply_patch "${PATCH_PATH}"; then
+          echo "Successfully applied arch-3-loong64.patch"
+        else
+          echo "Failed to apply arch-3-loong64.patch"
+          exit 1
+        fi
+      else
+        echo "ERROR: arch-3-loong64.patch not found"
+        exit 1
+      fi
+    else
+      echo "loong64 support verified in gulpfile.reh.js"
+    fi
+  fi
+
   # Verify that s390x is supported in gulpfile.reh.js before attempting build
   # If the patch wasn't applied, the build will fail with "Task never defined"
   if [[ "${VSCODE_ARCH}" == "s390x" ]]; then
     echo "Verifying s390x support in gulpfile.reh.js..."
-    if ! grep -q "'s390x'" build/gulpfile.reh.js 2>/dev/null && ! grep -q '"s390x"' build/gulpfile.reh.js 2>/dev/null; then
+    # Check for s390x in BUILD_TARGETS - look for the actual pattern
+    if ! grep -q "arch: 's390x'" build/gulpfile.reh.js 2>/dev/null && ! grep -q 'arch: "s390x"' build/gulpfile.reh.js 2>/dev/null; then
       echo "ERROR: s390x architecture not found in gulpfile.reh.js BUILD_TARGETS"
       echo "The arch-4-s390x.patch may not have been applied correctly."
       echo "This is required for REH builds on s390x."
       echo "Attempting to apply the patch now..."
       # Try to apply the patch if it exists
-      # The patch should be in the builder root, not in vscode directory
-      # We're currently in the vscode directory, so we need to go up to find the patch
       PATCH_PATH="../patches/linux/arch-4-s390x.patch"
       if [[ -f "${PATCH_PATH}" ]]; then
         echo "Found patch at ${PATCH_PATH}, applying..."
-        if apply_patch "${PATCH_PATH}"; then
+        # Try to apply, but if it fails due to already being applied, check if s390x is actually there
+        if apply_patch "${PATCH_PATH}" 2>&1 | grep -q "already applied\|already exists"; then
+          echo "Patch reports as already applied, verifying s390x is actually present..."
+          # Check again after the "already applied" message
+          if grep -q "arch: 's390x'" build/gulpfile.reh.js 2>/dev/null || grep -q 'arch: "s390x"' build/gulpfile.reh.js 2>/dev/null; then
+            echo "s390x found in gulpfile.reh.js (patch was already applied)"
+          else
+            echo "WARNING: Patch says already applied but s390x not found. Manually adding s390x..."
+            # Manually add s390x to BUILD_TARGETS
+            node << 'S390X_FIX'
+const fs = require('fs');
+const file = 'build/gulpfile.reh.js';
+let content = fs.readFileSync(file, 'utf8');
+
+// Find BUILD_TARGETS array and add s390x if missing
+// Look for the pattern: { platform: 'linux', arch: 'loong64' },
+// and add s390x after loong64
+if (!content.includes("arch: 's390x'") && !content.includes('arch: "s390x"')) {
+  // Try to find where to insert s390x (should be after loong64)
+  const loong64Pattern = /(\s*)(\{ platform: 'linux', arch: 'loong64' \},)/;
+  if (loong64Pattern.test(content)) {
+    content = content.replace(loong64Pattern, "$1$2\n$1{ platform: 'linux', arch: 's390x' },");
+    fs.writeFileSync(file, content, 'utf8');
+    console.log('Added s390x to BUILD_TARGETS in gulpfile.reh.js');
+  } else {
+    console.log('Could not find insertion point for s390x');
+    process.exit(1);
+  }
+} else {
+  console.log('s390x already in BUILD_TARGETS');
+}
+S390X_FIX
+            # Verify it was added
+            if grep -q "arch: 's390x'" build/gulpfile.reh.js 2>/dev/null || grep -q 'arch: "s390x"' build/gulpfile.reh.js 2>/dev/null; then
+              echo "s390x support verified in gulpfile.reh.js after manual fix"
+            else
+              echo "ERROR: Failed to add s390x to gulpfile.reh.js"
+              exit 1
+            fi
+          fi
+        elif apply_patch "${PATCH_PATH}"; then
           echo "Successfully applied arch-4-s390x.patch"
           # Verify it was applied
-          if grep -q "'s390x'" build/gulpfile.reh.js 2>/dev/null || grep -q '"s390x"' build/gulpfile.reh.js 2>/dev/null; then
+          if grep -q "arch: 's390x'" build/gulpfile.reh.js 2>/dev/null || grep -q 'arch: "s390x"' build/gulpfile.reh.js 2>/dev/null; then
             echo "s390x support verified in gulpfile.reh.js after patch application"
           else
             echo "ERROR: Patch applied but s390x still not found in gulpfile.reh.js"
             exit 1
           fi
         else
-          echo "Failed to apply arch-4-s390x.patch"
-          exit 1
+          echo "Failed to apply arch-4-s390x.patch, attempting manual fix..."
+          # Try manual fix as fallback
+          node << 'S390X_FIX'
+const fs = require('fs');
+const file = 'build/gulpfile.reh.js';
+let content = fs.readFileSync(file, 'utf8');
+if (!content.includes("arch: 's390x'") && !content.includes('arch: "s390x"')) {
+  const loong64Pattern = /(\s*)(\{ platform: 'linux', arch: 'loong64' \},)/;
+  if (loong64Pattern.test(content)) {
+    content = content.replace(loong64Pattern, "$1$2\n$1{ platform: 'linux', arch: 's390x' },");
+    fs.writeFileSync(file, content, 'utf8');
+    console.log('Manually added s390x to BUILD_TARGETS');
+  } else {
+    console.log('Could not find insertion point');
+    process.exit(1);
+  }
+}
+S390X_FIX
+          if grep -q "arch: 's390x'" build/gulpfile.reh.js 2>/dev/null || grep -q 'arch: "s390x"' build/gulpfile.reh.js 2>/dev/null; then
+            echo "s390x support verified after manual fix"
+          else
+            echo "ERROR: All attempts to add s390x failed"
+            exit 1
+          fi
         fi
       else
         echo "ERROR: arch-4-s390x.patch not found at ${PATCH_PATH}"
@@ -323,13 +477,36 @@ if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
   # Verify that Node.js site patch is applied for riscv64 and loong64
   if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]]; then
     echo "Verifying Node.js site patch for ${VSCODE_ARCH}..."
-    if ! grep -q "VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+    # Check for the actual pattern from the patch: process.env.VSCODE_NODEJS_SITE
+    if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
       echo "ERROR: Node.js site patch not found in gulpfile.reh.js"
       echo "The fix-nodejs-site-loong64.patch may not have been applied correctly."
       echo "This is required for REH builds on ${VSCODE_ARCH}."
-      exit 1
+      echo "Attempting to apply the patch now..."
+      PATCH_PATH="../patches/linux/reh/fix-nodejs-site-loong64.patch"
+      if [[ -f "${PATCH_PATH}" ]]; then
+        echo "Found patch at ${PATCH_PATH}, applying..."
+        if apply_patch "${PATCH_PATH}"; then
+          echo "Successfully applied fix-nodejs-site-loong64.patch"
+          # Verify it was applied
+          if grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+            echo "Node.js site patch verified in gulpfile.reh.js after application"
+          else
+            echo "ERROR: Patch applied but VSCODE_NODEJS_SITE still not found in gulpfile.reh.js"
+            exit 1
+          fi
+        else
+          echo "Failed to apply fix-nodejs-site-loong64.patch"
+          exit 1
+        fi
+      else
+        echo "ERROR: fix-nodejs-site-loong64.patch not found at ${PATCH_PATH}"
+        echo "This patch is required for REH builds on ${VSCODE_ARCH}."
+        exit 1
+      fi
+    else
+      echo "Node.js site patch verified in gulpfile.reh.js"
     fi
-    echo "Node.js site patch verified in gulpfile.reh.js"
     # Ensure environment variables are exported for the gulp task
     # These must be explicitly exported right before the gulp task runs
     export VSCODE_NODEJS_SITE="${VSCODE_NODEJS_SITE}"

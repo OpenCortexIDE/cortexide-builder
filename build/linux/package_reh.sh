@@ -270,6 +270,61 @@ if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
     "
   fi
 
+  # Apply safety fix for "Invalid glob argument" error at line 339
+  # This ensures dependenciesSrc never contains empty strings that could cause gulp.src() to fail
+  echo "Applying safety fix for dependenciesSrc in gulpfile.reh.js..."
+  node << 'DEPS_FIX'
+const fs = require('fs');
+const file = 'build/gulpfile.reh.js';
+let content = fs.readFileSync(file, 'utf8');
+
+// Check if the fix is already applied
+if (content.includes('finalDepsSrc') && content.includes('remote/node_modules/**')) {
+  console.log('Dependencies fix already applied');
+  process.exit(0);
+}
+
+// Find the problematic section around line 338-340
+// Look for: const dependenciesSrc = ... and const deps = gulp.src(dependenciesSrc
+const depsSection = /(const productionDependencies = getProductionDependencies\(REMOTE_FOLDER\);[\s\S]*?const dependenciesSrc = [^;]+;[\s\S]*?const deps = gulp\.src\([^)]+\))/;
+const match = content.match(depsSection);
+
+if (match) {
+  const oldSection = match[1];
+  // Replace with safer version that filters out empty strings more aggressively
+  const newSection = `const productionDependencies = getProductionDependencies(REMOTE_FOLDER);
+		const dependenciesSrc = productionDependencies
+			.map(d => {
+				const relPath = path.relative(REPO_ROOT, d);
+				return relPath && relPath.trim() !== '' ? relPath : null;
+			})
+			.filter(d => d !== null)
+			.map(d => [\`\${d}/**\`, \`!\${d}/**/{test,tests}/**\`, \`!\${d}/.bin/**\`])
+			.flat()
+			.filter(pattern => pattern && typeof pattern === 'string' && pattern.trim() !== '');
+		// Ensure we have at least one valid pattern to avoid "Invalid glob argument" error
+		const finalDepsSrc = dependenciesSrc.length > 0 ? dependenciesSrc : ['remote/node_modules/**'];
+		const deps = gulp.src(finalDepsSrc, { base: 'remote', dot: true, allowEmpty: true })`;
+
+  content = content.replace(depsSection, newSection);
+  fs.writeFileSync(file, content, 'utf8');
+  console.log('Applied dependencies fix to gulpfile.reh.js');
+} else {
+  console.log('Could not find dependenciesSrc section to fix - pattern may have changed');
+  // Try a simpler replacement - just fix the gulp.src line
+  if (content.includes('gulp.src(dependenciesSrc')) {
+    content = content.replace(
+      /const deps = gulp\.src\(dependenciesSrc[^)]*\)/,
+      'const finalDepsSrc = dependenciesSrc && dependenciesSrc.length > 0 ? dependenciesSrc.filter(p => p && p.trim()) : [\'remote/node_modules/**\'];\n\t\tconst deps = gulp.src(finalDepsSrc, { base: \'remote\', dot: true, allowEmpty: true })'
+    );
+    fs.writeFileSync(file, content, 'utf8');
+    console.log('Applied simplified dependencies fix to gulpfile.reh.js');
+  } else {
+    console.log('Warning: Could not apply dependencies fix - build may fail');
+  }
+}
+DEPS_FIX
+
   # Verify that all architectures are supported in gulpfile.reh.js before attempting build
   # If the patch wasn't applied, the build will fail with "Invalid glob argument"
   # Check armhf (ARM32) - this should be in base BUILD_TARGETS but may be missing
@@ -496,35 +551,29 @@ S390X_FIX
           else
             echo "WARNING: Patch says already applied but code not found. Manually applying fix..."
             # Manually apply the fix using Node.js - this is a fallback if patch application fails
+            # The patch replaces the entire return statement for case 'linux' with an if/else structure
             node << 'NODEJS_SITE_FIX'
 const fs = require('fs');
 const file = 'build/gulpfile.reh.js';
 let content = fs.readFileSync(file, 'utf8');
 
 // Check if the fix is already applied
-if (content.includes("process.env.VSCODE_NODEJS_SITE")) {
+if (content.includes("process.env.VSCODE_NODEJS_SITE") && content.includes("VSCODE_NODEJS_URLROOT")) {
   console.log('Fix already present');
   process.exit(0);
 }
 
 // Find the nodejs function's linux case and apply the fix
-// The patch adds support for VSCODE_NODEJS_SITE environment variable
-const linuxCasePattern = /(case 'linux':[\s\S]*?)(return \(product\.nodejsRepository)/;
+// Note: case 'darwin' and case 'linux' share the same code block
+// The patch replaces the single return statement with an if/else structure
+// Pattern: case 'darwin':\n\t\tcase 'linux':\n\t\t\treturn (product.nodejsRepository...)
+const linuxCasePattern = /(case 'darwin':\s+case 'linux':\s+)(return \(product\.nodejsRepository !== 'https:\/\/nodejs\.org' \?[\s\S]*?\.pipe\(rename\('node'\)\);)/;
 const match = content.match(linuxCasePattern);
 
 if (match) {
-  let linuxCase = match[1];
-
-  // Check if already fixed
-  if (linuxCase.includes('process.env.VSCODE_NODEJS_SITE')) {
-    console.log('Fix already present in linux case');
-    process.exit(0);
-  }
-
-  // Apply the fix: add the VSCODE_NODEJS_SITE check before the existing logic
-  const oldPattern = /case 'linux':[\s\S]*?return \(product\.nodejsRepository !== 'https:\/\/nodejs\.org'/;
-  const newCode = `case 'linux':
-			// Support custom Node.js download sites for alternative architectures
+  const caseHeader = match[1];
+  // Replace the entire return statement with the new if/else structure from the patch
+  const newCode = `${caseHeader}// Support custom Node.js download sites for alternative architectures
 			// (e.g., loong64, riscv64 use unofficial-builds.nodejs.org)
 			if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
 				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
@@ -548,12 +597,51 @@ if (match) {
 					.pipe(rename('node'));
 			}`;
 
-  content = content.replace(oldPattern, newCode);
+  content = content.replace(linuxCasePattern, newCode);
   fs.writeFileSync(file, content, 'utf8');
   console.log('Manually applied Node.js site fix');
 } else {
-  console.log('Could not find linux case in nodejs function');
-  process.exit(1);
+  // Try alternative pattern matching - match the exact multiline structure with tabs
+  const altPattern = /(case 'darwin':\s*\n\t\tcase 'linux':\s*\n\t\t\t)(return \(product\.nodejsRepository !== 'https:\/\/nodejs\.org' \?[\s\S]*?\.pipe\(rename\('node'\)\);)/;
+  const altMatch = content.match(altPattern);
+
+  if (altMatch) {
+    const caseHeader = altMatch[1];
+    const newCode = `${caseHeader}// Support custom Node.js download sites for alternative architectures
+			// (e.g., loong64, riscv64 use unofficial-builds.nodejs.org)
+			if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			if (product.nodejsRepository !== 'https://nodejs.org') {
+				return fetchGithub(product.nodejsRepository, { version: \`\${nodeVersion}-\${internalNodeVersion}\`, name: expectedName, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			else {
+				return fetchUrls(\`/dist/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}.tar.gz\`, { base: 'https://nodejs.org', checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}`;
+    content = content.replace(altPattern, newCode);
+    fs.writeFileSync(file, content, 'utf8');
+    console.log('Manually applied Node.js site fix (alternative pattern)');
+  } else {
+    console.log('ERROR: Could not find linux case pattern in nodejs function');
+    console.log('Current structure around case linux:');
+    const contextMatch = content.match(/(case 'darwin':[\s\S]{0,500})/);
+    if (contextMatch) {
+      console.log(contextMatch[1]);
+    }
+    process.exit(1);
+  }
 }
 NODEJS_SITE_FIX
             # Verify the fix was applied

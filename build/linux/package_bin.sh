@@ -3,12 +3,21 @@
 
 set -ex
 
+# Set CI_BUILD to "yes" if not explicitly set to "no" (default to CI mode)
+# This ensures the script works in CI environments where CI_BUILD might be unset
+if [[ -z "${CI_BUILD}" ]]; then
+  export CI_BUILD="yes"
+fi
+
 if [[ "${CI_BUILD}" == "no" ]]; then
   exit 1
 fi
 
 # include common functions
-. ./utils.sh
+# Use path relative to script location to ensure utils.sh is found
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUILDER_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${BUILDER_ROOT}/utils.sh"
 
 tar -xzf ./vscode.tar.gz
 
@@ -175,9 +184,11 @@ for i in {1..5}; do # try 5 times
 done
 
 # Apply fixes for alternative architectures after npm install
-if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]]; then
+# Also run for all architectures to ensure FAIL_BUILD_FOR_NEW_DEPENDENCIES is set to false
+if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "x64" ]] || [[ "${VSCODE_ARCH}" == "arm64" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]]; then
   echo "Applying fixes for ${VSCODE_ARCH} architecture support..."
-  bash "../build/linux/fix-dependencies-generator.sh" || echo "Warning: Fix script failed, continuing..."
+  # Use absolute path to fix-dependencies-generator.sh
+  bash "${BUILDER_ROOT}/build/linux/fix-dependencies-generator.sh" || echo "Warning: Fix script failed, continuing..."
 fi
 
 node build/azure-pipelines/distro/mixin-npm
@@ -202,6 +213,7 @@ fi
 
 find "../VSCode-linux-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
 
-. ../build_cli.sh
+# Build CLI - use absolute path to ensure it's found
+. "${BUILDER_ROOT}/build_cli.sh"
 
 cd ..

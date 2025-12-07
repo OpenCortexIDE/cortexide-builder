@@ -3,12 +3,21 @@
 
 set -ex
 
+# Set CI_BUILD to "yes" if not explicitly set to "no" (default to CI mode)
+# This ensures the script works in CI environments where CI_BUILD might be unset
+if [[ -z "${CI_BUILD}" ]]; then
+  export CI_BUILD="yes"
+fi
+
 if [[ "${CI_BUILD}" == "no" ]]; then
   exit 1
 fi
 
 # include common functions
-. ./utils.sh
+# Use path relative to script location to ensure utils.sh is found
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUILDER_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${BUILDER_ROOT}/utils.sh"
 
 mkdir -p assets
 
@@ -39,6 +48,7 @@ elif [[ "${VSCODE_ARCH}" == "arm64" ]]; then
   VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME="vscodium/vscodium-linux-build-agent:focal-devtoolset-arm64"
 
   export VSCODE_SKIP_SYSROOT=1
+  export VSCODE_SKIP_SETUPENV=1
   export USE_GNUPP2A=1
 elif [[ "${VSCODE_ARCH}" == "armhf" ]]; then
   EXPECTED_GLIBC_VERSION="2.30"
@@ -46,6 +56,7 @@ elif [[ "${VSCODE_ARCH}" == "armhf" ]]; then
   VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME="vscodium/vscodium-linux-build-agent:focal-devtoolset-armhf"
 
   export VSCODE_SKIP_SYSROOT=1
+  export VSCODE_SKIP_SETUPENV=1
   export USE_GNUPP2A=1
 elif [[ "${VSCODE_ARCH}" == "ppc64le" ]]; then
   VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME="vscodium/vscodium-linux-build-agent:focal-devtoolset-ppc64le"
@@ -71,6 +82,7 @@ elif [[ "${VSCODE_ARCH}" == "s390x" ]]; then
 
   export VSCODE_SYSROOT_REPOSITORY='VSCodium/vscode-linux-build-agent'
   export VSCODE_SYSROOT_VERSION='20241108'
+  export VSCODE_SKIP_SYSROOT=1
 fi
 
 export ELECTRON_SKIP_BINARY_DOWNLOAD=1
@@ -126,8 +138,9 @@ EOF
 fi
 
 # For alternative architectures, skip postinstall scripts to avoid unsupported platform errors
+# Also skip for ARM architectures when sysroot is skipped (cross-compilation not available)
 BUILD_NPM_CI_OPTS=""
-if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]]; then
+if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]] || [[ "${VSCODE_ARCH}" == "arm64" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]]; then
   BUILD_NPM_CI_OPTS="--ignore-scripts"
   echo "Skipping postinstall scripts for build dependencies on ${VSCODE_ARCH}"
 fi
@@ -222,8 +235,8 @@ if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
 
   pushd "../vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}"
 
-  if [[ -f "../ripgrep_${VSCODE_PLATFORM}_${VSCODE_ARCH}.sh" ]]; then
-    bash "../ripgrep_${VSCODE_PLATFORM}_${VSCODE_ARCH}.sh" "node_modules"
+  if [[ -f "../build/linux/${VSCODE_ARCH}/ripgrep.sh" ]]; then
+    bash "../build/linux/${VSCODE_ARCH}/ripgrep.sh" "node_modules"
   fi
 
   echo "Archiving REH"
@@ -244,8 +257,8 @@ if [[ "${SHOULD_BUILD_REH_WEB}" != "no" ]]; then
 
   pushd "../vscode-reh-web-${VSCODE_PLATFORM}-${VSCODE_ARCH}"
 
-  if [[ -f "../ripgrep_${VSCODE_PLATFORM}_${VSCODE_ARCH}.sh" ]]; then
-    bash "../ripgrep_${VSCODE_PLATFORM}_${VSCODE_ARCH}.sh" "node_modules"
+  if [[ -f "../build/linux/${VSCODE_ARCH}/ripgrep.sh" ]]; then
+    bash "../build/linux/${VSCODE_ARCH}/ripgrep.sh" "node_modules"
   fi
 
   echo "Archiving REH-web"

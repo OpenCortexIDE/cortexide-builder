@@ -89,6 +89,34 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   echo "Compiling TypeScript..."
   npm run gulp compile-build-without-mangling
 
+  # Fix React output import paths in out-build after TypeScript compilation
+  # The React build fixes paths in src/, but we also need to fix them in out-build/
+  # because that's where minification runs
+  echo "Fixing React output import paths in out-build..."
+  if [[ -d "out-build/vs/workbench/contrib/cortexide/browser/react/out" ]]; then
+    react_out_build_dir="out-build/vs/workbench/contrib/cortexide/browser/react/out"
+    react_modules=("void-editor-widgets-tsx" "void-settings-tsx" "sidebar-tsx" "void-tooltip" "void-onboarding" "quick-edit-tsx" "diff")
+    for module in "${react_modules[@]}"; do
+      module_file="${react_out_build_dir}/${module}/index.js"
+      if [[ -f "${module_file}" ]]; then
+        # Fix import paths: ./react/out/MODULE/index.js -> ../MODULE/index.js
+        # Fix dynamic imports: import('./react/out/MODULE/index.js') -> import('../MODULE/index.js')
+        if command -v gsed >/dev/null 2>&1; then
+          gsed -i "s|from ['\"]\\./react/out/\\([^/'\"]*\\)/index\\.js['\"]|from '../\\1/index.js'|g" "${module_file}" 2>/dev/null || true
+          gsed -i "s|from ['\"]\\.\\./react/out/\\([^/'\"]*\\)/index\\.js['\"]|from '../../\\1/index.js'|g" "${module_file}" 2>/dev/null || true
+          gsed -i "s|import(['\"]\\./react/out/\\([^/'\"]*\\)/index\\.js['\"])|import('../\\1/index.js')|g" "${module_file}" 2>/dev/null || true
+          gsed -i "s|import(['\"]\\.\\./react/out/\\([^/'\"]*\\)/index\\.js['\"])|import('../../\\1/index.js')|g" "${module_file}" 2>/dev/null || true
+        else
+          sed -i '' "s|from ['\"]\\./react/out/\\([^/'\"]*\\)/index\\.js['\"]|from '../\\1/index.js'|g" "${module_file}" 2>/dev/null || true
+          sed -i '' "s|from ['\"]\\.\\./react/out/\\([^/'\"]*\\)/index\\.js['\"]|from '../../\\1/index.js'|g" "${module_file}" 2>/dev/null || true
+          sed -i '' "s|import(['\"]\\./react/out/\\([^/'\"]*\\)/index\\.js['\"])|import('../\\1/index.js')|g" "${module_file}" 2>/dev/null || true
+          sed -i '' "s|import(['\"]\\.\\./react/out/\\([^/'\"]*\\)/index\\.js['\"])|import('../../\\1/index.js')|g" "${module_file}" 2>/dev/null || true
+        fi
+      fi
+    done
+    echo "✓ React output import paths fixed in out-build"
+  fi
+
   # Compile extension media assets
   echo "Compiling extension media..."
   npm run gulp compile-extension-media

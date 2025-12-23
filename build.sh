@@ -37,9 +37,38 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   # npm run monaco-compile-check
   # npm run valid-layers-check
 
+  # Pre-flight check: Verify React build script exists
+  if [[ ! -f "src/vs/workbench/contrib/cortexide/browser/react/build.js" ]]; then
+    echo "ERROR: React build script not found at src/vs/workbench/contrib/cortexide/browser/react/build.js"
+    echo "This indicates the CortexIDE source is incomplete or corrupted."
+    exit 1
+  fi
+
+  # Pre-flight check: Verify React source directory exists
+  if [[ ! -d "src/vs/workbench/contrib/cortexide/browser/react/src" ]]; then
+    echo "ERROR: React source directory not found at src/vs/workbench/contrib/cortexide/browser/react/src"
+    echo "This indicates the CortexIDE source is incomplete."
+    exit 1
+  fi
+
   # Build React components first (required for CortexIDE UI)
-  echo "Building React components..."
-  npm run buildreact || echo "Warning: buildreact failed, continuing..."
+  # This is a CRITICAL step - TypeScript compilation depends on these outputs
+  # Use the robust build function from utils.sh which includes verification
+  if ! build_react_components; then
+    echo ""
+    echo "=========================================="
+    echo "FATAL: React build failed"
+    echo "=========================================="
+    echo "TypeScript compilation cannot proceed without React build outputs."
+    echo ""
+    echo "Troubleshooting steps:"
+    echo "1. Check the React build output above for errors"
+    echo "2. Verify all React dependencies are installed: cd src/vs/workbench/contrib/cortexide/browser/react && npm install"
+    echo "3. Try building React manually: npm run buildreact"
+    echo "4. Check Node.js version matches requirements"
+    echo ""
+    exit 1
+  fi
 
   # Compile build directory TypeScript files first (required for gulp tasks)
   # This compiles build/linux/dependencies-generator.ts and other build scripts
@@ -47,15 +76,23 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   echo "Compiling build directory TypeScript..."
   npm run --prefix build build-ts
 
+  # Final safety check: Verify React outputs still exist before TypeScript compilation
+  # This is a defensive check in case something removed them between build and compile
+  if ! verify_react_build_outputs; then
+    echo "FATAL: React build outputs missing immediately before TypeScript compilation"
+    echo "This should never happen - the build process may have a race condition."
+    exit 1
+  fi
+
   # Compile the main codebase
   # Using compile-build-without-mangling for compatibility and debugging
   echo "Compiling TypeScript..."
   npm run gulp compile-build-without-mangling
-  
+
   # Compile extension media assets
   echo "Compiling extension media..."
   npm run gulp compile-extension-media
-  
+
   # Install extension dependencies before building extensions
   # Extensions need both production AND dev dependencies for TypeScript compilation
   # (devDependencies include @types/node, etc. needed for webpack/tsc)
@@ -67,7 +104,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
       (cd "$ext_dir" && npm ci --ignore-scripts) || echo "Skipped $(basename "$ext_dir")"
     fi
   done
-  
+
   # Compile built-in extensions
   echo "Compiling extensions..."
   npm run gulp compile-extensions-build
@@ -273,7 +310,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i].trim();
           // Stop before function declarations
-          if (line.startsWith('function ') || line.startsWith('async function ') || 
+          if (line.startsWith('function ') || line.startsWith('async function ') ||
               (line.startsWith('const ') && line.includes('= function')) ||
               (line.startsWith('const ') && line.includes('= async function'))) {
             insertIndex = i;
@@ -297,19 +334,19 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
 
         // Check if ansiColors is already properly defined
         const hasAnsiColorsDef = content.match(/const\s+_ansiColors\s*=\s*require\(\"ansi-colors\"\);\s*\n\s*const\s+ansiColors\s*=\s*\(_ansiColors[^)]+\)/);
-        
+
         // Check if fancyLog is already properly defined
         const hasFancyLogDef = content.match(/const\s+_fancyLog\s*=\s*require\(\"fancy-log\"\);\s*\n\s*const\s+fancyLog\s*=\s*\(_fancyLog[^)]+\)/);
-        
+
         // Check if crypto is already properly defined (built-in module)
         const hasCryptoDef = content.match(/const\s+crypto\s*=\s*require\(\"crypto\"\)/);
-        
+
         // Check if VinylFile is already properly defined
         const hasVinylFileDef = content.match(/const\s+_VinylFile\s*=\s*require\(\"vinyl\"\);\s*\n\s*const\s+VinylFile\s*=\s*\(_VinylFile[^)]+\)/);
-        
+
         // Check if through2 is already properly defined
         const hasThrough2Def = content.match(/const\s+_through2\s*=\s*require\(\"through2\"\);\s*\n\s*const\s+through2\s*=\s*\(_through2[^)]+\)/);
-        
+
         const definitions = [];
         if (!hasAnsiColorsDef) {
           // Insert the robust ansiColors definition
@@ -331,7 +368,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
           // Insert through2 definition
           definitions.push('// Use direct require for through2 to avoid default import issues in some environments\nconst _through2 = require(\"through2\");\nconst through2 = (_through2 && _through2.default) ? _through2.default : _through2;');
         }
-        
+
         if (definitions.length > 0) {
           lines.splice(insertIndex, 0, ...definitions);
           content = lines.join('\n');

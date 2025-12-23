@@ -183,8 +183,21 @@ fi
 node build/azure-pipelines/distro/mixin-npm
 
 # CortexIDE: Build React components before packaging
+# Note: React should already be built in the compile step, but verify/rebuild if needed
 echo "Building React components for Linux ${VSCODE_ARCH}..."
-npm run buildreact || echo "Warning: buildreact failed, continuing..."
+if [[ ! -d "src/vs/workbench/contrib/cortexide/browser/react/out" ]]; then
+  echo "React outputs missing, building now..."
+  if ! npm run buildreact; then
+    echo "ERROR: React build failed. This is required for packaging."
+    exit 1
+  fi
+  if [[ ! -d "src/vs/workbench/contrib/cortexide/browser/react/out" ]]; then
+    echo "ERROR: React build outputs still missing after build."
+    exit 1
+  fi
+else
+  echo "React outputs already exist, skipping build."
+fi
 
 # Package the Linux application
 echo "Packaging Linux ${VSCODE_ARCH} application..."

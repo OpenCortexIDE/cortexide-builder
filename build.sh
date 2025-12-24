@@ -98,7 +98,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
     node -e "
       const fs = require('fs');
       const path = require('path');
-      
+
       const reactOutBuildDir = 'out-build/vs/workbench/contrib/cortexide/browser/react/out';
       const reactModules = [
         'void-editor-widgets-tsx',
@@ -109,15 +109,15 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
         'quick-edit-tsx',
         'diff'
       ];
-      
+
       let fixedCount = 0;
-      
+
       for (const module of reactModules) {
         const indexPath = path.join(reactOutBuildDir, module, 'index.js');
         if (fs.existsSync(indexPath)) {
           let content = fs.readFileSync(indexPath, 'utf8');
           const originalContent = content;
-          
+
           // Fix import paths: ./react/out/MODULE/index.js -> ../MODULE/index.js
           // Replace '../react/out/MODULE/index.js' with '../../MODULE/index.js'
           // Use same regex patterns as React build.js (which works correctly)
@@ -129,7 +129,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
             /from\s+['\"]\.\.\/react\/out\/([^/'\"\s]+)\/index\.js['\"]/g,
             \"from '../../\$1/index.js'\"
           );
-          
+
           // Fix dynamic imports: import('./react/out/MODULE/index.js') -> import('../MODULE/index.js')
           content = content.replace(
             /import\s*\(\s*['\"]\.\/react\/out\/([^/'\"\s]+)\/index\.js['\"]\s*\)/g,
@@ -139,7 +139,22 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
             /import\s*\(\s*['\"]\.\.\/react\/out\/([^/'\"\s]+)\/index\.js['\"]\s*\)/g,
             \"import('../../\$1/index.js')\"
           );
-          
+
+          // Fix deep relative imports to VS Code platform/base modules
+          // When tsup builds, relative imports are preserved, but the output file location
+          // is different, so paths need adjustment. From out-build/.../react/out/MODULE/index.js,
+          // we need one more level up to reach the same target as from the source location.
+          // This fixes imports like: import { x } from '../../../../../base/common/platform.js'
+          // which come from files like systemInfo.ts that import VS Code internal modules
+          content = content.replace(
+            /(from\s+['\"])((?:\.\.\/)+)(base|platform|editor|workbench)\//g,
+            (match, prefix, dots, module) => \`\${prefix}\${dots}../\${module}/\`
+          );
+          content = content.replace(
+            /(import\s*\(\s*['\"])((?:\.\.\/)+)(base|platform|editor|workbench)\//g,
+            (match, prefix, dots, module) => \`\${prefix}\${dots}../\${module}/\`
+          );
+
           if (content !== originalContent) {
             fs.writeFileSync(indexPath, content, 'utf8');
             fixedCount++;
@@ -147,7 +162,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
           }
         }
       }
-      
+
       if (fixedCount > 0) {
         console.log(\`✓ Fixed import paths in \${fixedCount} React output files\`);
       } else {

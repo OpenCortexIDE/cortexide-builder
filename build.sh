@@ -92,29 +92,70 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   # Fix React output import paths in out-build after TypeScript compilation
   # The React build fixes paths in src/, but we also need to fix them in out-build/
   # because that's where minification runs
+  # Use Node.js script for reliable regex matching (same approach as React build.js)
   echo "Fixing React output import paths in out-build..."
   if [[ -d "out-build/vs/workbench/contrib/cortexide/browser/react/out" ]]; then
-    react_out_build_dir="out-build/vs/workbench/contrib/cortexide/browser/react/out"
-    react_modules=("void-editor-widgets-tsx" "void-settings-tsx" "sidebar-tsx" "void-tooltip" "void-onboarding" "quick-edit-tsx" "diff")
-    for module in "${react_modules[@]}"; do
-      module_file="${react_out_build_dir}/${module}/index.js"
-      if [[ -f "${module_file}" ]]; then
-        # Fix import paths: ./react/out/MODULE/index.js -> ../MODULE/index.js
-        # Fix dynamic imports: import('./react/out/MODULE/index.js') -> import('../MODULE/index.js')
-        if command -v gsed >/dev/null 2>&1; then
-          gsed -i "s|from ['\"]\\./react/out/\\([^/'\"]*\\)/index\\.js['\"]|from '../\\1/index.js'|g" "${module_file}" 2>/dev/null || true
-          gsed -i "s|from ['\"]\\.\\./react/out/\\([^/'\"]*\\)/index\\.js['\"]|from '../../\\1/index.js'|g" "${module_file}" 2>/dev/null || true
-          gsed -i "s|import(['\"]\\./react/out/\\([^/'\"]*\\)/index\\.js['\"])|import('../\\1/index.js')|g" "${module_file}" 2>/dev/null || true
-          gsed -i "s|import(['\"]\\.\\./react/out/\\([^/'\"]*\\)/index\\.js['\"])|import('../../\\1/index.js')|g" "${module_file}" 2>/dev/null || true
-        else
-          sed -i '' "s|from ['\"]\\./react/out/\\([^/'\"]*\\)/index\\.js['\"]|from '../\\1/index.js'|g" "${module_file}" 2>/dev/null || true
-          sed -i '' "s|from ['\"]\\.\\./react/out/\\([^/'\"]*\\)/index\\.js['\"]|from '../../\\1/index.js'|g" "${module_file}" 2>/dev/null || true
-          sed -i '' "s|import(['\"]\\./react/out/\\([^/'\"]*\\)/index\\.js['\"])|import('../\\1/index.js')|g" "${module_file}" 2>/dev/null || true
-          sed -i '' "s|import(['\"]\\.\\./react/out/\\([^/'\"]*\\)/index\\.js['\"])|import('../../\\1/index.js')|g" "${module_file}" 2>/dev/null || true
-        fi
-      fi
-    done
-    echo "✓ React output import paths fixed in out-build"
+    node -e "
+      const fs = require('fs');
+      const path = require('path');
+      
+      const reactOutBuildDir = 'out-build/vs/workbench/contrib/cortexide/browser/react/out';
+      const reactModules = [
+        'void-editor-widgets-tsx',
+        'void-settings-tsx',
+        'sidebar-tsx',
+        'void-tooltip',
+        'void-onboarding',
+        'quick-edit-tsx',
+        'diff'
+      ];
+      
+      let fixedCount = 0;
+      
+      for (const module of reactModules) {
+        const indexPath = path.join(reactOutBuildDir, module, 'index.js');
+        if (fs.existsSync(indexPath)) {
+          let content = fs.readFileSync(indexPath, 'utf8');
+          const originalContent = content;
+          
+          // Fix import paths: ./react/out/MODULE/index.js -> ../MODULE/index.js
+          // Replace '../react/out/MODULE/index.js' with '../../MODULE/index.js'
+          // Use same regex patterns as React build.js (which works correctly)
+          content = content.replace(
+            /from\s+['\"]\.\/react\/out\/([^/'\"\s]+)\/index\.js['\"]/g,
+            \"from '../\$1/index.js'\"
+          );
+          content = content.replace(
+            /from\s+['\"]\.\.\/react\/out\/([^/'\"\s]+)\/index\.js['\"]/g,
+            \"from '../../\$1/index.js'\"
+          );
+          
+          // Fix dynamic imports: import('./react/out/MODULE/index.js') -> import('../MODULE/index.js')
+          content = content.replace(
+            /import\s*\(\s*['\"]\.\/react\/out\/([^/'\"\s]+)\/index\.js['\"]\s*\)/g,
+            \"import('../\$1/index.js')\"
+          );
+          content = content.replace(
+            /import\s*\(\s*['\"]\.\.\/react\/out\/([^/'\"\s]+)\/index\.js['\"]\s*\)/g,
+            \"import('../../\$1/index.js')\"
+          );
+          
+          if (content !== originalContent) {
+            fs.writeFileSync(indexPath, content, 'utf8');
+            fixedCount++;
+            console.log(\`Fixed paths in \${module}/index.js\`);
+          }
+        }
+      }
+      
+      if (fixedCount > 0) {
+        console.log(\`✓ Fixed import paths in \${fixedCount} React output files\`);
+      } else {
+        console.log('✓ No files needed fixing (paths already correct or files not found)');
+      }
+    "
+  else
+    echo "⚠ React output directory not found in out-build, skipping path fix"
   fi
 
   # Compile extension media assets

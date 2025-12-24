@@ -146,12 +146,17 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
           // we need one more level up to reach the same target as from the source location.
           // This fixes imports like: import { x } from '../../../../../base/common/platform.js'
           // which come from files like systemInfo.ts that import VS Code internal modules
+          // Handle: import statements, dynamic imports, and require() calls
           content = content.replace(
             /(from\s+['\"])((?:\.\.\/)+)(base|platform|editor|workbench)\//g,
             (match, prefix, dots, module) => \`\${prefix}\${dots}../\${module}/\`
           );
           content = content.replace(
             /(import\s*\(\s*['\"])((?:\.\.\/)+)(base|platform|editor|workbench)\//g,
+            (match, prefix, dots, module) => \`\${prefix}\${dots}../\${module}/\`
+          );
+          content = content.replace(
+            /(require\(['\"])((?:\.\.\/)+)(base|platform|editor|workbench)\//g,
             (match, prefix, dots, module) => \`\${prefix}\${dots}../\${module}/\`
           );
 

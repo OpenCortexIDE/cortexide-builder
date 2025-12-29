@@ -1,0 +1,14 @@
+diff --git a/src/vs/workbench/contrib/terminal/browser/xterm/xtermTerminal.ts b/src/vs/workbench/contrib/terminal/browser/xterm/xtermTerminal.ts
+index 0000000..0000000 100644
+--- a/src/vs/workbench/contrib/terminal/browser/xterm/xtermTerminal.ts
++++ b/src/vs/workbench/contrib/terminal/browser/xterm/xtermTerminal.ts
+@@ -224,8 +224,7 @@ export class XtermTerminal extends Disposable implements IXtermTerminal {
+ 			cursorWidth: config.cursorWidth,
+ 			macOptionIsMeta: config.macOptionIsMeta,
+ 			macOptionClickForcesSelection: config.macOptionClickForcesSelection,
+ 			rightClickSelectsWord: config.rightClickBehavior === 'selectWord',
+-			fastScrollSensitivity: config.fastScrollSensitivity,
+ 			scrollSensitivity: config.mouseWheelScrollSensitivity,
+ 			scrollOnEraseInDisplay: true,
+ 			wordSeparator: config.wordSeparators,
+

@@ -47,6 +47,8 @@ elif [[ "${VSCODE_ARCH}" == "armhf" ]]; then
 
   export VSCODE_SKIP_SYSROOT=1
   export USE_GNUPP2A=1
+  # Unset VSCODE_SYSROOT_DIR to prevent node-gyp from trying to use cross-compilation
+  unset VSCODE_SYSROOT_DIR
 elif [[ "${VSCODE_ARCH}" == "ppc64le" ]]; then
   VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME="vscodium/vscodium-linux-build-agent:focal-devtoolset-ppc64le"
 
@@ -135,6 +137,11 @@ fi
 mv .npmrc .npmrc.bak
 cp ../npmrc .npmrc
 
+# For armhf, ensure VSCODE_SYSROOT_DIR is unset before npm install to prevent node-gyp cross-compilation
+if [[ "${VSCODE_ARCH}" == "armhf" ]]; then
+  unset VSCODE_SYSROOT_DIR
+fi
+
 for i in {1..5}; do # try 5 times
   npm ci --prefix build ${BUILD_NPM_CI_OPTS} && break
   if [[ $i == 3 ]]; then
@@ -157,6 +164,11 @@ NPM_CI_OPTS=""
 if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]]; then
   NPM_CI_OPTS="--ignore-scripts"
   echo "Skipping postinstall scripts for ${VSCODE_ARCH} (unsupported by some packages)"
+fi
+
+# For armhf, ensure VSCODE_SYSROOT_DIR is unset before npm install to prevent node-gyp cross-compilation
+if [[ "${VSCODE_ARCH}" == "armhf" ]]; then
+  unset VSCODE_SYSROOT_DIR
 fi
 
 for i in {1..5}; do # try 5 times

@@ -2,5 +2,6 @@
 
 set -ex
 
-export ELECTRON_VERSION="37.7.0"
+# Use 37.10.3 as v37.7.0 may not be available in darkyzhou/electron-loong64
+export ELECTRON_VERSION="37.10.3"
 export VSCODE_ELECTRON_TAG="v${ELECTRON_VERSION}"

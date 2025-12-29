@@ -61,6 +61,9 @@ elif [[ "${VSCODE_ARCH}" == "riscv64" ]]; then
   export VSCODE_SKIP_SETUPENV=1
 elif [[ "${VSCODE_ARCH}" == "loong64" ]]; then
   export VSCODE_ELECTRON_REPOSITORY='darkyzhou/electron-loong64'
+  # Check if electron.sh sets a version, otherwise use a known working version
+  # The electron.sh script will override VSCODE_ELECTRON_TAG if it exists
+  export VSCODE_ELECTRON_TAG='v37.10.3' # fallback if v37.7.0 doesn't exist
   export ELECTRON_SKIP_BINARY_DOWNLOAD=1
   export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
   export VSCODE_SKIP_SETUPENV=1

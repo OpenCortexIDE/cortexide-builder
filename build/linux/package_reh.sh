@@ -40,6 +40,8 @@ elif [[ "${VSCODE_ARCH}" == "arm64" ]]; then
 
   export VSCODE_SKIP_SYSROOT=1
   export USE_GNUPP2A=1
+  # Unset VSCODE_SYSROOT_DIR to prevent node-gyp from trying to use cross-compilation
+  unset VSCODE_SYSROOT_DIR
 elif [[ "${VSCODE_ARCH}" == "armhf" ]]; then
   EXPECTED_GLIBC_VERSION="2.30"
 
@@ -129,7 +131,7 @@ fi
 
 # For alternative architectures, skip postinstall scripts to avoid unsupported platform errors
 BUILD_NPM_CI_OPTS=""
-if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]]; then
+if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]] || [[ "${VSCODE_ARCH}" == "arm64" ]]; then
   BUILD_NPM_CI_OPTS="--ignore-scripts"
   echo "Skipping postinstall scripts for build dependencies on ${VSCODE_ARCH}"
 fi
@@ -161,13 +163,13 @@ fi
 
 # For alternative architectures, skip postinstall scripts to avoid unsupported platform errors
 NPM_CI_OPTS=""
-if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]]; then
+if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]] || [[ "${VSCODE_ARCH}" == "arm64" ]]; then
   NPM_CI_OPTS="--ignore-scripts"
   echo "Skipping postinstall scripts for ${VSCODE_ARCH} (unsupported by some packages)"
 fi
 
-# For armhf, ensure VSCODE_SYSROOT_DIR is unset before npm install to prevent node-gyp cross-compilation
-if [[ "${VSCODE_ARCH}" == "armhf" ]]; then
+# For arm64 and armhf, ensure VSCODE_SYSROOT_DIR is unset before npm install to prevent node-gyp cross-compilation
+if [[ "${VSCODE_ARCH}" == "arm64" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]]; then
   unset VSCODE_SYSROOT_DIR
 fi
 

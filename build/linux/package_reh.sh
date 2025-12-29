@@ -139,8 +139,8 @@ fi
 mv .npmrc .npmrc.bak
 cp ../npmrc .npmrc
 
-# For armhf, ensure VSCODE_SYSROOT_DIR is unset before npm install to prevent node-gyp cross-compilation
-if [[ "${VSCODE_ARCH}" == "armhf" ]]; then
+# For arm64 and armhf, ensure VSCODE_SYSROOT_DIR is unset before npm install to prevent node-gyp cross-compilation
+if [[ "${VSCODE_ARCH}" == "arm64" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]]; then
   unset VSCODE_SYSROOT_DIR
 fi
 

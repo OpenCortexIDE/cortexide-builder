@@ -127,7 +127,7 @@ fi
 
 # For alternative architectures, skip postinstall scripts to avoid unsupported platform errors
 BUILD_NPM_CI_OPTS=""
-if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]]; then
+if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]]; then
   BUILD_NPM_CI_OPTS="--ignore-scripts"
   echo "Skipping postinstall scripts for build dependencies on ${VSCODE_ARCH}"
 fi
@@ -154,7 +154,7 @@ fi
 
 # For alternative architectures, skip postinstall scripts to avoid unsupported platform errors
 NPM_CI_OPTS=""
-if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]]; then
+if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]]; then
   NPM_CI_OPTS="--ignore-scripts"
   echo "Skipping postinstall scripts for ${VSCODE_ARCH} (unsupported by some packages)"
 fi

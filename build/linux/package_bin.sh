@@ -55,10 +55,12 @@ elif [[ "${VSCODE_ARCH}" == "ppc64le" ]]; then
   export VSCODE_ELECTRON_REPOSITORY='lex-ibm/electron-ppc64le-build-scripts'
   # Check if electron.sh sets a version, otherwise use a known working version
   # The electron.sh script will override VSCODE_ELECTRON_TAG if it exists
-  export VSCODE_ELECTRON_TAG='v37.10.3' # fallback if v37.7.0 doesn't exist
+  # lex-ibm/electron-ppc64le-build-scripts only has v34.2.0 available
+  export VSCODE_ELECTRON_TAG='v34.2.0' # only version available in lex-ibm/electron-ppc64le-build-scripts
 elif [[ "${VSCODE_ARCH}" == "riscv64" ]]; then
   export VSCODE_ELECTRON_REPOSITORY='riscv-forks/electron-riscv-releases'
-  export VSCODE_ELECTRON_TAG='v37.10.3' # riscv-forks doesn't have 37.7.0, use 37.10.3
+  # Note: electron.sh will set this to v37.10.3.riscv1 (with .riscv1 suffix)
+  export VSCODE_ELECTRON_TAG='v37.10.3.riscv1' # riscv-forks uses .riscv1 suffix
   export ELECTRON_SKIP_BINARY_DOWNLOAD=1
   export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
   export VSCODE_SKIP_SETUPENV=1
@@ -66,7 +68,8 @@ elif [[ "${VSCODE_ARCH}" == "loong64" ]]; then
   export VSCODE_ELECTRON_REPOSITORY='darkyzhou/electron-loong64'
   # Check if electron.sh sets a version, otherwise use a known working version
   # The electron.sh script will override VSCODE_ELECTRON_TAG if it exists
-  export VSCODE_ELECTRON_TAG='v37.10.3' # fallback if v37.7.0 doesn't exist
+  # darkyzhou/electron-loong64 only has v34.2.0 available
+  export VSCODE_ELECTRON_TAG='v34.2.0' # only version available in darkyzhou/electron-loong64
   export ELECTRON_SKIP_BINARY_DOWNLOAD=1
   export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
   export VSCODE_SKIP_SETUPENV=1
@@ -88,11 +91,18 @@ if [[ -f "../build/linux/${VSCODE_ARCH}/electron.sh" ]]; then
   TARGET=$( npm config get target )
 
   # Only fails at different major versions
+  # For loong64 and ppc64le, allow v34.x even if target is v37.x since their repositories only have v34.2.0
   if [[ "${ELECTRON_VERSION%%.*}" != "${TARGET%%.*}" ]]; then
-    # Fail the pipeline if electron target doesn't match what is used.
-    echo "Electron ${VSCODE_ARCH} binary version doesn't match target electron version!"
-    echo "Releases available at: https://github.com/${VSCODE_ELECTRON_REPOSITORY}/releases"
-    exit 1
+    if [[ "${VSCODE_ARCH}" == "loong64" ]] && [[ "${ELECTRON_VERSION%%.*}" == "34" ]] && [[ "${TARGET%%.*}" == "37" ]]; then
+      echo "Warning: Using Electron ${ELECTRON_VERSION} for loong64 (target is ${TARGET}) - only v34.2.0 is available in darkyzhou/electron-loong64"
+    elif [[ "${VSCODE_ARCH}" == "ppc64le" ]] && [[ "${ELECTRON_VERSION%%.*}" == "34" ]] && [[ "${TARGET%%.*}" == "37" ]]; then
+      echo "Warning: Using Electron ${ELECTRON_VERSION} for ppc64le (target is ${TARGET}) - only v34.2.0 is available in lex-ibm/electron-ppc64le-build-scripts"
+    else
+      # Fail the pipeline if electron target doesn't match what is used.
+      echo "Electron ${VSCODE_ARCH} binary version doesn't match target electron version!"
+      echo "Releases available at: https://github.com/${VSCODE_ELECTRON_REPOSITORY}/releases"
+      exit 1
+    fi
   fi
 
   if [[ "${ELECTRON_VERSION}" != "${TARGET}" ]]; then
@@ -190,13 +200,46 @@ node build/azure-pipelines/distro/mixin-npm
 
 # CortexIDE: Build React components before packaging
 echo "Building React components for Linux ${VSCODE_ARCH}..."
-npm run buildreact || echo "Warning: buildreact failed, continuing..."
+
+# Verify React build dependencies are installed
+if [[ ! -d "node_modules/scope-tailwind" ]] || [[ ! -d "node_modules/tsup" ]]; then
+  echo "ERROR: React build dependencies missing!"
+  echo "  scope-tailwind: $([ -d "node_modules/scope-tailwind" ] && echo "✓" || echo "✗ MISSING")"
+  echo "  tsup: $([ -d "node_modules/tsup" ] && echo "✓" || echo "✗ MISSING")"
+  echo "This should not happen - npm ci should have installed devDependencies."
+  exit 1
+fi
+
+# Verify build.js exists
+REACT_BUILD_JS="src/vs/workbench/contrib/cortexide/browser/react/build.js"
+if [[ ! -f "${REACT_BUILD_JS}" ]]; then
+  echo "ERROR: React build.js not found at ${REACT_BUILD_JS}"
+  exit 1
+fi
+
+# Run React build - fail properly if it errors
+npm run buildreact
 
 # Package the Linux application
 echo "Packaging Linux ${VSCODE_ARCH} application..."
 # Ensure environment variables are exported for Node.js process
 export VSCODE_ELECTRON_REPOSITORY
 export VSCODE_ELECTRON_TAG
+
+# For alternative architectures, ensure correct Electron versions are used
+# This safeguard prevents any override that might happen between initial export and gulp command
+if [[ "${VSCODE_ARCH}" == "loong64" ]]; then
+  export VSCODE_ELECTRON_TAG='v34.2.0'
+  export VSCODE_ELECTRON_REPOSITORY='darkyzhou/electron-loong64'
+elif [[ "${VSCODE_ARCH}" == "ppc64le" ]]; then
+  export VSCODE_ELECTRON_TAG='v34.2.0'
+  export VSCODE_ELECTRON_REPOSITORY='lex-ibm/electron-ppc64le-build-scripts'
+elif [[ "${VSCODE_ARCH}" == "riscv64" ]]; then
+  # riscv64 uses v37.10.3.riscv1 (note the .riscv1 suffix)
+  export VSCODE_ELECTRON_TAG='v37.10.3.riscv1'
+  export VSCODE_ELECTRON_REPOSITORY='riscv-forks/electron-riscv-releases'
+fi
+
 echo "Environment variables for Electron:"
 echo "  VSCODE_ELECTRON_REPOSITORY=${VSCODE_ELECTRON_REPOSITORY}"
 echo "  VSCODE_ELECTRON_TAG=${VSCODE_ELECTRON_TAG}"
@@ -207,6 +250,13 @@ if [[ -f "../build/linux/${VSCODE_ARCH}/ripgrep.sh" ]]; then
 fi
 
 find "../VSCode-linux-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
+
+# Fix Rust unused imports before building CLI
+# Note: We're already in the vscode directory (cd vscode at line 17)
+if [[ -f "../build/linux/fix-rust-imports.sh" ]]; then
+  echo "Applying Rust import fixes..."
+  bash "../build/linux/fix-rust-imports.sh"
+fi
 
 . ../build_cli.sh
 

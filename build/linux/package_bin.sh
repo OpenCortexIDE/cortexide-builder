@@ -243,6 +243,16 @@ fi
 echo "Environment variables for Electron:"
 echo "  VSCODE_ELECTRON_REPOSITORY=${VSCODE_ELECTRON_REPOSITORY}"
 echo "  VSCODE_ELECTRON_TAG=${VSCODE_ELECTRON_TAG}"
+
+# Apply electron-custom-repo patch if it exists and hasn't been applied
+# This patch allows gulp to use VSCODE_ELECTRON_REPOSITORY and VSCODE_ELECTRON_TAG env vars
+if [[ -f "../patches/linux/electron-custom-repo-idempotent.patch" ]]; then
+  if ! grep -q "electronOverride" build/gulpfile.vscode.js 2>/dev/null; then
+    echo "Applying electron-custom-repo patch..."
+    apply_patch "../patches/linux/electron-custom-repo-idempotent.patch" || echo "Warning: electron-custom-repo patch failed, continuing..."
+  fi
+fi
+
 npm run gulp "vscode-linux-${VSCODE_ARCH}-min-ci"
 
 if [[ -f "../build/linux/${VSCODE_ARCH}/ripgrep.sh" ]]; then

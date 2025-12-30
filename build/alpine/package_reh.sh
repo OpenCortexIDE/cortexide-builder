@@ -54,6 +54,31 @@ done
 
 node build/azure-pipelines/distro/mixin-npm
 
+# For Alpine ARM64, install extension dependencies that might be missing due to --ignore-scripts
+# Extension dependencies are needed for extension compilation but may not be installed with --ignore-scripts
+if [[ "${VSCODE_ARCH}" == "arm64" ]]; then
+  echo "Installing extension dependencies for Alpine ARM64 (may be missing due to --ignore-scripts)..."
+  # Install dependencies in extensions directory if they exist
+  if [[ -d "extensions" ]]; then
+    for ext_dir in extensions/*/; do
+      if [[ -f "${ext_dir}package.json" ]]; then
+        echo "Installing dependencies for extension: $(basename ${ext_dir})"
+        # Temporarily allow scripts for extension dependencies (they're usually not native modules)
+        npm_config_ignore_scripts=false npm install --prefix "${ext_dir}" --no-save --legacy-peer-deps || {
+          echo "Warning: Failed to install dependencies for $(basename ${ext_dir}), continuing..."
+        }
+      fi
+    done
+  fi
+  # Also ensure microsoft-authentication extension dependencies are installed
+  if [[ -d "extensions/microsoft-authentication" ]]; then
+    echo "Installing dependencies for microsoft-authentication extension..."
+    npm_config_ignore_scripts=false npm install --prefix extensions/microsoft-authentication --no-save --legacy-peer-deps || {
+      echo "Warning: Failed to install microsoft-authentication dependencies, continuing..."
+    }
+  fi
+fi
+
 # For Alpine ARM64, ensure ternary-stream is installed in build directory (it might be missing due to --ignore-scripts)
 # ternary-stream is required by build/lib/util.js, so it needs to be in build/node_modules
 # This must be done BEFORE running any gulp commands

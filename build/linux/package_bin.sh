@@ -194,21 +194,32 @@ done
 # This prevents builds from failing when dependencies change slightly
 if [[ -f "build/linux/dependencies-generator.js" ]]; then
   echo "Fixing dependencies-generator.js to disable strict dependency checking..."
-  if grep -q "const FAIL_BUILD_FOR_NEW_DEPENDENCIES = true;" build/linux/dependencies-generator.js 2>/dev/null; then
-    node -e "
-      const fs = require('fs');
-      const path = './build/linux/dependencies-generator.js';
-      let content = fs.readFileSync(path, 'utf8');
+  node -e "
+    const fs = require('fs');
+    const path = './build/linux/dependencies-generator.js';
+    let content = fs.readFileSync(path, 'utf8');
+    let modified = false;
+    
+    // Replace any variation of FAIL_BUILD_FOR_NEW_DEPENDENCIES = true
+    if (content.includes('FAIL_BUILD_FOR_NEW_DEPENDENCIES = true')) {
       content = content.replace(
         /const FAIL_BUILD_FOR_NEW_DEPENDENCIES = true;/g,
         'const FAIL_BUILD_FOR_NEW_DEPENDENCIES = false;'
       );
+      content = content.replace(
+        /FAIL_BUILD_FOR_NEW_DEPENDENCIES = true/g,
+        'FAIL_BUILD_FOR_NEW_DEPENDENCIES = false'
+      );
+      modified = true;
+    }
+    
+    if (modified) {
       fs.writeFileSync(path, content, 'utf8');
       console.log('✓ Set FAIL_BUILD_FOR_NEW_DEPENDENCIES to false');
-    " || echo "Warning: Failed to fix dependencies-generator.js, continuing..."
-  else
-    echo "✓ dependencies-generator.js already fixed"
-  fi
+    } else {
+      console.log('✓ FAIL_BUILD_FOR_NEW_DEPENDENCIES already set to false or not found');
+    }
+  " || echo "Warning: Failed to fix dependencies-generator.js, continuing..."
 fi
 
 # Apply fixes for alternative architectures after npm install

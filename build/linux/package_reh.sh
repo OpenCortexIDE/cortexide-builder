@@ -414,11 +414,12 @@ fi
 if [[ "${SHOULD_BUILD_REH_WEB}" != "no" ]]; then
   # Skip REH-web build for s390x if the gulp task doesn't exist
   # Use case-insensitive comparison to handle S390X vs s390x
+  echo "DEBUG: Checking REH-web build for VSCODE_ARCH=${VSCODE_ARCH}, lowercased=${VSCODE_ARCH,,}"
   if [[ "${VSCODE_ARCH,,}" == "s390x" ]]; then
     echo "Skipping REH-web build for s390x (gulp task not available)"
     echo "VSCODE_ARCH=${VSCODE_ARCH} detected as s390x, skipping REH-web build"
   else
-    echo "Building REH-web"
+    echo "Building REH-web for ${VSCODE_ARCH}"
     # Compile extensions before minifying (extensions need their dependencies installed)
     echo "Compiling extensions for REH-web..."
     npm run gulp compile-extensions-build || echo "Warning: Extension compilation failed, continuing..."

@@ -123,116 +123,94 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
         const afterCase = content.substring(caseAlpineIndex);
         console.log('Searching for extractAlpinefromDocker call...');
         
-        // Look for extractAlpinefromDocker call - it might be: return extractAlpinefromDocker(...) or just extractAlpinefromDocker(...)
-        const extractPattern = /(return\s+)?extractAlpinefromDocker\s*\(/;
-        const extractMatch = afterCase.match(extractPattern);
-
-        if (!extractMatch) {
-          console.log('⚠ Could not find extractAlpinefromDocker call in case alpine block');
-          console.log('Showing first 1000 chars after case alpine:');
-          console.log(afterCase.substring(0, 1000));
-          process.exit(1);
-        }
+        // Look for the return statement that contains extractAlpinefromDocker
+        // The structure is likely: return (condition ? extractAlpinefromDocker(...) : somethingElse)
+        // Or: return extractAlpinefromDocker(...)
+        const returnPattern = /return\s*\([^)]*extractAlpinefromDocker[^)]*\)/;
+        const returnMatch = afterCase.match(returnPattern);
         
-        console.log(`Found extractAlpinefromDocker call at index ${extractMatch.index} within case alpine block`);
-
-        // Find the start of the extractAlpinefromDocker call (before "return" if present)
-        const extractStartIndex = caseAlpineIndex + extractMatch.index;
-        
-        // Find the end of the extractAlpinefromDocker call - look for the closing parenthesis and semicolon
-        const afterExtractStart = content.substring(extractStartIndex);
-        // Match the function call: extractAlpinefromDocker(nodeVersion, platform, arch) or return extractAlpinefromDocker(...)
-        const extractCallPattern = /(return\s+)?extractAlpinefromDocker\s*\([^)]+\)/;
-        const extractCallMatch = afterExtractStart.match(extractCallPattern);
-        
-        if (!extractCallMatch) {
-          console.log('⚠ Could not find complete extractAlpinefromDocker call');
-          process.exit(1);
-        }
-
-        const extractEndIndex = extractStartIndex + extractCallMatch.index + extractCallMatch[0].length;
-        const fullExtractCall = content.substring(extractStartIndex, extractEndIndex);
-
-        // Check the context before extractAlpinefromDocker to see if it's part of a ternary or return statement
-        const beforeExtract = content.substring(Math.max(0, extractStartIndex - 200), extractStartIndex);
-        console.log('Context before extractAlpinefromDocker call:');
-        console.log(beforeExtract);
-
-        // Check if there's a ternary operator (?:) or return statement before this
-        const hasTernary = /[?:]\s*extractAlpinefromDocker/.test(beforeExtract);
-        const hasReturn = /\breturn\s+/.test(beforeExtract);
-        
-        if (hasTernary) {
-          console.log('⚠ Found ternary operator before extractAlpinefromDocker, handling as ternary...');
-          // Find the start of the ternary expression - look backwards for the condition
-          let searchStart = extractStartIndex - 1;
-          let parenDepth = 0;
-          let foundQuestion = false;
+        if (returnMatch) {
+          console.log('Found return statement with extractAlpinefromDocker');
+          const returnStartIndex = caseAlpineIndex + returnMatch.index;
+          const returnEndIndex = returnStartIndex + returnMatch[0].length;
+          const fullReturnStatement = content.substring(returnStartIndex, returnEndIndex);
           
-          // Find the ? in the ternary
-          while (searchStart > 0 && !foundQuestion) {
-            const char = content.charAt(searchStart);
-            if (char === ')') parenDepth++;
-            else if (char === '(') parenDepth--;
-            else if (char === '?' && parenDepth === 0) {
-              foundQuestion = true;
-              break;
-            }
-            searchStart--;
-          }
+          console.log('Full return statement:', fullReturnStatement);
           
-          if (foundQuestion) {
-            // Find the start of the condition
-            let conditionStart = searchStart - 1;
-            while (conditionStart > 0 && (content.charAt(conditionStart) === ' ' || content.charAt(conditionStart) === '\t')) {
-              conditionStart--;
-            }
-            // Find the beginning of the expression (might be after return, or start of line)
-            while (conditionStart > 0 && content.charAt(conditionStart) !== '\n' && content.charAt(conditionStart) !== ';' && content.charAt(conditionStart) !== '{') {
-              conditionStart--;
-            }
-            conditionStart++; // Move past the delimiter
-            
-            const condition = content.substring(conditionStart, searchStart).trim();
-            const afterColon = content.substring(extractEndIndex);
-            const colonMatch = afterColon.match(/^\s*:\s*/);
-            const afterColonExpr = colonMatch ? afterColon.substring(colonMatch[0].length).split(/[;\n}]/)[0] : '';
-            
-            // Replace the ternary with a nested ternary that checks VSCODE_NODEJS_SITE first
-            const newCodeWithTernary = `${condition} ? (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT
+          // Check if it's a ternary: condition ? extractAlpinefromDocker(...) : something
+          if (fullReturnStatement.includes('?') && fullReturnStatement.includes(':')) {
+            console.log('Return statement contains ternary operator');
+            // Extract the condition, true part, and false part
+            const ternaryMatch = fullReturnStatement.match(/return\s*\((.*?)\s*\?\s*(.*?)\s*:\s*(.*?)\)/);
+            if (ternaryMatch) {
+              const condition = ternaryMatch[1];
+              const truePart = ternaryMatch[2]; // This should contain extractAlpinefromDocker
+              const falsePart = ternaryMatch[3];
+              
+              // Replace the ternary with a nested ternary that checks VSCODE_NODEJS_SITE first
+              const newReturnStatement = `return (${condition} ? (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT
 				? fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
 					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
 					.pipe(filter('**/node'))
 					.pipe(util.setExecutableBit('**'))
 					.pipe(rename('node'))
-				: ${fullExtractCall})${colonMatch ? colonMatch[0] : ' : '}${afterColonExpr}`;
-            
-            content = content.substring(0, conditionStart) + newCodeWithTernary + content.substring(extractEndIndex + (colonMatch ? colonMatch[0].length + afterColonExpr.length : 0));
+				: ${truePart}) : ${falsePart})`;
+              
+              content = content.substring(0, returnStartIndex) + newReturnStatement + content.substring(returnEndIndex);
+            } else {
+              console.log('⚠ Could not parse ternary structure, using simple replacement');
+              // Fallback: just replace extractAlpinefromDocker with our check
+              const newReturnStatement = fullReturnStatement.replace(
+                /extractAlpinefromDocker\s*\([^)]+\)/,
+                `(process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT
+				? fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'))
+				: extractAlpinefromDocker(nodeVersion, platform, arch))`
+              );
+              content = content.substring(0, returnStartIndex) + newReturnStatement + content.substring(returnEndIndex);
+            }
           } else {
-            console.log('⚠ Could not find ternary operator start, using simple if statement');
-            const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+            // Simple return extractAlpinefromDocker(...)
+            console.log('Return statement is simple (no ternary)');
+            const newReturnStatement = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
 				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
 					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
 					.pipe(filter('**/node'))
 					.pipe(util.setExecutableBit('**'))
 					.pipe(rename('node'));
 			}
-			${fullExtractCall}`;
-            content = content.substring(0, extractStartIndex) + newCode + content.substring(extractEndIndex);
+			${fullReturnStatement}`;
+            content = content.substring(0, returnStartIndex) + newReturnStatement + content.substring(returnEndIndex);
           }
-        } else if (hasReturn) {
-          // Simple return statement, insert if before it
-          const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
-				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
-					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
-					.pipe(filter('**/node'))
-					.pipe(util.setExecutableBit('**'))
-					.pipe(rename('node'));
-			}
-			${fullExtractCall}`;
-          content = content.substring(0, extractStartIndex) + newCode + content.substring(extractEndIndex);
         } else {
-          // No return, just the function call - wrap in return
+          // No return statement found, look for just extractAlpinefromDocker
+          const extractPattern = /extractAlpinefromDocker\s*\(/;
+          const extractMatch = afterCase.match(extractPattern);
+          
+          if (!extractMatch) {
+            console.log('⚠ Could not find extractAlpinefromDocker call in case alpine block');
+            console.log('Showing first 1000 chars after case alpine:');
+            console.log(afterCase.substring(0, 1000));
+            process.exit(1);
+          }
+          
+          const extractStartIndex = caseAlpineIndex + extractMatch.index;
+          const afterExtractStart = content.substring(extractStartIndex);
+          const extractCallPattern = /extractAlpinefromDocker\s*\([^)]+\)/;
+          const extractCallMatch = afterExtractStart.match(extractCallPattern);
+          
+          if (!extractCallMatch) {
+            console.log('⚠ Could not find complete extractAlpinefromDocker call');
+            process.exit(1);
+          }
+          
+          const extractEndIndex = extractStartIndex + extractCallMatch.index + extractCallMatch[0].length;
+          const fullExtractCall = extractCallMatch[0];
+          
+          // Insert if statement before extractAlpinefromDocker
           const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
 				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
 					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))

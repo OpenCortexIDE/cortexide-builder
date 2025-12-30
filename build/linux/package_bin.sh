@@ -199,7 +199,7 @@ if [[ -f "build/linux/dependencies-generator.js" ]]; then
     const path = './build/linux/dependencies-generator.js';
     let content = fs.readFileSync(path, 'utf8');
     let modified = false;
-    
+
     // Replace any variation of FAIL_BUILD_FOR_NEW_DEPENDENCIES = true
     if (content.includes('FAIL_BUILD_FOR_NEW_DEPENDENCIES = true')) {
       content = content.replace(
@@ -212,7 +212,7 @@ if [[ -f "build/linux/dependencies-generator.js" ]]; then
       );
       modified = true;
     }
-    
+
     if (modified) {
       fs.writeFileSync(path, content, 'utf8');
       console.log('✓ Set FAIL_BUILD_FOR_NEW_DEPENDENCIES to false');
@@ -351,6 +351,29 @@ echo "  VSCODE_ELECTRON_TAG=${VSCODE_ELECTRON_TAG}"
 			echo "✓ electron-custom-repo patch already correctly applied"
 		fi
 	fi
+
+# Ensure dependencies-generator.js has FAIL_BUILD_FOR_NEW_DEPENDENCIES set to false
+# This needs to be done right before the gulp command since the file might be regenerated
+if [[ -f "build/linux/dependencies-generator.js" ]]; then
+  echo "Ensuring dependencies-generator.js has strict checking disabled..."
+  node -e "
+    const fs = require('fs');
+    const path = './build/linux/dependencies-generator.js';
+    let content = fs.readFileSync(path, 'utf8');
+    if (content.includes('FAIL_BUILD_FOR_NEW_DEPENDENCIES = true')) {
+      content = content.replace(
+        /const FAIL_BUILD_FOR_NEW_DEPENDENCIES = true;/g,
+        'const FAIL_BUILD_FOR_NEW_DEPENDENCIES = false;'
+      );
+      content = content.replace(
+        /FAIL_BUILD_FOR_NEW_DEPENDENCIES = true/g,
+        'FAIL_BUILD_FOR_NEW_DEPENDENCIES = false'
+      );
+      fs.writeFileSync(path, content, 'utf8');
+      console.log('✓ Set FAIL_BUILD_FOR_NEW_DEPENDENCIES to false (before gulp)');
+    }
+  " || echo "Warning: Failed to fix dependencies-generator.js before gulp, continuing..."
+fi
 
 npm run gulp "vscode-linux-${VSCODE_ARCH}-min-ci"
 

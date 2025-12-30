@@ -32,8 +32,19 @@ if [[ -d "../patches/alpine/reh/" ]]; then
   done
 fi
 
+# For Alpine ARM64, skip native module builds to avoid compiler crashes
+# Native modules like kerberos can't be built reliably in the Alpine ARM64 environment
+NPM_CI_OPTS=""
+if [[ "${VSCODE_ARCH}" == "arm64" ]]; then
+  NPM_CI_OPTS="--ignore-scripts"
+  echo "Skipping postinstall scripts for Alpine ARM64 (native modules can't build reliably)"
+  # Also prevent node-gyp from trying to build native modules
+  export npm_config_build_from_source=false
+  export npm_config_ignore_scripts=true
+fi
+
 for i in {1..5}; do # try 5 times
-  npm ci && break
+  npm ci ${NPM_CI_OPTS} && break
   if [[ $i == 3 ]]; then
     echo "Npm install failed too many times" >&2
     exit 1

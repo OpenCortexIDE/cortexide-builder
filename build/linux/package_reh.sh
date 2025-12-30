@@ -108,6 +108,59 @@ if [[ -d "../patches/linux/reh/" ]]; then
   done
 fi
 
+# Fix gulpfile.reh.js to use VSCODE_NODEJS_SITE for alternative architectures
+# This ensures Node.js is downloaded from unofficial-builds.nodejs.org for loong64, riscv64, etc.
+if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "riscv64" ]]; }; then
+  if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+    echo "Applying direct fix to gulpfile.reh.js for Node.js download URL..."
+    node -e "
+      const fs = require('fs');
+      const path = './build/gulpfile.reh.js';
+      let content = fs.readFileSync(path, 'utf8');
+      
+      // Check if fix is needed - look for the nodejs function with hardcoded nodejs.org
+      if (content.includes('fetchUrls(\`/dist/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}.tar.gz\`, { base: \\'https://nodejs.org\\'') && 
+          !content.includes('process.env.VSCODE_NODEJS_SITE')) {
+        // Replace the hardcoded nodejs.org URL with environment variable support
+        content = content.replace(
+          /return \(product\.nodejsRepository !== 'https:\/\/nodejs\.org' \?[\s\S]*?fetchUrls\(`\/dist\/v\$\{nodeVersion\}\/node-v\$\{nodeVersion\}-\$\{platform\}-\$\{arch\}\.tar\.gz`, \{ base: 'https:\/\/nodejs\.org', checksumSha256 \}\)/,
+          \`if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+            return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+              .pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+              .pipe(filter('**/node'))
+              .pipe(util.setExecutableBit('**'))
+              .pipe(rename('node'));
+          }
+          return (product.nodejsRepository !== 'https://nodejs.org' ?
+            fetchGithub(product.nodejsRepository, { version: \`\${nodeVersion}-\${internalNodeVersion}\`, name: expectedName, checksumSha256 }) :
+            fetchUrls(\`/dist/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}.tar.gz\`, { base: 'https://nodejs.org', checksumSha256 })\`
+        );
+        
+        fs.writeFileSync(path, content, 'utf8');
+        console.log('gulpfile.reh.js Node.js URL fix applied successfully');
+      } else if (content.includes('process.env.VSCODE_NODEJS_SITE')) {
+        console.log('gulpfile.reh.js Node.js URL fix already applied');
+      } else {
+        console.log('gulpfile.reh.js Node.js URL fix not needed (code structure different)');
+      }
+    " || {
+      echo "ERROR: Failed to apply gulpfile.reh.js Node.js URL fix!"
+      echo "This is required for alternative architectures (loong64, riscv64)"
+      exit 1
+    }
+    
+    # Verify fix was applied
+    if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+      echo "ERROR: gulpfile.reh.js Node.js URL fix verification failed!"
+      echo "This is required for alternative architectures (loong64, riscv64)"
+      exit 1
+    fi
+    echo "✓ Verified gulpfile.reh.js Node.js URL fix is applied"
+  else
+    echo "✓ gulpfile.reh.js Node.js URL fix already applied"
+  fi
+fi
+
 # Verify and apply fix-reh-empty-dependencies fix if patch didn't work
 if [[ -f "build/gulpfile.reh.js" ]] && ! grep -q "dependenciesSrc.length > 0" build/gulpfile.reh.js 2>/dev/null; then
   echo "Applying fix-reh-empty-dependencies fix to gulpfile.reh.js..."

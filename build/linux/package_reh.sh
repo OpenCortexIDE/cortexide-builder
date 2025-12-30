@@ -414,6 +414,18 @@ echo "=========================================="
 
 export VSCODE_NODE_GLIBC="-glibc-${GLIBC_VERSION}"
 
+# Ensure environment variables are exported for gulp tasks
+# This is critical for alternative architectures that need unofficial Node.js builds
+if [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "riscv64" ]]; then
+  export VSCODE_NODEJS_SITE="${VSCODE_NODEJS_SITE:-https://unofficial-builds.nodejs.org}"
+  export VSCODE_NODEJS_URLROOT="${VSCODE_NODEJS_URLROOT:-/download/release}"
+  export VSCODE_NODEJS_URLSUFFIX="${VSCODE_NODEJS_URLSUFFIX:-}"
+  echo "DEBUG: Re-exporting Node.js environment variables for gulp tasks:"
+  echo "  VSCODE_NODEJS_SITE=${VSCODE_NODEJS_SITE}"
+  echo "  VSCODE_NODEJS_URLROOT=${VSCODE_NODEJS_URLROOT}"
+  echo "  VSCODE_NODEJS_URLSUFFIX=${VSCODE_NODEJS_URLSUFFIX}"
+fi
+
 if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
   # Skip REH build for s390x if the gulp task doesn't exist
   if [[ "${VSCODE_ARCH}" == "s390x" ]]; then

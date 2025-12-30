@@ -406,7 +406,7 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
   echo "Environment variables: VSCODE_NODEJS_SITE=${VSCODE_NODEJS_SITE}, VSCODE_NODEJS_URLROOT=${VSCODE_NODEJS_URLROOT}, VSCODE_NODEJS_URLSUFFIX=${VSCODE_NODEJS_URLSUFFIX}"
   echo "Checking if gulpfile.reh.js exists and is readable..."
   ls -la build/gulpfile.reh.js || echo "WARNING: gulpfile.reh.js not found!"
-  
+
   if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
     echo "Applying direct fix to gulpfile.reh.js for Node.js download URL..."
     echo "Current gulpfile.reh.js does not contain VSCODE_NODEJS_SITE check"
@@ -425,7 +425,7 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
       console.log('  - fetchUrls found:', content.includes('fetchUrls'));
       console.log('  - nodejs.org found:', content.includes('https://nodejs.org'));
       console.log('  - VSCODE_NODEJS_SITE already present:', content.includes('process.env.VSCODE_NODEJS_SITE'));
-      
+
       if (content.includes('fetchUrls') && content.includes('https://nodejs.org') &&
           !content.includes('process.env.VSCODE_NODEJS_SITE')) {
         console.log('Fix is needed, searching for case linux block...');
@@ -438,7 +438,7 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
         if (caseLinuxIndex === -1) {
           caseLinuxIndex = content.indexOf('case "linux":');
         }
-        
+
         // Also try with whitespace variations
         if (caseLinuxIndex === -1) {
           const caseLinuxRegex = /case\s+['"]linux['"]\s*:/;
@@ -459,7 +459,7 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
           }
           process.exit(1);
         }
-        
+
         console.log(`Found case linux at index ${caseLinuxIndex}`);
 
         // Find the return statement after case 'linux'
@@ -478,7 +478,7 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
           console.log(afterCase.substring(0, 1000));
           process.exit(1);
         }
-        
+
         console.log(`Found return statement at index ${returnMatch.index} within case linux block`);
 
         // Find the end of the return statement - it ends with .pipe(rename('node'))

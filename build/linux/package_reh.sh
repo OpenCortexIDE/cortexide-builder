@@ -467,9 +467,14 @@ if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
       echo "  VSCODE_NODEJS_SITE=${VSCODE_NODEJS_SITE}"
       echo "  VSCODE_NODEJS_URLROOT=${VSCODE_NODEJS_URLROOT}"
       echo "  VSCODE_NODEJS_URLSUFFIX=${VSCODE_NODEJS_URLSUFFIX}"
+      # Pass environment variables explicitly to npm/gulp to ensure they're available
+      VSCODE_NODEJS_SITE="${VSCODE_NODEJS_SITE}" \
+      VSCODE_NODEJS_URLROOT="${VSCODE_NODEJS_URLROOT}" \
+      VSCODE_NODEJS_URLSUFFIX="${VSCODE_NODEJS_URLSUFFIX}" \
+      npm run gulp "vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
+    else
+      npm run gulp "vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
     fi
-
-    npm run gulp "vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
   fi
 
   # Only verify glibc and archive if REH was actually built (directory exists)

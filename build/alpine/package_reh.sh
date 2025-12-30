@@ -56,10 +56,30 @@ node build/azure-pipelines/distro/mixin-npm
 
 # For Alpine ARM64, ensure ternary-stream is installed in build directory (it might be missing due to --ignore-scripts)
 # ternary-stream is required by build/lib/util.js, so it needs to be in build/node_modules
+# This must be done BEFORE running any gulp commands
 if [[ "${VSCODE_ARCH}" == "arm64" ]]; then
-  if ! npm list ternary-stream --prefix build >/dev/null 2>&1; then
-    echo "Installing ternary-stream in build directory (required for build but may be missing due to --ignore-scripts)..."
-    npm install ternary-stream --prefix build --no-save || echo "Warning: Failed to install ternary-stream, continuing..."
+  echo "Checking for ternary-stream in build directory for Alpine ARM64..."
+  # Check if ternary-stream exists in build/node_modules (more reliable than npm list)
+  if [[ ! -d "build/node_modules/ternary-stream" ]] && [[ ! -f "build/node_modules/ternary-stream/package.json" ]]; then
+    echo "Installing ternary-stream in build directory (required for build/lib/util.js but may be missing due to --ignore-scripts)..."
+    # Ensure build directory exists and has a package.json
+    if [[ ! -f "build/package.json" ]]; then
+      echo "ERROR: build/package.json not found, cannot install ternary-stream"
+      exit 1
+    fi
+    npm install ternary-stream --prefix build --no-save --legacy-peer-deps || {
+      echo "ERROR: Failed to install ternary-stream in build directory!"
+      echo "This is required for Alpine ARM64 REH builds"
+      exit 1
+    }
+    # Verify installation
+    if [[ ! -d "build/node_modules/ternary-stream" ]] && [[ ! -f "build/node_modules/ternary-stream/package.json" ]]; then
+      echo "ERROR: ternary-stream installation verification failed!"
+      exit 1
+    fi
+    echo "✓ ternary-stream installed successfully in build directory"
+  else
+    echo "✓ ternary-stream already present in build directory"
   fi
 fi
 

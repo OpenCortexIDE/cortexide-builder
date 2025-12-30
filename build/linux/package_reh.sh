@@ -118,21 +118,21 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
       const fs = require('fs');
       const path = './build/gulpfile.reh.js';
       let content = fs.readFileSync(path, 'utf8');
-      
+
       // Check if fix is needed - look for the nodejs function with hardcoded nodejs.org
-      if (content.includes('fetchUrls') && content.includes('https://nodejs.org') && 
+      if (content.includes('fetchUrls') && content.includes('https://nodejs.org') &&
           !content.includes('process.env.VSCODE_NODEJS_SITE')) {
         // Find the case 'linux': block - look for the return statement with nodejs.org
         // Pattern: case 'linux': ... return (product.nodejsRepository !== 'https://nodejs.org' ? ... : fetchUrls(...))
         // We need to find the exact location and insert the VSCODE_NODEJS_SITE check before it
-        
+
         // First, try to find the case 'linux' block with the full return statement
         const caseLinuxMatch = content.match(/(case\s+['"]linux['"]:[\s\S]*?)(return\s*\(product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]\s*\?[\s\S]*?:\s*fetchUrls\([^)]*\{[^}]*base:\s*['"]https:\/\/nodejs\.org['"][^}]*\}\)[\s\S]*?\.pipe\(flatmap\([^)]*\)\)[\s\S]*?\.pipe\(filter\([^)]*\)\)[\s\S]*?\.pipe\(util\.setExecutableBit\([^)]*\)\)[\s\S]*?\.pipe\(rename\([^)]*\)\))/);
-        
+
         if (caseLinuxMatch) {
           const caseStart = caseLinuxMatch[1];
           const returnStatement = caseLinuxMatch[2];
-          
+
           // Insert the VSCODE_NODEJS_SITE check before the return statement
           const newCode = `${caseStart}if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
 				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
@@ -142,7 +142,7 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
 					.pipe(rename('node'));
 			}
 			${returnStatement}`;
-          
+
           content = content.replace(caseLinuxMatch[0], newCode);
           fs.writeFileSync(path, content, 'utf8');
           console.log('✓ gulpfile.reh.js Node.js URL fix applied successfully');
@@ -153,13 +153,13 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
             // Find the next return statement after case 'linux'
             const afterCase = content.substring(caseLinuxIndex);
             const returnMatch = afterCase.match(/(return\s*\(product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]\s*\?[\s\S]*?:\s*fetchUrls\([^)]*\{[^}]*base:\s*['"]https:\/\/nodejs\.org['"][^}]*\}\)[\s\S]*?\.pipe\(flatmap\([^)]*\)\)[\s\S]*?\.pipe\(filter\([^)]*\)\)[\s\S]*?\.pipe\(util\.setExecutableBit\([^)]*\)\)[\s\S]*?\.pipe\(rename\([^)]*\)\))/);
-            
+
             if (returnMatch) {
               const returnStatement = returnMatch[0];
               const insertPoint = caseLinuxIndex + afterCase.indexOf(returnStatement);
               const beforeReturn = content.substring(0, insertPoint);
               const afterReturn = content.substring(insertPoint);
-              
+
               const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
 				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
 					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
@@ -168,7 +168,7 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
 					.pipe(rename('node'));
 			}
 			${returnStatement}`;
-              
+
               content = beforeReturn + newCode + afterReturn.substring(returnStatement.length);
               fs.writeFileSync(path, content, 'utf8');
               console.log('✓ gulpfile.reh.js Node.js URL fix applied successfully (fallback method)');
@@ -410,12 +410,18 @@ if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
 fi
 
 if [[ "${SHOULD_BUILD_REH_WEB}" != "no" ]]; then
-  echo "Building REH-web"
-  # Compile extensions before minifying (extensions need their dependencies installed)
-  echo "Compiling extensions for REH-web..."
-  npm run gulp compile-extensions-build || echo "Warning: Extension compilation failed, continuing..."
-  npm run gulp minify-vscode-reh-web
-  npm run gulp "vscode-reh-web-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
+  # Skip REH-web build for s390x if the gulp task doesn't exist
+  if [[ "${VSCODE_ARCH}" == "s390x" ]]; then
+    echo "Skipping REH-web build for s390x (gulp task not available)"
+  else
+    echo "Building REH-web"
+    # Compile extensions before minifying (extensions need their dependencies installed)
+    echo "Compiling extensions for REH-web..."
+    npm run gulp compile-extensions-build || echo "Warning: Extension compilation failed, continuing..."
+    npm run gulp minify-vscode-reh-web
+    npm run gulp "vscode-reh-web-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
+  fi
+fi
 
   EXPECTED_GLIBC_VERSION="${EXPECTED_GLIBC_VERSION}" EXPECTED_GLIBCXX_VERSION="${GLIBCXX_VERSION}" SEARCH_PATH="../vscode-reh-web-${VSCODE_PLATFORM}-${VSCODE_ARCH}" ./build/azure-pipelines/linux/verify-glibc-requirements.sh
 

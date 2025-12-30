@@ -458,6 +458,17 @@ if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
       "
     fi
 
+    # Re-export environment variables right before gulp task to ensure they're available
+    if [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "riscv64" ]]; then
+      export VSCODE_NODEJS_SITE="${VSCODE_NODEJS_SITE:-https://unofficial-builds.nodejs.org}"
+      export VSCODE_NODEJS_URLROOT="${VSCODE_NODEJS_URLROOT:-/download/release}"
+      export VSCODE_NODEJS_URLSUFFIX="${VSCODE_NODEJS_URLSUFFIX:-}"
+      echo "DEBUG: Environment variables before gulp task:"
+      echo "  VSCODE_NODEJS_SITE=${VSCODE_NODEJS_SITE}"
+      echo "  VSCODE_NODEJS_URLROOT=${VSCODE_NODEJS_URLROOT}"
+      echo "  VSCODE_NODEJS_URLSUFFIX=${VSCODE_NODEJS_URLSUFFIX}"
+    fi
+
     npm run gulp "vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
   fi
 

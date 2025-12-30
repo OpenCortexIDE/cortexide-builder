@@ -54,6 +54,14 @@ done
 
 node build/azure-pipelines/distro/mixin-npm
 
+# For Alpine ARM64, ensure ternary-stream is installed (it might be missing due to --ignore-scripts)
+if [[ "${VSCODE_ARCH}" == "arm64" ]]; then
+  if ! npm list ternary-stream >/dev/null 2>&1; then
+    echo "Installing ternary-stream (required for build but may be missing due to --ignore-scripts)..."
+    npm install ternary-stream --no-save || echo "Warning: Failed to install ternary-stream, continuing..."
+  fi
+fi
+
 if [[ "${VSCODE_ARCH}" == "x64" ]]; then
   PA_NAME="linux-alpine"
 else

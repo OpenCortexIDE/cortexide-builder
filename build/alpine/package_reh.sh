@@ -153,8 +153,17 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
         const extractEndIndex = extractStartIndex + extractCallMatch.index + extractCallMatch[0].length;
         const fullExtractCall = content.substring(extractStartIndex, extractEndIndex);
 
+        // Find the line before extractAlpinefromDocker to see the context
+        const beforeExtract = content.substring(0, extractStartIndex);
+        const lastNewlineBefore = beforeExtract.lastIndexOf('\n');
+        const lineBefore = content.substring(Math.max(0, lastNewlineBefore - 100), extractStartIndex);
+        
+        console.log('Context before extractAlpinefromDocker call:');
+        console.log(lineBefore.substring(Math.max(0, lineBefore.length - 200)));
+
         // Insert the VSCODE_NODEJS_SITE check before the extractAlpinefromDocker call
         // For Alpine, we need to use fetchUrls with the unofficial builds URL
+        // Make sure we're not breaking any existing code structure
         const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
 				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
 					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
@@ -164,7 +173,34 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
 			}
 			${fullExtractCall}`;
 
-        content = content.substring(0, extractStartIndex) + newCode + content.substring(extractEndIndex);
+        // Check if there's a ternary or other operator before this that we need to handle
+        const charBefore = content.charAt(extractStartIndex - 1);
+        if (charBefore === ':' || charBefore === '?') {
+          console.log('⚠ Found ternary operator before extractAlpinefromDocker, adjusting fix...');
+          // If there's a ternary, we need to wrap the entire thing differently
+          // Find the start of the ternary expression
+          let ternaryStart = extractStartIndex - 1;
+          while (ternaryStart > 0 && (content.charAt(ternaryStart) === ' ' || content.charAt(ternaryStart) === '\t' || content.charAt(ternaryStart) === ':' || content.charAt(ternaryStart) === '?')) {
+            ternaryStart--;
+          }
+          // Find the condition start
+          while (ternaryStart > 0 && content.charAt(ternaryStart) !== '(' && content.charAt(ternaryStart) !== ' ') {
+            ternaryStart--;
+          }
+          
+          const ternaryCondition = content.substring(ternaryStart, extractStartIndex - 1);
+          const newCodeWithTernary = `${ternaryCondition} ? (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT
+				? fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'))
+				: ${fullExtractCall}) : ${fullExtractCall}`;
+          
+          content = content.substring(0, ternaryStart) + newCodeWithTernary + content.substring(extractEndIndex);
+        } else {
+          content = content.substring(0, extractStartIndex) + newCode + content.substring(extractEndIndex);
+        }
         fs.writeFileSync(path, content, 'utf8');
         console.log('✓ gulpfile.reh.js Node.js URL fix applied successfully for Alpine ARM64');
       } else if (content.includes('process.env.VSCODE_NODEJS_SITE')) {

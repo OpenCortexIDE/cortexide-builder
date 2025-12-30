@@ -2,7 +2,7 @@ diff --git a/cli/src/tunnels/code_server.rs b/cli/src/tunnels/code_server.rs
 index 0000000..0000000 100644
 --- a/cli/src/tunnels/code_server.rs
 +++ b/cli/src/tunnels/code_server.rs
-@@ -23,7 +23,7 @@ use crate::util::io::SilentCopyProgress;
+@@ -20,10 +20,9 @@ use crate::util::io::SilentCopyProgress;
  use crate::util::machine::process_exists;
  use crate::util::prereqs::skip_requirements_check;
 -use crate::{debug, info, log, spanf, trace, warning};
@@ -10,11 +10,18 @@ index 0000000..0000000 100644
  use lazy_static::lazy_static;
  use opentelemetry::KeyValue;
  use regex::Regex;
+ use serde::Deserialize;
+ use std::fs;
+ use std::fs::File;
 diff --git a/cli/src/tunnels/dev_tunnels.rs b/cli/src/tunnels/dev_tunnels.rs
 index 0000000..0000000 100644
 --- a/cli/src/tunnels/dev_tunnels.rs
 +++ b/cli/src/tunnels/dev_tunnels.rs
-@@ -11,7 +11,7 @@ use crate::util::errors::{
+@@ -8,10 +8,9 @@ use crate::auth;
+ use crate::constants::{IS_INTERACTIVE_CLI, PROTOCOL_VERSION_TAG, TUNNEL_SERVICE_USER_AGENT};
+ use crate::state::{LauncherPaths, PersistedState};
+ use crate::util::errors::{
+ 	wrap, AnyError, CodeError, DevTunnelError, InvalidTunnelName, TunnelCreationFailed,
  	WrappedError,
  };
  use crate::util::input::prompt_placeholder;
@@ -27,7 +34,11 @@ diff --git a/cli/src/update_service.rs b/cli/src/update_service.rs
 index 0000000..0000000 100644
 --- a/cli/src/update_service.rs
 +++ b/cli/src/update_service.rs
-@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
+@@ -6,13 +6,12 @@
+ 
+ use std::{fmt, path::Path};
+ 
+ use serde::{Deserialize, Serialize};
  
  use crate::{
  	constants::VSCODE_CLI_UPDATE_ENDPOINT,
@@ -36,4 +47,6 @@ index 0000000..0000000 100644
  	util::{
  		errors::{wrap, AnyError, CodeError, WrappedError},
  		http::{BoxedHttp, SimpleResponse},
-
+ 		io::ReportCopyProgress,
+ 		tar::{self, has_gzip_header},
+ 		zipper,

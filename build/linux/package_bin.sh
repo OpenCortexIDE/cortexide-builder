@@ -248,16 +248,22 @@ echo "  VSCODE_ELECTRON_TAG=${VSCODE_ELECTRON_TAG}"
 # This patch allows gulp to use VSCODE_ELECTRON_REPOSITORY and VSCODE_ELECTRON_TAG env vars
 # The patch is idempotent (checks typeof electronOverride === 'undefined'), so it's safe to always apply
 if [[ -f "../patches/linux/electron-custom-repo-idempotent.patch" ]]; then
-  # Verify the patch is correctly applied - check if it reads VSCODE_ELECTRON_TAG env var
-  if ! grep -q "process.env.VSCODE_ELECTRON_TAG" build/gulpfile.vscode.js 2>/dev/null; then
-    echo "Applying electron-custom-repo patch (electronOverride code not found or incorrect)..."
+  # Verify the patch is correctly applied - check for the SPECIFIC code structure the patch creates
+  # The patch creates: "typeof electronOverride === 'undefined'" check and direct spread
+  # We need to verify BOTH: env var reading AND the correct code structure
+  if ! grep -q "typeof electronOverride === 'undefined'" build/gulpfile.vscode.js 2>/dev/null || \
+     ! grep -q "process.env.VSCODE_ELECTRON_TAG" build/gulpfile.vscode.js 2>/dev/null || \
+     ! grep -q "{ ...config, ...electronOverride," build/gulpfile.vscode.js 2>/dev/null; then
+    echo "Applying electron-custom-repo patch (electronOverride code not found or incorrect structure)..."
     apply_patch "../patches/linux/electron-custom-repo-idempotent.patch" || {
       echo "ERROR: electron-custom-repo patch failed to apply!"
       echo "This is required for alternative architectures (ppc64le, loong64, riscv64)"
       exit 1
     }
-    # Verify patch was applied correctly
-    if ! grep -q "process.env.VSCODE_ELECTRON_TAG" build/gulpfile.vscode.js 2>/dev/null; then
+    # Verify patch was applied correctly - check for the specific structure
+    if ! grep -q "typeof electronOverride === 'undefined'" build/gulpfile.vscode.js 2>/dev/null || \
+       ! grep -q "process.env.VSCODE_ELECTRON_TAG" build/gulpfile.vscode.js 2>/dev/null || \
+       ! grep -q "{ ...config, ...electronOverride," build/gulpfile.vscode.js 2>/dev/null; then
       echo "ERROR: electron-custom-repo patch applied but verification failed!"
       echo "The patch may not match the current gulpfile.vscode.js structure"
       exit 1

@@ -73,8 +73,10 @@ elif [[ "${VSCODE_ARCH}" == "loong64" ]]; then
 elif [[ "${VSCODE_ARCH}" == "s390x" ]]; then
   VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME="vscodium/vscodium-linux-build-agent:focal-devtoolset-s390x"
 
-  export VSCODE_SYSROOT_REPOSITORY='VSCodium/vscode-linux-build-agent'
-  export VSCODE_SYSROOT_VERSION='20241108'
+  export VSCODE_SKIP_SYSROOT=1
+  export USE_GNUPP2A=1
+  # Unset VSCODE_SYSROOT_DIR to prevent node-gyp from trying to use cross-compilation
+  unset VSCODE_SYSROOT_DIR
 fi
 
 export ELECTRON_SKIP_BINARY_DOWNLOAD=1

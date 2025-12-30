@@ -118,14 +118,14 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
       const fs = require('fs');
       const path = './build/gulpfile.reh.js';
       let content = fs.readFileSync(path, 'utf8');
-      
+
       // Check if fix is needed - look for the nodejs function with hardcoded nodejs.org
-      if (content.includes('fetchUrls') && content.includes('https://nodejs.org') && 
+      if (content.includes('fetchUrls') && content.includes('https://nodejs.org') &&
           !content.includes('process.env.VSCODE_NODEJS_SITE')) {
         // Find the pattern where nodejs.org is hardcoded and replace it
         // Look for: return (product.nodejsRepository !== 'https://nodejs.org' ? ... : fetchUrls(...))
         const pattern = /(return\s*\(product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]\s*\?[\s\S]*?:\s*)(fetchUrls\([^)]*\{[^}]*base:\s*['"]https:\/\/nodejs\.org['"][^}]*\}\))/;
-        
+
         if (pattern.test(content)) {
           content = content.replace(pattern, (match, prefix, fetchCall) => {
             return `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
@@ -137,7 +137,7 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
           }
           ${prefix}${fetchCall}`;
           });
-          
+
           fs.writeFileSync(path, content, 'utf8');
           console.log('✓ gulpfile.reh.js Node.js URL fix applied successfully');
         } else {
@@ -149,19 +149,15 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
         console.log('⚠ gulpfile.reh.js Node.js URL fix not needed (code structure different)');
       }
 NODEJS_SCRIPT
-    
+
     node /tmp/fix-nodejs-url-reh.js || {
       echo "ERROR: Failed to apply gulpfile.reh.js Node.js URL fix!"
       echo "This is required for alternative architectures (loong64, riscv64)"
       rm -f /tmp/fix-nodejs-url-reh.js
       exit 1
     }
-    rm -f /tmp/fix-nodejs-url-reh.js || {
-      echo "ERROR: Failed to apply gulpfile.reh.js Node.js URL fix!"
-      echo "This is required for alternative architectures (loong64, riscv64)"
-      exit 1
-    }
-    
+    rm -f /tmp/fix-nodejs-url-reh.js
+
     # Verify fix was applied
     if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
       echo "ERROR: gulpfile.reh.js Node.js URL fix verification failed!"
@@ -181,7 +177,7 @@ if [[ -f "build/gulpfile.reh.js" ]] && ! grep -q "dependenciesSrc.length > 0" bu
     const fs = require('fs');
     const path = './build/gulpfile.reh.js';
     let content = fs.readFileSync(path, 'utf8');
-    
+
     // Check if fix is needed
     if (content.includes('const deps = gulp.src(dependenciesSrc,') && !content.includes('dependenciesSrc.length > 0')) {
       // Add filter to dependenciesSrc
@@ -189,13 +185,13 @@ if [[ -f "build/gulpfile.reh.js" ]] && ! grep -q "dependenciesSrc.length > 0" bu
         /const dependenciesSrc = productionDependencies\.map\(d => path\.relative\(REPO_ROOT, d\)\)\.map\(d => \[`\${d}\/\*\*`, `!\${d}\/\*\*\/{test,tests}\/\*\*`, `!\${d}\/.bin\/\*\*`\]\)\.flat\(\);/,
         'const dependenciesSrc = productionDependencies.map(d => path.relative(REPO_ROOT, d)).filter(d => d && d.trim() !== \"\").map(d => [`\${d}/**`, `!\${d}/**/{test,tests}/**`, `!\${d}/.bin/**`]).flat();'
       );
-      
+
       // Replace gulp.src call with conditional
       content = content.replace(
         /const deps = gulp\.src\(dependenciesSrc, { base: 'remote', dot: true }\)/,
         'const deps = dependenciesSrc.length > 0 ? gulp.src(dependenciesSrc, { base: \'remote\', dot: true }) : gulp.src([\'**\'], { base: \'remote\', dot: true, allowEmpty: true })'
       );
-      
+
       fs.writeFileSync(path, content, 'utf8');
       console.log('✓ fix-reh-empty-dependencies fix applied successfully');
     } else if (content.includes('dependenciesSrc.length > 0')) {
@@ -207,7 +203,7 @@ if [[ -f "build/gulpfile.reh.js" ]] && ! grep -q "dependenciesSrc.length > 0" bu
     echo "ERROR: Failed to apply fix-reh-empty-dependencies fix!"
     exit 1
   }
-  
+
   # Verify fix was applied
   if ! grep -q "dependenciesSrc.length > 0" build/gulpfile.reh.js 2>/dev/null; then
     echo "ERROR: fix-reh-empty-dependencies fix verification failed!"

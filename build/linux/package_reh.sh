@@ -110,6 +110,9 @@ fi
 
 # Fix gulpfile.reh.js to use VSCODE_NODEJS_SITE for alternative architectures
 # This ensures Node.js is downloaded from unofficial-builds.nodejs.org for loong64, riscv64, etc.
+echo "=========================================="
+echo "NODEJS URL FIX CHECK FOR ${VSCODE_ARCH}"
+echo "=========================================="
 if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "riscv64" ]]; }; then
   echo "=== Checking if gulpfile.reh.js needs Node.js URL fix for ${VSCODE_ARCH} ==="
   echo "Environment variables: VSCODE_NODEJS_SITE=${VSCODE_NODEJS_SITE}, VSCODE_NODEJS_URLROOT=${VSCODE_NODEJS_URLROOT}, VSCODE_NODEJS_URLSUFFIX=${VSCODE_NODEJS_URLSUFFIX}"

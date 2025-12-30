@@ -244,12 +244,27 @@ echo "Environment variables for Electron:"
 echo "  VSCODE_ELECTRON_REPOSITORY=${VSCODE_ELECTRON_REPOSITORY}"
 echo "  VSCODE_ELECTRON_TAG=${VSCODE_ELECTRON_TAG}"
 
-# Apply electron-custom-repo patch if it exists and hasn't been applied
+# Apply electron-custom-repo patch if it exists
 # This patch allows gulp to use VSCODE_ELECTRON_REPOSITORY and VSCODE_ELECTRON_TAG env vars
+# The patch is idempotent (checks typeof electronOverride === 'undefined'), so it's safe to always apply
 if [[ -f "../patches/linux/electron-custom-repo-idempotent.patch" ]]; then
-  if ! grep -q "electronOverride" build/gulpfile.vscode.js 2>/dev/null; then
-    echo "Applying electron-custom-repo patch..."
-    apply_patch "../patches/linux/electron-custom-repo-idempotent.patch" || echo "Warning: electron-custom-repo patch failed, continuing..."
+  # Verify the patch is correctly applied - check if it reads VSCODE_ELECTRON_TAG env var
+  if ! grep -q "process.env.VSCODE_ELECTRON_TAG" build/gulpfile.vscode.js 2>/dev/null; then
+    echo "Applying electron-custom-repo patch (electronOverride code not found or incorrect)..."
+    apply_patch "../patches/linux/electron-custom-repo-idempotent.patch" || {
+      echo "ERROR: electron-custom-repo patch failed to apply!"
+      echo "This is required for alternative architectures (ppc64le, loong64, riscv64)"
+      exit 1
+    }
+    # Verify patch was applied correctly
+    if ! grep -q "process.env.VSCODE_ELECTRON_TAG" build/gulpfile.vscode.js 2>/dev/null; then
+      echo "ERROR: electron-custom-repo patch applied but verification failed!"
+      echo "The patch may not match the current gulpfile.vscode.js structure"
+      exit 1
+    fi
+    echo "✓ electron-custom-repo patch applied and verified"
+  else
+    echo "✓ electron-custom-repo patch already correctly applied"
   fi
 fi
 

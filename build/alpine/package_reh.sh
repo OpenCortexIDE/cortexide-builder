@@ -87,8 +87,7 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
       console.log('  - VSCODE_NODEJS_SITE already present:', content.includes('process.env.VSCODE_NODEJS_SITE'));
       console.log('  - extractAlpinefromDocker found:', content.includes('extractAlpinefromDocker'));
       
-      if (content.includes('fetchUrls') && content.includes('https://nodejs.org') &&
-          !content.includes('process.env.VSCODE_NODEJS_SITE')) {
+      if (!content.includes('process.env.VSCODE_NODEJS_SITE')) {
         console.log('Fix is needed, searching for case alpine block...');
         
         // Find case 'alpine' block - try both single and double quotes
@@ -120,38 +119,42 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
         
         console.log(`Found case alpine at index ${caseAlpineIndex}`);
 
-        // Find the return statement after case 'alpine'
+        // Find where extractAlpinefromDocker is called in the case alpine block
         const afterCase = content.substring(caseAlpineIndex);
+        console.log('Searching for extractAlpinefromDocker call...');
         
-        // Look for the pattern: return (product.nodejsRepository !== 'https://nodejs.org' ? ... : fetchUrls(...))
-        console.log('Searching for return statement with nodejs.org...');
-        const returnPattern = /return\s*\(product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]/;
-        const returnMatch = afterCase.match(returnPattern);
+        // Look for extractAlpinefromDocker call - it might be: return extractAlpinefromDocker(...) or just extractAlpinefromDocker(...)
+        const extractPattern = /(return\s+)?extractAlpinefromDocker\s*\(/;
+        const extractMatch = afterCase.match(extractPattern);
 
-        if (!returnMatch) {
-          console.log('⚠ Could not find return statement with nodejs.org in case alpine block');
+        if (!extractMatch) {
+          console.log('⚠ Could not find extractAlpinefromDocker call in case alpine block');
           console.log('Showing first 1000 chars after case alpine:');
           console.log(afterCase.substring(0, 1000));
           process.exit(1);
         }
         
-        console.log(`Found return statement at index ${returnMatch.index} within case alpine block`);
+        console.log(`Found extractAlpinefromDocker call at index ${extractMatch.index} within case alpine block`);
 
-        // Find the end of the return statement - it ends with .pipe(rename('node'))
-        const returnStartIndex = caseAlpineIndex + returnMatch.index;
-        const afterReturnStart = content.substring(returnStartIndex);
-        const renamePattern = /\.pipe\(rename\(['"]node['"]\)\)/;
-        const renameMatch = afterReturnStart.match(renamePattern);
-
-        if (!renameMatch) {
-          console.log('⚠ Could not find end of return statement (.pipe(rename))');
+        // Find the start of the extractAlpinefromDocker call (before "return" if present)
+        const extractStartIndex = caseAlpineIndex + extractMatch.index;
+        
+        // Find the end of the extractAlpinefromDocker call - look for the closing parenthesis and semicolon
+        const afterExtractStart = content.substring(extractStartIndex);
+        // Match the function call: extractAlpinefromDocker(nodeVersion, platform, arch) or return extractAlpinefromDocker(...)
+        const extractCallPattern = /(return\s+)?extractAlpinefromDocker\s*\([^)]+\)/;
+        const extractCallMatch = afterExtractStart.match(extractCallPattern);
+        
+        if (!extractCallMatch) {
+          console.log('⚠ Could not find complete extractAlpinefromDocker call');
           process.exit(1);
         }
 
-        const returnEndIndex = returnStartIndex + renameMatch.index + renameMatch[0].length;
-        const fullReturnStatement = content.substring(returnStartIndex, returnEndIndex);
+        const extractEndIndex = extractStartIndex + extractCallMatch.index + extractCallMatch[0].length;
+        const fullExtractCall = content.substring(extractStartIndex, extractEndIndex);
 
-        // Insert the VSCODE_NODEJS_SITE check before the return statement
+        // Insert the VSCODE_NODEJS_SITE check before the extractAlpinefromDocker call
+        // For Alpine, we need to use fetchUrls with the unofficial builds URL
         const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
 				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
 					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
@@ -159,9 +162,9 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
 					.pipe(util.setExecutableBit('**'))
 					.pipe(rename('node'));
 			}
-			${fullReturnStatement}`;
+			${fullExtractCall}`;
 
-        content = content.substring(0, returnStartIndex) + newCode + content.substring(returnEndIndex);
+        content = content.substring(0, extractStartIndex) + newCode + content.substring(extractEndIndex);
         fs.writeFileSync(path, content, 'utf8');
         console.log('✓ gulpfile.reh.js Node.js URL fix applied successfully for Alpine ARM64');
       } else if (content.includes('process.env.VSCODE_NODEJS_SITE')) {

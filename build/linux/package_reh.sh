@@ -118,69 +118,69 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
       const fs = require('fs');
       const path = './build/gulpfile.reh.js';
       let content = fs.readFileSync(path, 'utf8');
-
+      
       // Check if fix is needed - look for the nodejs function with hardcoded nodejs.org
-      if (content.includes('fetchUrls') && content.includes('https://nodejs.org') &&
+      if (content.includes('fetchUrls') && content.includes('https://nodejs.org') && 
           !content.includes('process.env.VSCODE_NODEJS_SITE')) {
         // Find the case 'linux': block - look for the return statement with nodejs.org
-        // Pattern: case 'linux': ... return (product.nodejsRepository !== 'https://nodejs.org' ? ... : fetchUrls(...))
-        // We need to find the exact location and insert the VSCODE_NODEJS_SITE check before it
-
-        // First, try to find the case 'linux' block with the full return statement
-        const caseLinuxMatch = content.match(/(case\s+['"]linux['"]:[\s\S]*?)(return\s*\(product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]\s*\?[\s\S]*?:\s*fetchUrls\([^)]*\{[^}]*base:\s*['"]https:\/\/nodejs\.org['"][^}]*\}\)[\s\S]*?\.pipe\(flatmap\([^)]*\)\)[\s\S]*?\.pipe\(filter\([^)]*\)\)[\s\S]*?\.pipe\(util\.setExecutableBit\([^)]*\)\)[\s\S]*?\.pipe\(rename\([^)]*\)\))/);
-
-        if (caseLinuxMatch) {
-          const caseStart = caseLinuxMatch[1];
-          const returnStatement = caseLinuxMatch[2];
-
-          // Insert the VSCODE_NODEJS_SITE check before the return statement
-          const newCode = `${caseStart}if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
-				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
-					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
-					.pipe(filter('**/node'))
-					.pipe(util.setExecutableBit('**'))
-					.pipe(rename('node'));
-			}
-			${returnStatement}`;
-
-          content = content.replace(caseLinuxMatch[0], newCode);
-          fs.writeFileSync(path, content, 'utf8');
-          console.log('✓ gulpfile.reh.js Node.js URL fix applied successfully');
-        } else {
-          // Try a simpler approach - find case 'linux' and the return statement separately
-          const caseLinuxIndex = content.indexOf("case 'linux':");
-          if (caseLinuxIndex !== -1) {
-            // Find the next return statement after case 'linux'
-            const afterCase = content.substring(caseLinuxIndex);
-            const returnMatch = afterCase.match(/(return\s*\(product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]\s*\?[\s\S]*?:\s*fetchUrls\([^)]*\{[^}]*base:\s*['"]https:\/\/nodejs\.org['"][^}]*\}\)[\s\S]*?\.pipe\(flatmap\([^)]*\)\)[\s\S]*?\.pipe\(filter\([^)]*\)\)[\s\S]*?\.pipe\(util\.setExecutableBit\([^)]*\)\)[\s\S]*?\.pipe\(rename\([^)]*\)\))/);
-
-            if (returnMatch) {
-              const returnStatement = returnMatch[0];
-              const insertPoint = caseLinuxIndex + afterCase.indexOf(returnStatement);
-              const beforeReturn = content.substring(0, insertPoint);
-              const afterReturn = content.substring(insertPoint);
-
-              const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
-				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
-					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
-					.pipe(filter('**/node'))
-					.pipe(util.setExecutableBit('**'))
-					.pipe(rename('node'));
-			}
-			${returnStatement}`;
-
-              content = beforeReturn + newCode + afterReturn.substring(returnStatement.length);
-              fs.writeFileSync(path, content, 'utf8');
-              console.log('✓ gulpfile.reh.js Node.js URL fix applied successfully (fallback method)');
-            } else {
-              console.log('⚠ Could not find return statement pattern in case linux block');
-              process.exit(1);
-            }
-          } else {
-            console.log('⚠ Could not find case "linux" block');
-            process.exit(1);
-          }
+        // The code structure is: case 'linux': return (product.nodejsRepository !== 'https://nodejs.org' ? ... : fetchUrls(...))
+        // We need to insert the VSCODE_NODEJS_SITE check before the return statement
+        
+        // Find case 'linux' block - try both single and double quotes
+        let caseLinuxIndex = content.indexOf("case 'linux':");
+        if (caseLinuxIndex === -1) {
+          caseLinuxIndex = content.indexOf('case "linux":');
         }
+        
+        if (caseLinuxIndex === -1) {
+          console.log('⚠ Could not find case "linux" block');
+          process.exit(1);
+        }
+        
+        // Find the return statement after case 'linux'
+        // Look for: return (product.nodejsRepository !== 'https://nodejs.org' ? ... : fetchUrls(...))
+        const afterCase = content.substring(caseLinuxIndex);
+        
+        // Try to find the return statement - it might be on the same line or next lines
+        // Look for the pattern: return (product.nodejsRepository !== 'https://nodejs.org'
+        const returnPattern = /return\s*\(product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]/;
+        const returnMatch = afterCase.match(returnPattern);
+        
+        if (!returnMatch) {
+          console.log('⚠ Could not find return statement with nodejs.org in case linux block');
+          process.exit(1);
+        }
+        
+        // Find the end of the return statement - it ends with .pipe(rename('node'))
+        const returnStartIndex = caseLinuxIndex + returnMatch.index;
+        const returnStartText = returnMatch[0];
+        
+        // Find where the return statement ends - look for .pipe(rename('node')) or .pipe(rename("node"))
+        const afterReturnStart = content.substring(returnStartIndex);
+        const renamePattern = /\.pipe\(rename\(['"]node['"]\)\)/;
+        const renameMatch = afterReturnStart.match(renamePattern);
+        
+        if (!renameMatch) {
+          console.log('⚠ Could not find end of return statement (.pipe(rename))');
+          process.exit(1);
+        }
+        
+        const returnEndIndex = returnStartIndex + renameMatch.index + renameMatch[0].length;
+        const fullReturnStatement = content.substring(returnStartIndex, returnEndIndex);
+        
+        // Insert the VSCODE_NODEJS_SITE check before the return statement
+        const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			${fullReturnStatement}`;
+        
+        content = content.substring(0, returnStartIndex) + newCode + content.substring(returnEndIndex);
+        fs.writeFileSync(path, content, 'utf8');
+        console.log('✓ gulpfile.reh.js Node.js URL fix applied successfully');
       } else if (content.includes('process.env.VSCODE_NODEJS_SITE')) {
         console.log('✓ gulpfile.reh.js Node.js URL fix already applied');
       } else {

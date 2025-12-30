@@ -113,9 +113,16 @@ fi
 if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "riscv64" ]]; }; then
   echo "=== Checking if gulpfile.reh.js needs Node.js URL fix for ${VSCODE_ARCH} ==="
   echo "Environment variables: VSCODE_NODEJS_SITE=${VSCODE_NODEJS_SITE}, VSCODE_NODEJS_URLROOT=${VSCODE_NODEJS_URLROOT}, VSCODE_NODEJS_URLSUFFIX=${VSCODE_NODEJS_URLSUFFIX}"
+  echo "Checking if gulpfile.reh.js exists and is readable..."
+  ls -la build/gulpfile.reh.js || echo "WARNING: gulpfile.reh.js not found!"
+  
   if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
     echo "Applying direct fix to gulpfile.reh.js for Node.js download URL..."
     echo "Current gulpfile.reh.js does not contain VSCODE_NODEJS_SITE check"
+    echo "Searching for 'case linux' pattern in gulpfile.reh.js..."
+    grep -n "case.*linux" build/gulpfile.reh.js | head -3 || echo "No 'case linux' found"
+    echo "Searching for 'nodejs.org' pattern in gulpfile.reh.js..."
+    grep -n "nodejs.org" build/gulpfile.reh.js | head -3 || echo "No 'nodejs.org' found"
     # Use a temporary Node.js script file to avoid shell escaping issues
     cat > /tmp/fix-nodejs-url-reh.js << 'NODEJS_SCRIPT'
       const fs = require('fs');
@@ -123,8 +130,14 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
       let content = fs.readFileSync(path, 'utf8');
 
       // Check if fix is needed - look for the nodejs function with hardcoded nodejs.org
+      console.log('Checking if fix is needed...');
+      console.log('  - fetchUrls found:', content.includes('fetchUrls'));
+      console.log('  - nodejs.org found:', content.includes('https://nodejs.org'));
+      console.log('  - VSCODE_NODEJS_SITE already present:', content.includes('process.env.VSCODE_NODEJS_SITE'));
+      
       if (content.includes('fetchUrls') && content.includes('https://nodejs.org') &&
           !content.includes('process.env.VSCODE_NODEJS_SITE')) {
+        console.log('Fix is needed, searching for case linux block...');
         // Find the case 'linux': block - look for the return statement with nodejs.org
         // The code structure is: case 'linux': return (product.nodejsRepository !== 'https://nodejs.org' ? ... : fetchUrls(...))
         // We need to insert the VSCODE_NODEJS_SITE check before the return statement
@@ -134,11 +147,29 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
         if (caseLinuxIndex === -1) {
           caseLinuxIndex = content.indexOf('case "linux":');
         }
+        
+        // Also try with whitespace variations
+        if (caseLinuxIndex === -1) {
+          const caseLinuxRegex = /case\s+['"]linux['"]\s*:/;
+          const match = content.match(caseLinuxRegex);
+          if (match) {
+            caseLinuxIndex = content.indexOf(match[0]);
+          }
+        }
 
         if (caseLinuxIndex === -1) {
           console.log('⚠ Could not find case "linux" block');
+          console.log('Showing lines around potential case statements:');
+          const lines = content.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes('case') && lines[i].includes('linux')) {
+              console.log(`Line ${i + 1}: ${lines[i]}`);
+            }
+          }
           process.exit(1);
         }
+        
+        console.log(`Found case linux at index ${caseLinuxIndex}`);
 
         // Find the return statement after case 'linux'
         // Look for: return (product.nodejsRepository !== 'https://nodejs.org' ? ... : fetchUrls(...))
@@ -146,13 +177,18 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
 
         // Try to find the return statement - it might be on the same line or next lines
         // Look for the pattern: return (product.nodejsRepository !== 'https://nodejs.org'
+        console.log('Searching for return statement with nodejs.org...');
         const returnPattern = /return\s*\(product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]/;
         const returnMatch = afterCase.match(returnPattern);
 
         if (!returnMatch) {
           console.log('⚠ Could not find return statement with nodejs.org in case linux block');
+          console.log('Showing first 1000 chars after case linux:');
+          console.log(afterCase.substring(0, 1000));
           process.exit(1);
         }
+        
+        console.log(`Found return statement at index ${returnMatch.index} within case linux block`);
 
         // Find the end of the return statement - it ends with .pipe(rename('node'))
         const returnStartIndex = caseLinuxIndex + returnMatch.index;

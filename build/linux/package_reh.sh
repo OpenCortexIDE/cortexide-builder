@@ -118,30 +118,52 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
       const fs = require('fs');
       const path = './build/gulpfile.reh.js';
       let content = fs.readFileSync(path, 'utf8');
-
+      
       // Check if fix is needed - look for the nodejs function with hardcoded nodejs.org
-      if (content.includes('fetchUrls') && content.includes('https://nodejs.org') &&
+      if (content.includes('fetchUrls') && content.includes('https://nodejs.org') && 
           !content.includes('process.env.VSCODE_NODEJS_SITE')) {
-        // Find the pattern where nodejs.org is hardcoded and replace it
-        // Look for: return (product.nodejsRepository !== 'https://nodejs.org' ? ... : fetchUrls(...))
-        const pattern = /(return\s*\(product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]\s*\?[\s\S]*?:\s*)(fetchUrls\([^)]*\{[^}]*base:\s*['"]https:\/\/nodejs\.org['"][^}]*\}\))/;
-
-        if (pattern.test(content)) {
-          content = content.replace(pattern, (match, prefix, fetchCall) => {
-            return `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
-            return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
-              .pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
-              .pipe(filter('**/node'))
-              .pipe(util.setExecutableBit('**'))
-              .pipe(rename('node'));
-          }
-          ${prefix}${fetchCall}`;
+        // Find the case 'linux': block in the nodejs function
+        // Look for the pattern: case 'linux': ... return (product.nodejsRepository !== 'https://nodejs.org' ? ... : fetchUrls(...))
+        // We need to insert the VSCODE_NODEJS_SITE check before the existing return statement
+        const linuxCasePattern = /(case\s+['"]linux['"]:[\s\S]*?)(return\s*\(product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]\s*\?[\s\S]*?:\s*fetchUrls\([^)]*\{[^}]*base:\s*['"]https:\/\/nodejs\.org['"][^}]*\}\)[\s\S]*?\.pipe\(flatmap\(stream => stream\.pipe\(gunzip\(\)\)\.pipe\(untar\(\)\)\)[\s\S]*?\.pipe\(filter\(['"]\*\*\/node['"]\)\)[\s\S]*?\.pipe\(util\.setExecutableBit\(['"]\*\*['"]\)\)[\s\S]*?\.pipe\(rename\(['"]node['"]\)\))/;
+        
+        if (linuxCasePattern.test(content)) {
+          content = content.replace(linuxCasePattern, (match, caseStart, returnStatement) => {
+            // Insert the VSCODE_NODEJS_SITE check before the return statement
+            return `${caseStart}if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			${returnStatement}`;
           });
-
+          
           fs.writeFileSync(path, content, 'utf8');
           console.log('✓ gulpfile.reh.js Node.js URL fix applied successfully');
         } else {
-          console.log('⚠ gulpfile.reh.js Node.js URL fix not needed (code structure different)');
+          // Try a simpler pattern - just look for the fetchUrls call with nodejs.org
+          const simplePattern = /(case\s+['"]linux['"]:[\s\S]*?)(return\s*\(product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]\s*\?[\s\S]*?:\s*fetchUrls\(`\/dist\/v\$\{nodeVersion\}\/node-v\$\{nodeVersion\}-\$\{platform\}-\$\{arch\}\.tar\.gz`,\s*\{[\s\S]*?base:\s*['"]https:\/\/nodejs\.org['"][\s\S]*?\}\))/;
+          
+          if (simplePattern.test(content)) {
+            content = content.replace(simplePattern, (match, caseStart, returnStatement) => {
+              return `${caseStart}if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			${returnStatement}`;
+            });
+            
+            fs.writeFileSync(path, content, 'utf8');
+            console.log('✓ gulpfile.reh.js Node.js URL fix applied successfully (simple pattern)');
+          } else {
+            console.log('⚠ gulpfile.reh.js Node.js URL fix not needed (code structure different)');
+            console.log('Debug: Looking for case "linux" pattern in nodejs function');
+          }
         }
       } else if (content.includes('process.env.VSCODE_NODEJS_SITE')) {
         console.log('✓ gulpfile.reh.js Node.js URL fix already applied');
@@ -149,7 +171,7 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
         console.log('⚠ gulpfile.reh.js Node.js URL fix not needed (code structure different)');
       }
 NODEJS_SCRIPT
-
+    
     node /tmp/fix-nodejs-url-reh.js || {
       echo "ERROR: Failed to apply gulpfile.reh.js Node.js URL fix!"
       echo "This is required for alternative architectures (loong64, riscv64)"
@@ -157,11 +179,12 @@ NODEJS_SCRIPT
       exit 1
     }
     rm -f /tmp/fix-nodejs-url-reh.js
-
+    
     # Verify fix was applied
     if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
       echo "ERROR: gulpfile.reh.js Node.js URL fix verification failed!"
       echo "This is required for alternative architectures (loong64, riscv64)"
+      echo "The fix script may not have matched the code structure correctly"
       exit 1
     fi
     echo "✓ Verified gulpfile.reh.js Node.js URL fix is applied"

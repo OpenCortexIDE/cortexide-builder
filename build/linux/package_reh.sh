@@ -101,6 +101,48 @@ if [[ -d "../patches/linux/reh/" ]]; then
   done
 fi
 
+# Verify and apply fix-reh-empty-dependencies fix if patch didn't work
+if [[ -f "build/gulpfile.reh.js" ]] && ! grep -q "dependenciesSrc.length > 0" build/gulpfile.reh.js 2>/dev/null; then
+  echo "Applying fix-reh-empty-dependencies fix to gulpfile.reh.js..."
+  node -e "
+    const fs = require('fs');
+    const path = './build/gulpfile.reh.js';
+    let content = fs.readFileSync(path, 'utf8');
+    
+    // Check if fix is needed
+    if (content.includes('const deps = gulp.src(dependenciesSrc,') && !content.includes('dependenciesSrc.length > 0')) {
+      // Add filter to dependenciesSrc
+      content = content.replace(
+        /const dependenciesSrc = productionDependencies\.map\(d => path\.relative\(REPO_ROOT, d\)\)\.map\(d => \[`\${d}\/\*\*`, `!\${d}\/\*\*\/{test,tests}\/\*\*`, `!\${d}\/.bin\/\*\*`\]\)\.flat\(\);/,
+        'const dependenciesSrc = productionDependencies.map(d => path.relative(REPO_ROOT, d)).filter(d => d && d.trim() !== \"\").map(d => [`\${d}/**`, `!\${d}/**/{test,tests}/**`, `!\${d}/.bin/**`]).flat();'
+      );
+      
+      // Replace gulp.src call with conditional
+      content = content.replace(
+        /const deps = gulp\.src\(dependenciesSrc, { base: 'remote', dot: true }\)/,
+        'const deps = dependenciesSrc.length > 0 ? gulp.src(dependenciesSrc, { base: \'remote\', dot: true }) : gulp.src([\'**\'], { base: \'remote\', dot: true, allowEmpty: true })'
+      );
+      
+      fs.writeFileSync(path, content, 'utf8');
+      console.log('✓ fix-reh-empty-dependencies fix applied successfully');
+    } else if (content.includes('dependenciesSrc.length > 0')) {
+      console.log('✓ fix-reh-empty-dependencies already applied');
+    } else {
+      console.log('⚠ fix-reh-empty-dependencies fix not needed (code structure different)');
+    }
+  " || {
+    echo "ERROR: Failed to apply fix-reh-empty-dependencies fix!"
+    exit 1
+  }
+  
+  # Verify fix was applied
+  if ! grep -q "dependenciesSrc.length > 0" build/gulpfile.reh.js 2>/dev/null; then
+    echo "ERROR: fix-reh-empty-dependencies fix verification failed!"
+    echo "This is required for REH builds to prevent 'Invalid glob argument' errors."
+    exit 1
+  fi
+fi
+
 if [[ -d "../patches/linux/reh/${VSCODE_ARCH}/" ]]; then
   for file in "../patches/linux/reh/${VSCODE_ARCH}/"*.patch; do
     if [[ -f "${file}" ]]; then

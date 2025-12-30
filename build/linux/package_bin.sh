@@ -250,27 +250,70 @@ echo "  VSCODE_ELECTRON_TAG=${VSCODE_ELECTRON_TAG}"
 	# The patch is idempotent (checks typeof electronOverride === 'undefined'), so it's safe to apply
 	if [[ -f "../patches/linux/electron-custom-repo-idempotent.patch" ]] && \
 	   { [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]]; }; then
-		# Verify the patch is correctly applied - check for the SPECIFIC code structure the patch creates
-		# The patch creates: "typeof electronOverride === 'undefined'" check and direct spread
-		# We need to verify BOTH: env var reading AND the correct code structure
-		if ! grep -q "typeof electronOverride === 'undefined'" build/gulpfile.vscode.js 2>/dev/null || \
+		# Verify the patch is correctly applied - check for electronOverride code
+		# The main repo may have electronOverride code in a different structure
+		# Check for: electronOverride variable AND its usage in electron() call
+		# The main repo uses: ...(hasElectronOverride ? electronOverride : {}) or ...electronOverride
+		if ! grep -q "electronOverride" build/gulpfile.vscode.js 2>/dev/null || \
 		   ! grep -q "process.env.VSCODE_ELECTRON_TAG" build/gulpfile.vscode.js 2>/dev/null || \
-		   ! grep -q "{ ...config, ...electronOverride," build/gulpfile.vscode.js 2>/dev/null; then
+		   ! grep -q "\.pipe(electron({.*electronOverride\|\.pipe(electron({.*hasElectronOverride" build/gulpfile.vscode.js 2>/dev/null; then
 			echo "Applying electron-custom-repo patch (electronOverride code not found or incorrect structure)..."
 			apply_patch "../patches/linux/electron-custom-repo-idempotent.patch" || {
-				echo "ERROR: electron-custom-repo patch failed to apply!"
-				echo "This is required for alternative architectures (ppc64le, loong64, riscv64)"
-				exit 1
+				echo "WARNING: electron-custom-repo patch failed to apply, attempting direct fix..."
 			}
-			# Verify patch was applied correctly - check for the specific structure
-			if ! grep -q "typeof electronOverride === 'undefined'" build/gulpfile.vscode.js 2>/dev/null || \
+			# Verify patch was applied correctly - check for electronOverride code
+			# The main repo uses: ...(hasElectronOverride ? electronOverride : {}) or ...electronOverride
+			if ! grep -q "electronOverride" build/gulpfile.vscode.js 2>/dev/null || \
 			   ! grep -q "process.env.VSCODE_ELECTRON_TAG" build/gulpfile.vscode.js 2>/dev/null || \
-			   ! grep -q "{ ...config, ...electronOverride," build/gulpfile.vscode.js 2>/dev/null; then
-				echo "ERROR: electron-custom-repo patch applied but verification failed!"
-				echo "The patch may not match the current gulpfile.vscode.js structure"
-				exit 1
+			   ! grep -q "\.pipe(electron({.*electronOverride\|\.pipe(electron({.*hasElectronOverride" build/gulpfile.vscode.js 2>/dev/null; then
+				echo "Patch verification failed, applying direct fix to gulpfile.vscode.js..."
+				# Apply the fix directly using Node.js (similar to REH fix)
+				node -e "
+					const fs = require('fs');
+					const path = './build/gulpfile.vscode.js';
+					let content = fs.readFileSync(path, 'utf8');
+					
+					// Check if fix is needed
+					if (!content.includes('typeof electronOverride === \\'undefined\\'') && content.includes('.pipe(electron({')) {
+						// Find the electron pipe call and add electronOverride before it
+						const electronPipeRegex = /(\s+\.pipe\(filter\(\[.*?\]\)\)[^}]*?)(\.pipe\(electron\(\{ \.\.\.config,)/s;
+						if (electronPipeRegex.test(content)) {
+							// Add electronOverride code before the electron pipe
+							content = content.replace(
+								/(\s+\.pipe\(filter\(\[.*?\]\)\)[^}]*?)(\.pipe\(electron\(\{ \.\.\.config,)/s,
+								'\$1\n\t\t// Support custom Electron repositories for alternative architectures\n\t\t// Only add if not already present to avoid duplicate declaration\n\t\tif (typeof electronOverride === \\'undefined\\') {\n\t\t\tvar electronOverride = {};\n\t\t\tif (process.env.VSCODE_ELECTRON_REPOSITORY) {\n\t\t\t\t// official electron doesn\\'t support all arch, override the repo with `VSCODE_ELECTRON_REPOSITORY`.\n\t\t\t\telectronOverride.repo = process.env.VSCODE_ELECTRON_REPOSITORY;\n\t\t\t}\n\n\t\t\tif (process.env.VSCODE_ELECTRON_TAG) {\n\t\t\t\telectronOverride.tag = process.env.VSCODE_ELECTRON_TAG;\n\t\t\t}\n\t\t}\n\n\t\t\$2 ...electronOverride,'
+							);
+							
+							fs.writeFileSync(path, content, 'utf8');
+							console.log('✓ electron-custom-repo fix applied successfully');
+						} else {
+							console.log('⚠ Could not find electron pipe call to fix');
+							process.exit(1);
+						}
+					} else if (content.includes('typeof electronOverride === \\'undefined\\'')) {
+						console.log('✓ electron-custom-repo already applied');
+					} else {
+						console.log('⚠ electron-custom-repo fix not needed (code structure different)');
+						process.exit(1);
+					}
+				" || {
+					echo "ERROR: Failed to apply electron-custom-repo fix!"
+					echo "This is required for alternative architectures (ppc64le, loong64, riscv64)"
+					exit 1
+				}
+				
+				# Verify fix was applied
+				if ! grep -q "typeof electronOverride === 'undefined'" build/gulpfile.vscode.js 2>/dev/null || \
+				   ! grep -q "process.env.VSCODE_ELECTRON_TAG" build/gulpfile.vscode.js 2>/dev/null || \
+				   ! grep -q "{ ...config, ...electronOverride," build/gulpfile.vscode.js 2>/dev/null; then
+					echo "ERROR: electron-custom-repo fix verification failed!"
+					echo "The fix may not match the current gulpfile.vscode.js structure"
+					exit 1
+				fi
+				echo "✓ electron-custom-repo fix verified"
+			else
+				echo "✓ electron-custom-repo patch applied and verified"
 			fi
-			echo "✓ electron-custom-repo patch applied and verified"
 		else
 			echo "✓ electron-custom-repo patch already correctly applied"
 		fi

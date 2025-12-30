@@ -257,6 +257,10 @@ node build/azure-pipelines/distro/mixin-npm
 echo "=========================================="
 echo "NODEJS URL FIX CHECK FOR ${VSCODE_ARCH} (AFTER MIXIN-NPM)"
 echo "=========================================="
+echo "DEBUG: VSCODE_ARCH=${VSCODE_ARCH}"
+echo "DEBUG: Checking if gulpfile.reh.js exists: $([ -f "build/gulpfile.reh.js" ] && echo "yes" || echo "no")"
+echo "DEBUG: Architecture check - loong64: $([[ "${VSCODE_ARCH}" == "loong64" ]] && echo "yes" || echo "no")"
+echo "DEBUG: Architecture check - riscv64: $([[ "${VSCODE_ARCH}" == "riscv64" ]] && echo "yes" || echo "no")"
 if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "riscv64" ]]; }; then
   echo "=== Checking if gulpfile.reh.js needs Node.js URL fix for ${VSCODE_ARCH} ==="
   echo "Environment variables: VSCODE_NODEJS_SITE=${VSCODE_NODEJS_SITE}, VSCODE_NODEJS_URLROOT=${VSCODE_NODEJS_URLROOT}, VSCODE_NODEJS_URLSUFFIX=${VSCODE_NODEJS_URLSUFFIX}"

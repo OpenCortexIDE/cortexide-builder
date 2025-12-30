@@ -91,6 +91,9 @@ fi
 
 if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
   echo "Building REH"
+  # Compile extensions before minifying (extensions need their dependencies installed)
+  echo "Compiling extensions for REH..."
+  npm run gulp compile-extensions-build || echo "Warning: Extension compilation failed, continuing..."
   npm run gulp minify-vscode-reh
 
   # Fix fetch.js import issues that prevent REH builds

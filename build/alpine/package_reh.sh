@@ -64,6 +64,133 @@ done
 
 node build/azure-pipelines/distro/mixin-npm
 
+# Fix gulpfile.reh.js to use VSCODE_NODEJS_SITE for Alpine ARM64
+# This ensures Node.js is downloaded from unofficial-builds.nodejs.org instead of trying Docker
+# This MUST be done AFTER mixin-npm, as mixin-npm may regenerate/modify gulpfile.reh.js
+if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
+  echo "=========================================="
+  echo "NODEJS URL FIX CHECK FOR ALPINE ${VSCODE_ARCH} (AFTER MIXIN-NPM)"
+  echo "=========================================="
+  echo "Environment variables: VSCODE_NODEJS_SITE=${VSCODE_NODEJS_SITE}, VSCODE_NODEJS_URLROOT=${VSCODE_NODEJS_URLROOT}, VSCODE_NODEJS_URLSUFFIX=${VSCODE_NODEJS_URLSUFFIX}"
+  
+  if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+    echo "Applying direct fix to gulpfile.reh.js for Alpine ARM64 Node.js download URL..."
+    # Use the same fix script as Linux REH builds, but search for 'case alpine' instead of 'case linux'
+    cat > /tmp/fix-nodejs-url-alpine.js << 'NODEJS_SCRIPT'
+      const fs = require('fs');
+      const path = './build/gulpfile.reh.js';
+      let content = fs.readFileSync(path, 'utf8');
+
+      console.log('Checking if fix is needed for Alpine ARM64...');
+      console.log('  - fetchUrls found:', content.includes('fetchUrls'));
+      console.log('  - nodejs.org found:', content.includes('https://nodejs.org'));
+      console.log('  - VSCODE_NODEJS_SITE already present:', content.includes('process.env.VSCODE_NODEJS_SITE'));
+      console.log('  - extractAlpinefromDocker found:', content.includes('extractAlpinefromDocker'));
+      
+      if (content.includes('fetchUrls') && content.includes('https://nodejs.org') &&
+          !content.includes('process.env.VSCODE_NODEJS_SITE')) {
+        console.log('Fix is needed, searching for case alpine block...');
+        
+        // Find case 'alpine' block - try both single and double quotes
+        let caseAlpineIndex = content.indexOf("case 'alpine':");
+        if (caseAlpineIndex === -1) {
+          caseAlpineIndex = content.indexOf('case "alpine":');
+        }
+        
+        // Also try with whitespace variations
+        if (caseAlpineIndex === -1) {
+          const caseAlpineRegex = /case\s+['"]alpine['"]\s*:/;
+          const match = content.match(caseAlpineRegex);
+          if (match) {
+            caseAlpineIndex = content.indexOf(match[0]);
+          }
+        }
+
+        if (caseAlpineIndex === -1) {
+          console.log('⚠ Could not find case "alpine" block');
+          console.log('Showing lines around potential case statements:');
+          const lines = content.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes('case') && lines[i].includes('alpine')) {
+              console.log(`Line ${i + 1}: ${lines[i]}`);
+            }
+          }
+          process.exit(1);
+        }
+        
+        console.log(`Found case alpine at index ${caseAlpineIndex}`);
+
+        // Find the return statement after case 'alpine'
+        const afterCase = content.substring(caseAlpineIndex);
+        
+        // Look for the pattern: return (product.nodejsRepository !== 'https://nodejs.org' ? ... : fetchUrls(...))
+        console.log('Searching for return statement with nodejs.org...');
+        const returnPattern = /return\s*\(product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]/;
+        const returnMatch = afterCase.match(returnPattern);
+
+        if (!returnMatch) {
+          console.log('⚠ Could not find return statement with nodejs.org in case alpine block');
+          console.log('Showing first 1000 chars after case alpine:');
+          console.log(afterCase.substring(0, 1000));
+          process.exit(1);
+        }
+        
+        console.log(`Found return statement at index ${returnMatch.index} within case alpine block`);
+
+        // Find the end of the return statement - it ends with .pipe(rename('node'))
+        const returnStartIndex = caseAlpineIndex + returnMatch.index;
+        const afterReturnStart = content.substring(returnStartIndex);
+        const renamePattern = /\.pipe\(rename\(['"]node['"]\)\)/;
+        const renameMatch = afterReturnStart.match(renamePattern);
+
+        if (!renameMatch) {
+          console.log('⚠ Could not find end of return statement (.pipe(rename))');
+          process.exit(1);
+        }
+
+        const returnEndIndex = returnStartIndex + renameMatch.index + renameMatch[0].length;
+        const fullReturnStatement = content.substring(returnStartIndex, returnEndIndex);
+
+        // Insert the VSCODE_NODEJS_SITE check before the return statement
+        const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			${fullReturnStatement}`;
+
+        content = content.substring(0, returnStartIndex) + newCode + content.substring(returnEndIndex);
+        fs.writeFileSync(path, content, 'utf8');
+        console.log('✓ gulpfile.reh.js Node.js URL fix applied successfully for Alpine ARM64');
+      } else if (content.includes('process.env.VSCODE_NODEJS_SITE')) {
+        console.log('✓ gulpfile.reh.js Node.js URL fix already applied');
+      } else {
+        console.log('⚠ gulpfile.reh.js Node.js URL fix not needed (code structure different)');
+        process.exit(1);
+      }
+NODEJS_SCRIPT
+
+    node /tmp/fix-nodejs-url-alpine.js || {
+      echo "ERROR: Failed to apply gulpfile.reh.js Node.js URL fix for Alpine ARM64!"
+      rm -f /tmp/fix-nodejs-url-alpine.js
+      exit 1
+    }
+    rm -f /tmp/fix-nodejs-url-alpine.js
+
+    # Verify fix was applied
+    if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+      echo "ERROR: gulpfile.reh.js Node.js URL fix verification failed for Alpine ARM64!"
+      exit 1
+    fi
+    echo "✓ Verified gulpfile.reh.js Node.js URL fix is applied for Alpine ARM64"
+  else
+    echo "✓ gulpfile.reh.js Node.js URL fix already applied for Alpine ARM64"
+  fi
+  echo "=========================================="
+fi
+
 # Install extension dependencies (required for TypeScript compilation)
 # This matches the Linux REH build script approach
 echo "Installing extension dependencies..."

@@ -54,11 +54,12 @@ done
 
 node build/azure-pipelines/distro/mixin-npm
 
-# For Alpine ARM64, ensure ternary-stream is installed (it might be missing due to --ignore-scripts)
+# For Alpine ARM64, ensure ternary-stream is installed in build directory (it might be missing due to --ignore-scripts)
+# ternary-stream is required by build/lib/util.js, so it needs to be in build/node_modules
 if [[ "${VSCODE_ARCH}" == "arm64" ]]; then
-  if ! npm list ternary-stream >/dev/null 2>&1; then
-    echo "Installing ternary-stream (required for build but may be missing due to --ignore-scripts)..."
-    npm install ternary-stream --no-save || echo "Warning: Failed to install ternary-stream, continuing..."
+  if ! npm list ternary-stream --prefix build >/dev/null 2>&1; then
+    echo "Installing ternary-stream in build directory (required for build but may be missing due to --ignore-scripts)..."
+    npm install ternary-stream --prefix build --no-save || echo "Warning: Failed to install ternary-stream, continuing..."
   fi
 fi
 

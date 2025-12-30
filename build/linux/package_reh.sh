@@ -350,18 +350,23 @@ if [[ "${SHOULD_BUILD_REH}" != "no" ]]; then
     npm run gulp "vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-min-ci"
   fi
 
-  EXPECTED_GLIBC_VERSION="${EXPECTED_GLIBC_VERSION}" EXPECTED_GLIBCXX_VERSION="${GLIBCXX_VERSION}" SEARCH_PATH="../vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}" ./build/azure-pipelines/linux/verify-glibc-requirements.sh
+  # Only verify glibc and archive if REH was actually built (directory exists)
+  if [[ -d "../vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}" ]]; then
+    EXPECTED_GLIBC_VERSION="${EXPECTED_GLIBC_VERSION}" EXPECTED_GLIBCXX_VERSION="${GLIBCXX_VERSION}" SEARCH_PATH="../vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}" ./build/azure-pipelines/linux/verify-glibc-requirements.sh
 
-  pushd "../vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}"
+    pushd "../vscode-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}"
 
-  if [[ -f "../ripgrep_${VSCODE_PLATFORM}_${VSCODE_ARCH}.sh" ]]; then
-    bash "../ripgrep_${VSCODE_PLATFORM}_${VSCODE_ARCH}.sh" "node_modules"
+    if [[ -f "../ripgrep_${VSCODE_PLATFORM}_${VSCODE_ARCH}.sh" ]]; then
+      bash "../ripgrep_${VSCODE_PLATFORM}_${VSCODE_ARCH}.sh" "node_modules"
+    fi
+
+    echo "Archiving REH"
+    tar czf "../assets/${APP_NAME_LC}-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-${RELEASE_VERSION}.tar.gz" .
+
+    popd
+  else
+    echo "Skipping REH verification and archiving (REH build was skipped or failed)"
   fi
-
-  echo "Archiving REH"
-  tar czf "../assets/${APP_NAME_LC}-reh-${VSCODE_PLATFORM}-${VSCODE_ARCH}-${RELEASE_VERSION}.tar.gz" .
-
-  popd
 fi
 
 if [[ "${SHOULD_BUILD_REH_WEB}" != "no" ]]; then

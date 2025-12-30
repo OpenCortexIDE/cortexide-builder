@@ -77,6 +77,9 @@ elif [[ "${VSCODE_ARCH}" == "s390x" ]]; then
   export USE_GNUPP2A=1
   # Unset VSCODE_SYSROOT_DIR to prevent node-gyp from trying to use cross-compilation
   unset VSCODE_SYSROOT_DIR
+  # Prevent native module builds during npm install (s390x native modules can't build on x86_64 host)
+  export npm_config_build_from_source=false
+  export npm_config_ignore_scripts=true
 fi
 
 export ELECTRON_SKIP_BINARY_DOWNLOAD=1
@@ -183,8 +186,8 @@ fi
 mv .npmrc .npmrc.bak
 cp ../npmrc .npmrc
 
-# For arm64 and armhf, ensure VSCODE_SYSROOT_DIR is unset before npm install to prevent node-gyp cross-compilation
-if [[ "${VSCODE_ARCH}" == "arm64" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]]; then
+# For arm64, armhf, and s390x, ensure VSCODE_SYSROOT_DIR is unset before npm install to prevent node-gyp cross-compilation
+if [[ "${VSCODE_ARCH}" == "arm64" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]]; then
   unset VSCODE_SYSROOT_DIR
 fi
 
@@ -207,13 +210,13 @@ fi
 
 # For alternative architectures, skip postinstall scripts to avoid unsupported platform errors
 NPM_CI_OPTS=""
-if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]] || [[ "${VSCODE_ARCH}" == "arm64" ]]; then
+if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "ppc64" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]] || [[ "${VSCODE_ARCH}" == "arm64" ]]; then
   NPM_CI_OPTS="--ignore-scripts"
   echo "Skipping postinstall scripts for ${VSCODE_ARCH} (unsupported by some packages)"
 fi
 
-# For arm64 and armhf, ensure VSCODE_SYSROOT_DIR is unset before npm install to prevent node-gyp cross-compilation
-if [[ "${VSCODE_ARCH}" == "arm64" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]]; then
+# For arm64, armhf, and s390x, ensure VSCODE_SYSROOT_DIR is unset before npm install to prevent node-gyp cross-compilation
+if [[ "${VSCODE_ARCH}" == "arm64" ]] || [[ "${VSCODE_ARCH}" == "armhf" ]] || [[ "${VSCODE_ARCH}" == "s390x" ]]; then
   unset VSCODE_SYSROOT_DIR
 fi
 

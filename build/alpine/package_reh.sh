@@ -153,18 +153,64 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
         const extractEndIndex = extractStartIndex + extractCallMatch.index + extractCallMatch[0].length;
         const fullExtractCall = content.substring(extractStartIndex, extractEndIndex);
 
-        // Find the line before extractAlpinefromDocker to see the context
-        const beforeExtract = content.substring(0, extractStartIndex);
-        const lastNewlineBefore = beforeExtract.lastIndexOf('\n');
-        const lineBefore = content.substring(Math.max(0, lastNewlineBefore - 100), extractStartIndex);
-        
+        // Check the context before extractAlpinefromDocker to see if it's part of a ternary or return statement
+        const beforeExtract = content.substring(Math.max(0, extractStartIndex - 200), extractStartIndex);
         console.log('Context before extractAlpinefromDocker call:');
-        console.log(lineBefore.substring(Math.max(0, lineBefore.length - 200)));
+        console.log(beforeExtract);
 
-        // Insert the VSCODE_NODEJS_SITE check before the extractAlpinefromDocker call
-        // For Alpine, we need to use fetchUrls with the unofficial builds URL
-        // Make sure we're not breaking any existing code structure
-        const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+        // Check if there's a ternary operator (?:) or return statement before this
+        const hasTernary = /[?:]\s*extractAlpinefromDocker/.test(beforeExtract);
+        const hasReturn = /\breturn\s+/.test(beforeExtract);
+        
+        if (hasTernary) {
+          console.log('⚠ Found ternary operator before extractAlpinefromDocker, handling as ternary...');
+          // Find the start of the ternary expression - look backwards for the condition
+          let searchStart = extractStartIndex - 1;
+          let parenDepth = 0;
+          let foundQuestion = false;
+          
+          // Find the ? in the ternary
+          while (searchStart > 0 && !foundQuestion) {
+            const char = content.charAt(searchStart);
+            if (char === ')') parenDepth++;
+            else if (char === '(') parenDepth--;
+            else if (char === '?' && parenDepth === 0) {
+              foundQuestion = true;
+              break;
+            }
+            searchStart--;
+          }
+          
+          if (foundQuestion) {
+            // Find the start of the condition
+            let conditionStart = searchStart - 1;
+            while (conditionStart > 0 && (content.charAt(conditionStart) === ' ' || content.charAt(conditionStart) === '\t')) {
+              conditionStart--;
+            }
+            // Find the beginning of the expression (might be after return, or start of line)
+            while (conditionStart > 0 && content.charAt(conditionStart) !== '\n' && content.charAt(conditionStart) !== ';' && content.charAt(conditionStart) !== '{') {
+              conditionStart--;
+            }
+            conditionStart++; // Move past the delimiter
+            
+            const condition = content.substring(conditionStart, searchStart).trim();
+            const afterColon = content.substring(extractEndIndex);
+            const colonMatch = afterColon.match(/^\s*:\s*/);
+            const afterColonExpr = colonMatch ? afterColon.substring(colonMatch[0].length).split(/[;\n}]/)[0] : '';
+            
+            // Replace the ternary with a nested ternary that checks VSCODE_NODEJS_SITE first
+            const newCodeWithTernary = `${condition} ? (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT
+				? fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'))
+				: ${fullExtractCall})${colonMatch ? colonMatch[0] : ' : '}${afterColonExpr}`;
+            
+            content = content.substring(0, conditionStart) + newCodeWithTernary + content.substring(extractEndIndex + (colonMatch ? colonMatch[0].length + afterColonExpr.length : 0));
+          } else {
+            console.log('⚠ Could not find ternary operator start, using simple if statement');
+            const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
 				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
 					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
 					.pipe(filter('**/node'))
@@ -172,33 +218,29 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
 					.pipe(rename('node'));
 			}
 			${fullExtractCall}`;
-
-        // Check if there's a ternary or other operator before this that we need to handle
-        const charBefore = content.charAt(extractStartIndex - 1);
-        if (charBefore === ':' || charBefore === '?') {
-          console.log('⚠ Found ternary operator before extractAlpinefromDocker, adjusting fix...');
-          // If there's a ternary, we need to wrap the entire thing differently
-          // Find the start of the ternary expression
-          let ternaryStart = extractStartIndex - 1;
-          while (ternaryStart > 0 && (content.charAt(ternaryStart) === ' ' || content.charAt(ternaryStart) === '\t' || content.charAt(ternaryStart) === ':' || content.charAt(ternaryStart) === '?')) {
-            ternaryStart--;
+            content = content.substring(0, extractStartIndex) + newCode + content.substring(extractEndIndex);
           }
-          // Find the condition start
-          while (ternaryStart > 0 && content.charAt(ternaryStart) !== '(' && content.charAt(ternaryStart) !== ' ') {
-            ternaryStart--;
-          }
-          
-          const ternaryCondition = content.substring(ternaryStart, extractStartIndex - 1);
-          const newCodeWithTernary = `${ternaryCondition} ? (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT
-				? fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+        } else if (hasReturn) {
+          // Simple return statement, insert if before it
+          const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
 					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
 					.pipe(filter('**/node'))
 					.pipe(util.setExecutableBit('**'))
-					.pipe(rename('node'))
-				: ${fullExtractCall}) : ${fullExtractCall}`;
-          
-          content = content.substring(0, ternaryStart) + newCodeWithTernary + content.substring(extractEndIndex);
+					.pipe(rename('node'));
+			}
+			${fullExtractCall}`;
+          content = content.substring(0, extractStartIndex) + newCode + content.substring(extractEndIndex);
         } else {
+          // No return, just the function call - wrap in return
+          const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			return ${fullExtractCall}`;
           content = content.substring(0, extractStartIndex) + newCode + content.substring(extractEndIndex);
         }
         fs.writeFileSync(path, content, 'utf8');

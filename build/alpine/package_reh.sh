@@ -19,6 +19,16 @@ cd vscode || { echo "'vscode' dir not found"; exit 1; }
 export VSCODE_PLATFORM='alpine'
 export VSCODE_SKIP_NODE_VERSION_CHECK=1
 
+# For Alpine ARM64, configure Node.js download to use unofficial builds
+# The official nodejs.org doesn't have Alpine ARM64 builds, and Docker fallback fails on AMD64 hosts
+if [[ "${VSCODE_ARCH}" == "arm64" ]]; then
+  export VSCODE_SKIP_SETUPENV=1
+  export VSCODE_NODEJS_SITE='https://unofficial-builds.nodejs.org'
+  export VSCODE_NODEJS_URLROOT='/download/release'
+  export VSCODE_NODEJS_URLSUFFIX=''
+  echo "Configured Alpine ARM64 to use unofficial Node.js builds"
+fi
+
 VSCODE_HOST_MOUNT="$( pwd )"
 VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME="vscodium/vscodium-linux-build-agent:alpine-${VSCODE_ARCH}"
 

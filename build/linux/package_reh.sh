@@ -102,7 +102,7 @@ sed -i "/target/s/\"[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\"/\"${NODE_VERSION}\"/
 
 if [[ -d "../patches/linux/reh/" ]]; then
   for file in "../patches/linux/reh/"*.patch; do
-    if [[ -f "${file}" ]]; then
+    if [[ -f "${file}" ]] && [[ "${file}" != *"fix-nodejs-url.patch" ]]; then
       apply_patch "${file}"
     fi
   done
@@ -251,29 +251,76 @@ mv .npmrc.bak .npmrc
 
 node build/azure-pipelines/distro/mixin-npm
 
-# Fix gulpfile.reh.js to use VSCODE_NODEJS_SITE for alternative architectures
+# Apply Node.js URL fix patch for alternative architectures (loong64, riscv64)
 # This MUST be done AFTER mixin-npm, as mixin-npm may regenerate/modify gulpfile.reh.js
 # This ensures Node.js is downloaded from unofficial-builds.nodejs.org for loong64, riscv64, etc.
 echo "=========================================="
-echo "NODEJS URL FIX CHECK FOR ${VSCODE_ARCH} (AFTER MIXIN-NPM)"
+echo "CHECKING NODEJS URL FIX FOR ${VSCODE_ARCH} (AFTER MIXIN-NPM)"
 echo "=========================================="
-echo "DEBUG: VSCODE_ARCH=${VSCODE_ARCH}"
-echo "DEBUG: Checking if gulpfile.reh.js exists: $([ -f "build/gulpfile.reh.js" ] && echo "yes" || echo "no")"
-echo "DEBUG: Architecture check - loong64: $([[ "${VSCODE_ARCH}" == "loong64" ]] && echo "yes" || echo "no")"
-echo "DEBUG: Architecture check - riscv64: $([[ "${VSCODE_ARCH}" == "riscv64" ]] && echo "yes" || echo "no")"
+echo "VSCODE_ARCH=${VSCODE_ARCH}"
+echo "gulpfile.reh.js exists: $([ -f "build/gulpfile.reh.js" ] && echo "yes" || echo "no")"
+echo "Architecture check - loong64: $([[ "${VSCODE_ARCH}" == "loong64" ]] && echo "yes" || echo "no")"
+echo "Architecture check - riscv64: $([[ "${VSCODE_ARCH}" == "riscv64" ]] && echo "yes" || echo "no")"
+
 if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "riscv64" ]]; }; then
-  echo "=== Checking if gulpfile.reh.js needs Node.js URL fix for ${VSCODE_ARCH} ==="
+  echo "=========================================="
+  echo "APPLYING NODEJS URL FIX PATCH FOR ${VSCODE_ARCH} (AFTER MIXIN-NPM)"
+  echo "=========================================="
   echo "Environment variables: VSCODE_NODEJS_SITE=${VSCODE_NODEJS_SITE}, VSCODE_NODEJS_URLROOT=${VSCODE_NODEJS_URLROOT}, VSCODE_NODEJS_URLSUFFIX=${VSCODE_NODEJS_URLSUFFIX}"
-  echo "Checking if gulpfile.reh.js exists and is readable..."
-  ls -la build/gulpfile.reh.js || echo "WARNING: gulpfile.reh.js not found!"
 
   if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
-    echo "Applying direct fix to gulpfile.reh.js for Node.js download URL..."
+    echo "Applying Node.js URL fix patch..."
+    echo "Checking if patch file exists..."
+    if [[ -f "../patches/linux/reh/fix-nodejs-url.patch" ]]; then
+      echo "Patch file found, applying..."
+      if apply_patch "../patches/linux/reh/fix-nodejs-url.patch"; then
+        echo "Patch applied successfully, verifying..."
+        # Verify fix was applied
+        if grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+          echo "✓ Node.js URL fix patch applied and verified"
+          SKIP_NODEJS_SCRIPT=1
+        else
+          echo "ERROR: Node.js URL fix patch verification failed!"
+          echo "This is required for alternative architectures (loong64, riscv64)"
+          echo "Will try Node.js script fallback..."
+          SKIP_PATCH=1
+        fi
+      else
+        echo "ERROR: Failed to apply Node.js URL fix patch!"
+        echo "This is required for alternative architectures (loong64, riscv64)"
+        echo "Will try Node.js script fallback..."
+        SKIP_PATCH=1
+      fi
+    else
+      echo "ERROR: Node.js URL fix patch not found at ../patches/linux/reh/fix-nodejs-url.patch"
+      echo "This is required for alternative architectures (loong64, riscv64)"
+      echo "Will use Node.js script approach..."
+      SKIP_PATCH=1
+    fi
+  else
+    echo "✓ Node.js URL fix already applied"
+    SKIP_NODEJS_SCRIPT=1
+  fi
+
+  # Only run Node.js script if patch didn't work
+  if [[ "${SKIP_NODEJS_SCRIPT}" != "1" ]]; then
+  echo "=========================================="
+  echo "NODEJS URL FIX FOR ${VSCODE_ARCH} (AFTER MIXIN-NPM)"
+  echo "=========================================="
+  echo "Environment variables: VSCODE_NODEJS_SITE=${VSCODE_NODEJS_SITE}, VSCODE_NODEJS_URLROOT=${VSCODE_NODEJS_URLROOT}, VSCODE_NODEJS_URLSUFFIX=${VSCODE_NODEJS_URLSUFFIX}"
+
+  if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+    echo "Applying Node.js URL fix using sed (simple and reliable)..."
+    echo "=========================================="
+    echo "APPLYING NODE.JS URL FIX FOR ${VSCODE_ARCH}"
+    echo "=========================================="
     echo "Current gulpfile.reh.js does not contain VSCODE_NODEJS_SITE check"
     echo "Searching for 'case linux' pattern in gulpfile.reh.js..."
     grep -n "case.*linux" build/gulpfile.reh.js | head -3 || echo "No 'case linux' found"
     echo "Searching for 'nodejs.org' pattern in gulpfile.reh.js..."
     grep -n "nodejs.org" build/gulpfile.reh.js | head -3 || echo "No 'nodejs.org' found"
+    echo "Searching for 'fetchUrls' pattern in gulpfile.reh.js..."
+    grep -n "fetchUrls" build/gulpfile.reh.js | head -5 || echo "No 'fetchUrls' found"
     # Use a temporary Node.js script file to avoid shell escaping issues
     cat > /tmp/fix-nodejs-url-reh.js << 'NODEJS_SCRIPT'
       const fs = require('fs');
@@ -288,18 +335,13 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
 
       if (content.includes('fetchUrls') && content.includes('https://nodejs.org') &&
           !content.includes('process.env.VSCODE_NODEJS_SITE')) {
-        console.log('Fix is needed, searching for case linux block...');
-        // Find the case 'linux': block - look for the return statement with nodejs.org
-        // The code structure is: case 'linux': return (product.nodejsRepository !== 'https://nodejs.org' ? ... : fetchUrls(...))
-        // We need to insert the VSCODE_NODEJS_SITE check before the return statement
+        console.log('Fix is needed, searching for fetchUrls with nodejs.org...');
 
-        // Find case 'linux' block - try both single and double quotes
+        // Find case 'linux' block first to limit search scope
         let caseLinuxIndex = content.indexOf("case 'linux':");
         if (caseLinuxIndex === -1) {
           caseLinuxIndex = content.indexOf('case "linux":');
         }
-
-        // Also try with whitespace variations
         if (caseLinuxIndex === -1) {
           const caseLinuxRegex = /case\s+['"]linux['"]\s*:/;
           const match = content.match(caseLinuxRegex);
@@ -310,82 +352,228 @@ if [[ -f "build/gulpfile.reh.js" ]] && { [[ "${VSCODE_ARCH}" == "loong64" ]] || 
 
         if (caseLinuxIndex === -1) {
           console.log('⚠ Could not find case "linux" block');
-          console.log('Showing lines around potential case statements:');
-          const lines = content.split('\n');
-          for (let i = 0; i < lines.length; i++) {
-            if (lines[i].includes('case') && lines[i].includes('linux')) {
-              console.log(`Line ${i + 1}: ${lines[i]}`);
-            }
-          }
           process.exit(1);
         }
 
         console.log(`Found case linux at index ${caseLinuxIndex}`);
 
-        // Find the return statement after case 'linux'
-        // Look for: return (product.nodejsRepository !== 'https://nodejs.org' ? ... : fetchUrls(...))
-        const afterCase = content.substring(caseLinuxIndex);
+        // Find the next case or end of switch to limit search scope
+        const afterCaseLinux = content.substring(caseLinuxIndex);
+        const nextCaseMatch = afterCaseLinux.match(/case\s+['"]/);
+        const searchEndIndex = nextCaseMatch ? caseLinuxIndex + nextCaseMatch.index : content.length;
+        const linuxCaseContent = content.substring(caseLinuxIndex, searchEndIndex);
 
-        // Try to find the return statement - it might be on the same line or next lines
-        // Look for the pattern: return (product.nodejsRepository !== 'https://nodejs.org'
-        console.log('Searching for return statement with nodejs.org...');
-        const returnPattern = /return\s*\(product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]/;
-        const returnMatch = afterCase.match(returnPattern);
+        console.log('Searching for fetchUrls with base: https://nodejs.org in case linux block...');
+        console.log('Linux case content length:', linuxCaseContent.length);
+        console.log('First 500 chars of case linux:', linuxCaseContent.substring(0, 500));
 
-        if (!returnMatch) {
-          console.log('⚠ Could not find return statement with nodejs.org in case linux block');
-          console.log('Showing first 1000 chars after case linux:');
-          console.log(afterCase.substring(0, 1000));
-          process.exit(1);
-        }
+        // Look for the exact pattern from the patch file:
+        // return (product.nodejsRepository !== 'https://nodejs.org' ?
+        //     fetchGithub(...) :
+        //     fetchUrls(`/dist/v${nodeVersion}/node-v${nodeVersion}-${platform}-${arch}.tar.gz`, { base: 'https://nodejs.org', checksumSha256 })
+        // ).pipe(...)
+        console.log('Searching for the exact return statement pattern...');
 
-        console.log(`Found return statement at index ${returnMatch.index} within case linux block`);
+        // Try to find the ternary pattern: return (product.nodejsRepository !== 'https://nodejs.org' ? ... : fetchUrls(...))
+        const ternaryPattern = /return\s*\(\s*product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]\s*\?/;
+        let ternaryMatch = linuxCaseContent.match(ternaryPattern);
 
-        // Find the end of the return statement - it ends with .pipe(rename('node'))
-        const returnStartIndex = caseLinuxIndex + returnMatch.index;
-        const returnStartText = returnMatch[0];
+        if (ternaryMatch) {
+          console.log('Found ternary pattern at index', ternaryMatch.index);
+          // Find the end of this return statement - it ends with .pipe(rename('node'))
+          const ternaryStartIndex = caseLinuxIndex + ternaryMatch.index;
+          const afterTernary = content.substring(ternaryStartIndex);
+          const renamePattern = /\.pipe\(rename\(['"]node['"]\)\)/;
+          const renameMatch = afterTernary.match(renamePattern);
 
-        // Find where the return statement ends - look for .pipe(rename('node')) or .pipe(rename("node"))
-        const afterReturnStart = content.substring(returnStartIndex);
-        const renamePattern = /\.pipe\(rename\(['"]node['"]\)\)/;
-        const renameMatch = afterReturnStart.match(renamePattern);
+          if (renameMatch) {
+            const ternaryEndIndex = ternaryStartIndex + renameMatch.index + renameMatch[0].length;
+            const fullReturnStatement = content.substring(ternaryStartIndex, ternaryEndIndex);
 
-        if (!renameMatch) {
-          console.log('⚠ Could not find end of return statement (.pipe(rename))');
-          process.exit(1);
-        }
+            console.log('Found complete return statement, replacing with environment variable check...');
 
-        const returnEndIndex = returnStartIndex + renameMatch.index + renameMatch[0].length;
-        const fullReturnStatement = content.substring(returnStartIndex, returnEndIndex);
-
-        // Insert the VSCODE_NODEJS_SITE check before the return statement
-        const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+            // Replace with the new structure from the patch
+            const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
 				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
 					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
 					.pipe(filter('**/node'))
 					.pipe(util.setExecutableBit('**'))
 					.pipe(rename('node'));
 			}
-			${fullReturnStatement}`;
+			if (product.nodejsRepository !== 'https://nodejs.org') {
+				return fetchGithub(product.nodejsRepository, { version: \`\${nodeVersion}-\${internalNodeVersion}\`, name: expectedName, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			else {
+				return fetchUrls(\`/dist/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}.tar.gz\`, { base: 'https://nodejs.org', checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}`;
 
-        content = content.substring(0, returnStartIndex) + newCode + content.substring(returnEndIndex);
+            content = content.substring(0, ternaryStartIndex) + newCode + content.substring(ternaryEndIndex);
+            fs.writeFileSync(path, content, 'utf8');
+            console.log('✓ gulpfile.reh.js Node.js URL fix applied successfully (ternary replacement)');
+
+            // Verify the fix was applied
+            const verifyContent = fs.readFileSync(path, 'utf8');
+            if (!verifyContent.includes('process.env.VSCODE_NODEJS_SITE')) {
+              console.log('ERROR: Fix was applied but verification failed!');
+              process.exit(1);
+            }
+            console.log('✓ Fix verified successfully');
+            process.exit(0);
+          }
+        }
+
+        // Fallback: try to find fetchUrls with base: 'https://nodejs.org'
+        console.log('Ternary pattern not found, trying fallback approach...');
+        let fetchUrlsMatch = linuxCaseContent.match(/fetchUrls\([^,]+,\s*\{\s*base:\s*['"]https:\/\/nodejs\.org['"]/);
+        if (!fetchUrlsMatch) {
+          fetchUrlsMatch = linuxCaseContent.match(/fetchUrls\([^)]+base:\s*['"]https:\/\/nodejs\.org['"]/);
+        }
+        if (!fetchUrlsMatch) {
+          fetchUrlsMatch = linuxCaseContent.match(/fetchUrls\([^)]*nodejs\.org[^)]*\)/);
+        }
+
+        if (!fetchUrlsMatch) {
+          console.log('⚠ Could not find fetchUrls with base: https://nodejs.org');
+          console.log('Showing first 2000 chars of case linux block:');
+          console.log(linuxCaseContent.substring(0, 2000));
+          console.log('ERROR: Could not find any matching pattern in case linux block');
+          process.exit(1);
+        }
+
+        console.log(`Found fetchUrls call at index ${fetchUrlsMatch.index} within case linux block`);
+        const fetchUrlsStartIndex = caseLinuxIndex + fetchUrlsMatch.index;
+
+        // Find the entire fetchUrls call - it ends with .pipe(rename('node'))
+        const afterFetchUrls = content.substring(fetchUrlsStartIndex);
+        const renamePattern = /\.pipe\(rename\(['"]node['"]\)\)/;
+        const renameMatch = afterFetchUrls.match(renamePattern);
+
+        if (!renameMatch) {
+          console.log('⚠ Could not find end of fetchUrls call (.pipe(rename))');
+          process.exit(1);
+        }
+
+        const fetchUrlsEndIndex = fetchUrlsStartIndex + renameMatch.index + renameMatch[0].length;
+        const fullFetchUrlsCall = content.substring(fetchUrlsStartIndex, fetchUrlsEndIndex);
+
+        // Find the return statement that contains this fetchUrls call
+        // Look backwards from fetchUrlsStartIndex to find the return statement
+        let returnStartIndex = fetchUrlsStartIndex;
+        let parenDepth = 0;
+        let foundReturn = false;
+
+        // Search backwards for 'return' keyword
+        for (let i = fetchUrlsStartIndex - 1; i >= Math.max(0, caseLinuxIndex); i--) {
+          const char = content.charAt(i);
+          if (char === ')') parenDepth++;
+          else if (char === '(') parenDepth--;
+          else if (content.substring(Math.max(0, i - 6), i + 1) === 'return' && parenDepth === 0) {
+            returnStartIndex = i - 6;
+            foundReturn = true;
+            break;
+          }
+        }
+
+        if (!foundReturn) {
+          console.log('⚠ Could not find return statement before fetchUrls');
+          // Try to insert if statement before fetchUrls directly
+          const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			return ${fullFetchUrlsCall}`;
+          content = content.substring(0, fetchUrlsStartIndex) + newCode + content.substring(fetchUrlsEndIndex);
+        } else {
+          // Replace the entire return statement with our check
+          const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
+					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
+					.pipe(filter('**/node'))
+					.pipe(util.setExecutableBit('**'))
+					.pipe(rename('node'));
+			}
+			return ${fullFetchUrlsCall}`;
+          content = content.substring(0, returnStartIndex) + newCode + content.substring(fetchUrlsEndIndex);
+        }
+
         fs.writeFileSync(path, content, 'utf8');
         console.log('✓ gulpfile.reh.js Node.js URL fix applied successfully');
+
+        // Verify the fix was applied
+        const verifyContent = fs.readFileSync(path, 'utf8');
+        if (!verifyContent.includes('process.env.VSCODE_NODEJS_SITE')) {
+          console.log('ERROR: Fix was applied but verification failed!');
+          process.exit(1);
+        }
+        console.log('✓ Fix verified successfully');
       } else if (content.includes('process.env.VSCODE_NODEJS_SITE')) {
         console.log('✓ gulpfile.reh.js Node.js URL fix already applied');
       } else {
         console.log('⚠ gulpfile.reh.js Node.js URL fix not needed (code structure different)');
+        console.log('This might indicate the code structure has changed. Showing relevant code:');
+        const lines = content.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes('case') && lines[i].includes('linux')) {
+            console.log(`Line ${i + 1}: ${lines[i]}`);
+            // Show next 20 lines
+            for (let j = i + 1; j < Math.min(i + 21, lines.length); j++) {
+              console.log(`Line ${j + 1}: ${lines[j]}`);
+            }
+            break;
+          }
+        }
         process.exit(1);
       }
 NODEJS_SCRIPT
 
-    node /tmp/fix-nodejs-url-reh.js || {
-      echo "ERROR: Failed to apply gulpfile.reh.js Node.js URL fix!"
+    echo "=========================================="
+    echo "RUNNING NODE.JS URL FIX SCRIPT FOR ${VSCODE_ARCH}"
+    echo "=========================================="
+    echo "Script location: /tmp/fix-nodejs-url-reh.js"
+    echo "Checking if script file exists..."
+    ls -la /tmp/fix-nodejs-url-reh.js || echo "WARNING: Script file not found!"
+    echo "Running fix script now..."
+    set +e  # Don't exit on error, we'll handle it
+    if node /tmp/fix-nodejs-url-reh.js > /tmp/fix-nodejs-url-reh.log 2>&1; then
+      EXIT_CODE=0
+    else
+      EXIT_CODE=$?
+    fi
+    set -e  # Re-enable exit on error
+    echo "Fix script exit code: ${EXIT_CODE}"
+    echo "Fix script output (first 200 lines):"
+    head -200 /tmp/fix-nodejs-url-reh.log 2>/dev/null || echo "No log file found or error reading log"
+    echo "Fix script output (last 50 lines):"
+    tail -50 /tmp/fix-nodejs-url-reh.log 2>/dev/null || echo "No log file found or error reading log"
+
+    if [[ ${EXIT_CODE} -ne 0 ]]; then
+      echo "=========================================="
+      echo "ERROR: Node.js URL fix script failed!"
+      echo "Exit code: ${EXIT_CODE}"
+      echo "=========================================="
       echo "This is required for alternative architectures (loong64, riscv64)"
-      rm -f /tmp/fix-nodejs-url-reh.js
+      echo "Showing 'case linux' in gulpfile.reh.js:"
+      grep -n "case.*linux" build/gulpfile.reh.js | head -5 || echo "No 'case linux' found"
+      if grep -q "case.*linux" build/gulpfile.reh.js; then
+        echo "Showing context around 'case linux':"
+        grep -A 30 "case.*linux" build/gulpfile.reh.js | head -50 || echo "Could not show context"
+      fi
+      rm -f /tmp/fix-nodejs-url-reh.js /tmp/fix-nodejs-url-reh.log
       exit 1
-    }
-    rm -f /tmp/fix-nodejs-url-reh.js
+    fi
+    echo "✓ Node.js URL fix script completed successfully"
+    rm -f /tmp/fix-nodejs-url-reh.js /tmp/fix-nodejs-url-reh.log
 
     # Verify fix was applied
     if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
@@ -399,18 +587,13 @@ NODEJS_SCRIPT
     echo "✓ Verified gulpfile.reh.js Node.js URL fix is applied"
     echo "Showing the fix in gulpfile.reh.js:"
     grep -A 5 "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js | head -10 || echo "Fix not found in grep output"
-  else
-    echo "✓ gulpfile.reh.js Node.js URL fix already applied"
-    echo "Showing the existing fix in gulpfile.reh.js:"
-    grep -A 5 "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js | head -10 || echo "Fix not found in grep output"
   fi
-  echo "=== End of Node.js URL fix check ==="
+  echo "=========================================="
 else
-  echo "Skipping Node.js URL fix check (not loong64 or riscv64, or gulpfile.reh.js not found)"
+  echo "Skipping Node.js URL fix (not loong64 or riscv64, or gulpfile.reh.js not found)"
   echo "VSCODE_ARCH=${VSCODE_ARCH}"
   echo "gulpfile.reh.js exists: $([ -f "build/gulpfile.reh.js" ] && echo "yes" || echo "no")"
 fi
-echo "=========================================="
 
 export VSCODE_NODE_GLIBC="-glibc-${GLIBC_VERSION}"
 

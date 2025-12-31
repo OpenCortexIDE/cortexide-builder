@@ -36,21 +36,23 @@ export VSCODE_HOST_MOUNT VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME
 
 if [[ -d "../patches/alpine/reh/" ]]; then
   for file in "../patches/alpine/reh/"*.patch; do
-    if [[ -f "${file}" ]]; then
+    if [[ -f "${file}" ]] && [[ "${file}" != *"fix-nodejs-url.patch" ]]; then
       apply_patch "${file}"
     fi
   done
 fi
 
-# For Alpine ARM64, skip native module builds to avoid compiler crashes
-# Native modules like kerberos can't be built reliably in the Alpine ARM64 environment
-NPM_CI_OPTS=""
+# For Alpine, skip postinstall scripts to avoid ripgrep download failures (403 errors)
+# Alpine builds can have issues downloading ripgrep from GitHub releases
+# We'll handle ripgrep replacement after npm install if needed
+NPM_CI_OPTS="--ignore-scripts"
 if [[ "${VSCODE_ARCH}" == "arm64" ]]; then
-  NPM_CI_OPTS="--ignore-scripts"
   echo "Skipping postinstall scripts for Alpine ARM64 (native modules can't build reliably)"
   # Also prevent node-gyp from trying to build native modules
   export npm_config_build_from_source=false
   export npm_config_ignore_scripts=true
+else
+  echo "Skipping postinstall scripts for Alpine ${VSCODE_ARCH} (ripgrep download may fail with 403)"
 fi
 
 for i in {1..5}; do # try 5 times
@@ -72,11 +74,35 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
   echo "NODEJS URL FIX CHECK FOR ALPINE ${VSCODE_ARCH} (AFTER MIXIN-NPM)"
   echo "=========================================="
   echo "Environment variables: VSCODE_NODEJS_SITE=${VSCODE_NODEJS_SITE}, VSCODE_NODEJS_URLROOT=${VSCODE_NODEJS_URLROOT}, VSCODE_NODEJS_URLSUFFIX=${VSCODE_NODEJS_URLSUFFIX}"
-  
+
   if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
-    echo "Applying direct fix to gulpfile.reh.js for Alpine ARM64 Node.js download URL..."
-    # Use the same fix script as Linux REH builds, but search for 'case alpine' instead of 'case linux'
-    cat > /tmp/fix-nodejs-url-alpine.js << 'NODEJS_SCRIPT'
+    echo "Applying Node.js URL fix patch for Alpine ARM64..."
+    if [[ -f "../patches/alpine/reh/fix-nodejs-url.patch" ]]; then
+      apply_patch "../patches/alpine/reh/fix-nodejs-url.patch" || {
+        echo "WARNING: Failed to apply Node.js URL fix patch, will try Node.js script fallback..."
+        SKIP_PATCH=1
+      }
+
+      if [[ "${SKIP_PATCH}" != "1" ]]; then
+        # Verify fix was applied
+        if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+          echo "WARNING: Node.js URL fix patch verification failed, will try Node.js script fallback..."
+          SKIP_PATCH=1
+        else
+          echo "✓ Node.js URL fix patch applied and verified"
+          SKIP_NODEJS_SCRIPT=1
+        fi
+      fi
+    else
+      echo "WARNING: Node.js URL fix patch not found, will use Node.js script approach..."
+      SKIP_PATCH=1
+    fi
+
+    # Only run Node.js script if patch didn't work
+    if [[ "${SKIP_NODEJS_SCRIPT}" != "1" ]]; then
+      echo "Applying direct fix to gulpfile.reh.js for Alpine ARM64 Node.js download URL (fallback)..."
+      # Use the same fix script as Linux REH builds, but search for 'case alpine' instead of 'case linux'
+      cat > /tmp/fix-nodejs-url-alpine.js << 'NODEJS_SCRIPT'
       const fs = require('fs');
       const path = './build/gulpfile.reh.js';
       let content = fs.readFileSync(path, 'utf8');
@@ -86,16 +112,16 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
       console.log('  - nodejs.org found:', content.includes('https://nodejs.org'));
       console.log('  - VSCODE_NODEJS_SITE already present:', content.includes('process.env.VSCODE_NODEJS_SITE'));
       console.log('  - extractAlpinefromDocker found:', content.includes('extractAlpinefromDocker'));
-      
+
       if (!content.includes('process.env.VSCODE_NODEJS_SITE')) {
         console.log('Fix is needed, searching for case alpine block...');
-        
+
         // Find case 'alpine' block - try both single and double quotes
         let caseAlpineIndex = content.indexOf("case 'alpine':");
         if (caseAlpineIndex === -1) {
           caseAlpineIndex = content.indexOf('case "alpine":');
         }
-        
+
         // Also try with whitespace variations
         if (caseAlpineIndex === -1) {
           const caseAlpineRegex = /case\s+['"]alpine['"]\s*:/;
@@ -116,65 +142,168 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
           }
           process.exit(1);
         }
-        
+
         console.log(`Found case alpine at index ${caseAlpineIndex}`);
 
         // Find where extractAlpinefromDocker is called in the case alpine block
         const afterCase = content.substring(caseAlpineIndex);
         console.log('Searching for extractAlpinefromDocker call...');
-        
-        // Look for the return statement that contains extractAlpinefromDocker
-        // The structure is likely: return (condition ? extractAlpinefromDocker(...) : somethingElse)
-        // Or: return extractAlpinefromDocker(...)
-        const returnPattern = /return\s*\([^)]*extractAlpinefromDocker[^)]*\)/;
-        const returnMatch = afterCase.match(returnPattern);
-        
-        if (returnMatch) {
-          console.log('Found return statement with extractAlpinefromDocker');
-          const returnStartIndex = caseAlpineIndex + returnMatch.index;
-          const returnEndIndex = returnStartIndex + returnMatch[0].length;
-          const fullReturnStatement = content.substring(returnStartIndex, returnEndIndex);
-          
-          console.log('Full return statement:', fullReturnStatement);
-          
-          // Check if it's a ternary: condition ? extractAlpinefromDocker(...) : something
-          if (fullReturnStatement.includes('?') && fullReturnStatement.includes(':')) {
-            console.log('Return statement contains ternary operator');
-            // Extract the condition, true part, and false part
-            const ternaryMatch = fullReturnStatement.match(/return\s*\((.*?)\s*\?\s*(.*?)\s*:\s*(.*?)\)/);
-            if (ternaryMatch) {
-              const condition = ternaryMatch[1];
-              const truePart = ternaryMatch[2]; // This should contain extractAlpinefromDocker
-              const falsePart = ternaryMatch[3];
-              
-              // Replace the ternary with a nested ternary that checks VSCODE_NODEJS_SITE first
-              const newReturnStatement = `return (${condition} ? (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT
+
+        // Find the next case or end of switch to limit search scope
+        const nextCaseMatch = afterCase.match(/case\s+['"]/);
+        const searchEndIndex = nextCaseMatch ? caseAlpineIndex + nextCaseMatch.index : content.length;
+        const alpineCaseContent = content.substring(caseAlpineIndex, searchEndIndex);
+
+        // Look for extractAlpinefromDocker in the case alpine block
+        const extractPattern = /extractAlpinefromDocker\s*\(/;
+        const extractMatch = alpineCaseContent.match(extractPattern);
+
+        if (!extractMatch) {
+          console.log('⚠ Could not find extractAlpinefromDocker call in case alpine block');
+          console.log('Showing first 1000 chars after case alpine:');
+          console.log(alpineCaseContent.substring(0, 1000));
+          process.exit(1);
+        }
+
+        const extractStartIndex = caseAlpineIndex + extractMatch.index;
+
+        // Find the complete extractAlpinefromDocker call - it returns an array, so find the end
+        // The call ends with a closing parenthesis followed by .pipe or semicolon or newline
+        const afterExtractStart = content.substring(extractStartIndex);
+        // Match extractAlpinefromDocker(...) - need to handle nested parentheses
+        let parenDepth = 0;
+        let extractEndIndex = extractStartIndex;
+        let foundStart = false;
+
+        for (let i = 0; i < afterExtractStart.length; i++) {
+          const char = afterExtractStart[i];
+          if (char === '(') {
+            parenDepth++;
+            foundStart = true;
+          } else if (char === ')') {
+            parenDepth--;
+            if (parenDepth === 0 && foundStart) {
+              extractEndIndex = extractStartIndex + i + 1;
+              break;
+            }
+          }
+        }
+
+        // Now find the return statement that contains this extractAlpinefromDocker call
+        // Look backwards from extractStartIndex to find 'return'
+        let returnStartIndex = extractStartIndex;
+        let foundReturn = false;
+
+        // Search backwards for 'return' keyword, but make sure we're not in the middle of another word
+        for (let i = extractStartIndex - 1; i >= Math.max(0, caseAlpineIndex - 100); i--) {
+          const substr = content.substring(Math.max(0, i - 6), i + 1);
+          if (substr === 'return') {
+            // Check that it's a standalone word (preceded by space, tab, newline, or start of line)
+            const beforeChar = i >= 6 ? content.charAt(i - 7) : '';
+            if (i < 7 || beforeChar === ' ' || beforeChar === '\t' || beforeChar === '\n' || beforeChar === '{' || beforeChar === ';') {
+              returnStartIndex = Math.max(0, i - 6);
+              foundReturn = true;
+              break;
+            }
+          }
+        }
+
+        if (!foundReturn) {
+          console.log('⚠ Could not find return statement before extractAlpinefromDocker');
+          console.log('Showing context around extractAlpinefromDocker:');
+          console.log(content.substring(Math.max(0, extractStartIndex - 300), Math.min(content.length, extractStartIndex + 100)));
+          process.exit(1);
+        }
+
+        // Find the end of the return statement - it ends with .pipe(rename('node')) or similar
+        const afterReturnStart = content.substring(returnStartIndex);
+        const renamePattern = /\.pipe\(rename\(['"]node['"]\)\)/;
+        const renameMatch = afterReturnStart.match(renamePattern);
+
+        if (!renameMatch) {
+          console.log('⚠ Could not find end of return statement (.pipe(rename))');
+          console.log('Showing context around extractAlpinefromDocker:');
+          console.log(content.substring(Math.max(0, extractStartIndex - 200), Math.min(content.length, extractEndIndex + 200)));
+          process.exit(1);
+        }
+
+        const returnEndIndex = returnStartIndex + renameMatch.index + renameMatch[0].length;
+        const fullReturnStatement = content.substring(returnStartIndex, returnEndIndex);
+
+        console.log('Found return statement containing extractAlpinefromDocker');
+        console.log('Return statement start index:', returnStartIndex);
+        console.log('Return statement end index:', returnEndIndex);
+        console.log('Return statement length:', fullReturnStatement.length);
+        console.log('Return statement (first 400 chars):', fullReturnStatement.substring(0, 400));
+        console.log('Return statement (last 150 chars):', fullReturnStatement.substring(Math.max(0, fullReturnStatement.length - 150)));
+
+        // Verify that extractAlpinefromDocker is actually in this return statement
+        if (!fullReturnStatement.includes('extractAlpinefromDocker')) {
+          console.log('ERROR: extractAlpinefromDocker not found in the return statement!');
+          console.log('This suggests the return statement was found incorrectly.');
+          console.log('extractAlpinefromDocker is at index:', extractStartIndex);
+          console.log('return statement is at index:', returnStartIndex, 'to', returnEndIndex);
+          console.log('Content before return:', content.substring(Math.max(0, returnStartIndex - 50), returnStartIndex));
+          console.log('Content after return end:', content.substring(returnEndIndex, Math.min(content.length, returnEndIndex + 50)));
+          process.exit(1);
+        }
+
+        // Verify the return statement is complete (starts with 'return' and ends properly)
+        if (!fullReturnStatement.trim().startsWith('return')) {
+          console.log('ERROR: Return statement does not start with "return"!');
+          console.log('First 50 chars:', fullReturnStatement.substring(0, 50));
+          process.exit(1);
+        }
+
+        // Check if it's a ternary: condition ? extractAlpinefromDocker(...) : something
+        if (fullReturnStatement.includes('?') && fullReturnStatement.includes(':')) {
+          console.log('Return statement contains ternary operator');
+          // Find the ternary condition and parts
+          // Pattern: return (condition ? truePart : falsePart)
+          const ternaryStart = fullReturnStatement.indexOf('(');
+          const ternaryEnd = fullReturnStatement.lastIndexOf(')');
+          const ternaryContent = fullReturnStatement.substring(ternaryStart + 1, ternaryEnd);
+
+          // Find the ? and : in the ternary
+          let questionIndex = -1;
+          let colonIndex = -1;
+          let depth = 0;
+
+          for (let i = 0; i < ternaryContent.length; i++) {
+            const char = ternaryContent[i];
+            if (char === '(') depth++;
+            else if (char === ')') depth--;
+            else if (char === '?' && depth === 0 && questionIndex === -1) {
+              questionIndex = i;
+            } else if (char === ':' && depth === 0 && questionIndex !== -1 && colonIndex === -1) {
+              colonIndex = i;
+              break;
+            }
+          }
+
+          if (questionIndex !== -1 && colonIndex !== -1) {
+            const condition = ternaryContent.substring(0, questionIndex).trim();
+            const truePart = ternaryContent.substring(questionIndex + 1, colonIndex).trim();
+            const falsePart = ternaryContent.substring(colonIndex + 1).trim();
+
+            console.log('Parsed ternary: condition, truePart, falsePart');
+
+            // Replace with nested ternary that checks VSCODE_NODEJS_SITE first
+            const newReturnStatement = `return (${condition} ? (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT
 				? fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
 					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
 					.pipe(filter('**/node'))
 					.pipe(util.setExecutableBit('**'))
 					.pipe(rename('node'))
 				: ${truePart}) : ${falsePart})`;
-              
-              content = content.substring(0, returnStartIndex) + newReturnStatement + content.substring(returnEndIndex);
-            } else {
-              console.log('⚠ Could not parse ternary structure, using simple replacement');
-              // Fallback: just replace extractAlpinefromDocker with our check
-              const newReturnStatement = fullReturnStatement.replace(
-                /extractAlpinefromDocker\s*\([^)]+\)/,
-                `(process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT
-				? fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
-					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
-					.pipe(filter('**/node'))
-					.pipe(util.setExecutableBit('**'))
-					.pipe(rename('node'))
-				: extractAlpinefromDocker(nodeVersion, platform, arch))`
-              );
-              content = content.substring(0, returnStartIndex) + newReturnStatement + content.substring(returnEndIndex);
-            }
+
+            console.log('Replacing ternary with nested ternary...');
+            content = content.substring(0, returnStartIndex) + newReturnStatement + content.substring(returnEndIndex);
           } else {
-            // Simple return extractAlpinefromDocker(...)
-            console.log('Return statement is simple (no ternary)');
+            console.log('⚠ Could not parse ternary structure, replacing entire return with if statement');
+            // Replace entire return with if statement - this is safer than trying to parse complex ternaries
+            // Remove 'return' from the original statement since we're wrapping it in an if
+            const originalStatement = fullReturnStatement.replace(/^return\s+/, '');
             const newReturnStatement = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
 				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
 					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
@@ -182,47 +311,34 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
 					.pipe(util.setExecutableBit('**'))
 					.pipe(rename('node'));
 			}
-			${fullReturnStatement}`;
+			return ${originalStatement}`;
+            console.log('Replacing entire return statement with if statement wrapper...');
             content = content.substring(0, returnStartIndex) + newReturnStatement + content.substring(returnEndIndex);
           }
         } else {
-          // No return statement found, look for just extractAlpinefromDocker
-          const extractPattern = /extractAlpinefromDocker\s*\(/;
-          const extractMatch = afterCase.match(extractPattern);
-          
-          if (!extractMatch) {
-            console.log('⚠ Could not find extractAlpinefromDocker call in case alpine block');
-            console.log('Showing first 1000 chars after case alpine:');
-            console.log(afterCase.substring(0, 1000));
-            process.exit(1);
-          }
-          
-          const extractStartIndex = caseAlpineIndex + extractMatch.index;
-          const afterExtractStart = content.substring(extractStartIndex);
-          const extractCallPattern = /extractAlpinefromDocker\s*\([^)]+\)/;
-          const extractCallMatch = afterExtractStart.match(extractCallPattern);
-          
-          if (!extractCallMatch) {
-            console.log('⚠ Could not find complete extractAlpinefromDocker call');
-            process.exit(1);
-          }
-          
-          const extractEndIndex = extractStartIndex + extractCallMatch.index + extractCallMatch[0].length;
-          const fullExtractCall = extractCallMatch[0];
-          
-          // Insert if statement before extractAlpinefromDocker
-          const newCode = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
+          // Simple return extractAlpinefromDocker(...)
+          console.log('Return statement is simple (no ternary)');
+          const newReturnStatement = `if (process.env.VSCODE_NODEJS_SITE && process.env.VSCODE_NODEJS_URLROOT) {
 				return fetchUrls(\`\${process.env.VSCODE_NODEJS_URLROOT}/v\${nodeVersion}/node-v\${nodeVersion}-\${platform}-\${arch}\${process.env.VSCODE_NODEJS_URLSUFFIX || ''}.tar.gz\`, { base: process.env.VSCODE_NODEJS_SITE, checksumSha256 })
 					.pipe(flatmap(stream => stream.pipe(gunzip()).pipe(untar())))
 					.pipe(filter('**/node'))
 					.pipe(util.setExecutableBit('**'))
 					.pipe(rename('node'));
 			}
-			return ${fullExtractCall}`;
-          content = content.substring(0, extractStartIndex) + newCode + content.substring(extractEndIndex);
+			${fullReturnStatement}`;
+          content = content.substring(0, returnStartIndex) + newReturnStatement + content.substring(returnEndIndex);
         }
+
         fs.writeFileSync(path, content, 'utf8');
         console.log('✓ gulpfile.reh.js Node.js URL fix applied successfully for Alpine ARM64');
+
+        // Verify the fix was applied
+        const verifyContent = fs.readFileSync(path, 'utf8');
+        if (!verifyContent.includes('process.env.VSCODE_NODEJS_SITE')) {
+          console.log('ERROR: Fix was applied but verification failed!');
+          process.exit(1);
+        }
+        console.log('✓ Fix verified successfully');
       } else if (content.includes('process.env.VSCODE_NODEJS_SITE')) {
         console.log('✓ gulpfile.reh.js Node.js URL fix already applied');
       } else {
@@ -231,19 +347,20 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
       }
 NODEJS_SCRIPT
 
-    node /tmp/fix-nodejs-url-alpine.js || {
-      echo "ERROR: Failed to apply gulpfile.reh.js Node.js URL fix for Alpine ARM64!"
+      node /tmp/fix-nodejs-url-alpine.js || {
+        echo "ERROR: Failed to apply gulpfile.reh.js Node.js URL fix for Alpine ARM64!"
+        rm -f /tmp/fix-nodejs-url-alpine.js
+        exit 1
+      }
       rm -f /tmp/fix-nodejs-url-alpine.js
-      exit 1
-    }
-    rm -f /tmp/fix-nodejs-url-alpine.js
 
-    # Verify fix was applied
-    if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
-      echo "ERROR: gulpfile.reh.js Node.js URL fix verification failed for Alpine ARM64!"
-      exit 1
+      # Verify fix was applied
+      if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then
+        echo "ERROR: gulpfile.reh.js Node.js URL fix verification failed for Alpine ARM64!"
+        exit 1
+      fi
+      echo "✓ Verified gulpfile.reh.js Node.js URL fix is applied for Alpine ARM64 (fallback script)"
     fi
-    echo "✓ Verified gulpfile.reh.js Node.js URL fix is applied for Alpine ARM64"
   else
     echo "✓ gulpfile.reh.js Node.js URL fix already applied for Alpine ARM64"
   fi

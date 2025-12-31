@@ -247,56 +247,128 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
       console.log('  - extractAlpinefromDocker found:', content.includes('extractAlpinefromDocker'));
 
       if (!content.includes('process.env.VSCODE_NODEJS_SITE')) {
-        console.log('Fix is needed, searching for case alpine block...');
+        console.log('Fix is needed, searching for extractAlpinefromDocker or Alpine download logic...');
 
-        // Find case 'alpine' block - try both single and double quotes
-        let caseAlpineIndex = content.indexOf("case 'alpine':");
-        if (caseAlpineIndex === -1) {
-          caseAlpineIndex = content.indexOf('case "alpine":');
-        }
+        // The code structure has changed - case 'alpine' now only sets expectedName
+        // The actual download logic with extractAlpinefromDocker is in a different switch statement
+        // Search for extractAlpinefromDocker directly
+        let extractIndex = content.indexOf('extractAlpinefromDocker');
+        if (extractIndex === -1) {
+          console.log('⚠ Could not find extractAlpinefromDocker in file');
+          console.log('Searching for Alpine-related download patterns...');
 
-        // Also try with whitespace variations
-        if (caseAlpineIndex === -1) {
-          const caseAlpineRegex = /case\s+['"]alpine['"]\s*:/;
-          const match = content.match(caseAlpineRegex);
-          if (match) {
-            caseAlpineIndex = content.indexOf(match[0]);
-          }
-        }
+          // Try to find the switch statement that handles platform downloads
+          // Look for patterns like: switch (platform) or function nodejs
+          const nodejsFunctionMatch = content.match(/function\s+nodejs\s*\([^)]*\)\s*\{/);
+          if (nodejsFunctionMatch) {
+            const nodejsStart = content.indexOf(nodejsFunctionMatch[0]);
+            console.log(`Found nodejs function at index ${nodejsStart}`);
 
-        if (caseAlpineIndex === -1) {
-          console.log('⚠ Could not find case "alpine" block');
-          console.log('Showing lines around potential case statements:');
-          const lines = content.split('\n');
-          for (let i = 0; i < lines.length; i++) {
-            if (lines[i].includes('case') && lines[i].includes('alpine')) {
-              console.log(`Line ${i + 1}: ${lines[i]}`);
+            // Look for the switch(platform) statement within the function
+            const switchPlatformMatch = content.substring(nodejsStart).match(/switch\s*\(\s*platform\s*\)\s*\{/);
+            if (switchPlatformMatch) {
+              const switchStart = nodejsStart + content.substring(nodejsStart).indexOf(switchPlatformMatch[0]);
+              console.log(`Found switch(platform) at index ${switchStart}`);
+
+              // Now search for case 'alpine' in this switch
+              const caseAlpineMatch = content.substring(switchStart).match(/case\s+['"]alpine['"]\s*:/);
+              if (caseAlpineMatch) {
+                extractIndex = switchStart + content.substring(switchStart).indexOf(caseAlpineMatch[0]);
+                console.log(`Found case 'alpine' in switch(platform) at index ${extractIndex}`);
+              }
             }
           }
-          process.exit(1);
+
+          if (extractIndex === -1) {
+            console.log('⚠ Could not find Alpine download logic');
+            console.log('Showing lines with "alpine" or "extractAlpine":');
+            const lines = content.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+              if (lines[i].toLowerCase().includes('alpine') || lines[i].includes('extractalpine')) {
+                console.log(`Line ${i + 1}: ${lines[i]}`);
+              }
+            }
+            process.exit(1);
+          }
+        } else {
+          console.log(`Found extractAlpinefromDocker at index ${extractIndex}`);
         }
 
-        console.log(`Found case alpine at index ${caseAlpineIndex}`);
+        // Use extractIndex as the starting point for finding the case block
+        let caseAlpineIndex = extractIndex;
+
+        // Look backwards to find the case 'alpine' statement
+        const beforeExtract = content.substring(0, extractIndex);
+        const caseAlpineMatch = beforeExtract.match(/case\s+['"]alpine['"]\s*:/);
+        if (caseAlpineMatch) {
+          caseAlpineIndex = beforeExtract.lastIndexOf(caseAlpineMatch[0]);
+          console.log(`Found case 'alpine' at index ${caseAlpineIndex} (before extractAlpinefromDocker)`);
+        } else {
+          console.log('Could not find case "alpine" before extractAlpinefromDocker, using extractAlpinefromDocker position');
+        }
+
+        console.log(`Found case alpine or extractAlpinefromDocker at index ${caseAlpineIndex}`);
+
+        // Now find the actual case 'alpine' block that contains extractAlpinefromDocker
+        // Look backwards from extractAlpinefromDocker to find the case statement
+        let actualCaseAlpineIndex = caseAlpineIndex;
+        const beforeExtract = content.substring(0, caseAlpineIndex);
+
+        // Search backwards for the case 'alpine' statement
+        const caseAlpineRegex = /case\s+['"]alpine['"]\s*:/g;
+        let match;
+        let lastMatchIndex = -1;
+        while ((match = caseAlpineRegex.exec(beforeExtract)) !== null) {
+          lastMatchIndex = match.index;
+        }
+
+        if (lastMatchIndex !== -1) {
+          // Check if this case block contains extractAlpinefromDocker
+          const caseBlockStart = lastMatchIndex;
+          // Find the next case or default
+          const afterThisCase = content.substring(caseBlockStart);
+          const nextCaseMatch = afterThisCase.substring(10).match(/case\s+['"]|default\s*:/);
+          const caseBlockEnd = nextCaseMatch ? caseBlockStart + 10 + nextCaseMatch.index : content.length;
+
+          if (caseAlpineIndex >= caseBlockStart && caseAlpineIndex < caseBlockEnd) {
+            actualCaseAlpineIndex = caseBlockStart;
+            console.log(`Found case 'alpine' block containing extractAlpinefromDocker at index ${actualCaseAlpineIndex}`);
+          } else {
+            console.log(`Case 'alpine' at ${lastMatchIndex} does not contain extractAlpinefromDocker, searching for another one...`);
+            // The extractAlpinefromDocker might be in a different switch statement
+            // Look for switch(platform) and find case 'alpine' there
+            const switchPlatformMatch = content.match(/switch\s*\(\s*platform\s*\)\s*\{/);
+            if (switchPlatformMatch) {
+              const switchStart = switchPlatformMatch.index;
+              const afterSwitch = content.substring(switchStart);
+              const caseAlpineInSwitch = afterSwitch.match(/case\s+['"]alpine['"]\s*:/);
+              if (caseAlpineInSwitch) {
+                actualCaseAlpineIndex = switchStart + caseAlpineInSwitch.index;
+                console.log(`Found case 'alpine' in switch(platform) at index ${actualCaseAlpineIndex}`);
+              }
+            }
+          }
+        }
 
         // Show the actual case statement line
-        const caseLineStart = content.lastIndexOf('\n', caseAlpineIndex);
-        const caseLineEnd = content.indexOf('\n', caseAlpineIndex);
+        const caseLineStart = content.lastIndexOf('\n', actualCaseAlpineIndex);
+        const caseLineEnd = content.indexOf('\n', actualCaseAlpineIndex);
         if (caseLineStart !== -1 && caseLineEnd !== -1) {
           console.log('Case alpine line:', content.substring(caseLineStart + 1, caseLineEnd));
         }
 
         // Find where extractAlpinefromDocker is called in the case alpine block
-        const afterCase = content.substring(caseAlpineIndex);
+        const afterCase = content.substring(actualCaseAlpineIndex);
         console.log('Searching for extractAlpinefromDocker call...');
-        console.log('First 500 chars after case alpine:');
-        console.log(afterCase.substring(0, 500));
+        console.log('First 1000 chars after case alpine:');
+        console.log(afterCase.substring(0, 1000));
 
         // Find the next case or end of switch to limit search scope
         // Look for the next case statement (but not the current one)
         let searchEndIndex = content.length;
 
         // Skip past the current case statement - find the colon and newline
-        let caseColonIndex = content.indexOf(':', caseAlpineIndex);
+        let caseColonIndex = content.indexOf(':', actualCaseAlpineIndex);
         if (caseColonIndex === -1) {
           console.log('ERROR: Could not find colon after case alpine');
           process.exit(1);
@@ -327,7 +399,7 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
           }
         }
 
-        let alpineCaseContent = content.substring(caseAlpineIndex, searchEndIndex);
+        let alpineCaseContent = content.substring(actualCaseAlpineIndex, searchEndIndex);
         console.log(`Extracted alpine case content: ${caseAlpineIndex} to ${searchEndIndex}, length: ${alpineCaseContent.length}`);
 
         if (alpineCaseContent.length === 0 || alpineCaseContent.trim().length < 10) {

@@ -154,63 +154,60 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
         const searchEndIndex = nextCaseMatch ? caseAlpineIndex + nextCaseMatch.index : content.length;
         const alpineCaseContent = content.substring(caseAlpineIndex, searchEndIndex);
 
-        // Look for extractAlpinefromDocker in the case alpine block
-        const extractPattern = /extractAlpinefromDocker\s*\(/;
-        const extractMatch = alpineCaseContent.match(extractPattern);
+        // Look for the ternary pattern first - this is the most common structure
+        // The code is: return (product.nodejsRepository !== 'https://nodejs.org' ? ... : extractAlpinefromDocker(...))
+        const ternaryPattern = /return\s*\(\s*product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]\s*\?/;
+        const ternaryMatch = alpineCaseContent.match(ternaryPattern);
 
-        if (!extractMatch) {
-          console.log('⚠ Could not find extractAlpinefromDocker call in case alpine block');
-          console.log('Showing first 1000 chars after case alpine:');
-          console.log(alpineCaseContent.substring(0, 1000));
-          process.exit(1);
-        }
+        let extractStartIndex = -1;
+        let extractMatch = null;
 
-        const extractStartIndex = caseAlpineIndex + extractMatch.index;
+        if (ternaryMatch) {
+          console.log('Found ternary pattern, will replace entire ternary');
+          // Find the start of the return statement
+          extractStartIndex = caseAlpineIndex + ternaryMatch.index;
+        } else {
+          // Fallback: look for extractAlpinefromDocker directly
+          const extractPattern = /extractAlpinefromDocker\s*\(/;
+          extractMatch = alpineCaseContent.match(extractPattern);
 
-        // Find the complete extractAlpinefromDocker call - it returns an array, so find the end
-        // The call ends with a closing parenthesis followed by .pipe or semicolon or newline
-        const afterExtractStart = content.substring(extractStartIndex);
-        // Match extractAlpinefromDocker(...) - need to handle nested parentheses
-        let parenDepth = 0;
-        let extractEndIndex = extractStartIndex;
-        let foundStart = false;
-
-        for (let i = 0; i < afterExtractStart.length; i++) {
-          const char = afterExtractStart[i];
-          if (char === '(') {
-            parenDepth++;
-            foundStart = true;
-          } else if (char === ')') {
-            parenDepth--;
-            if (parenDepth === 0 && foundStart) {
-              extractEndIndex = extractStartIndex + i + 1;
-              break;
-            }
+          if (extractMatch) {
+            console.log('Found extractAlpinefromDocker call directly');
+            extractStartIndex = caseAlpineIndex + extractMatch.index;
+          } else {
+            console.log('⚠ Could not find ternary pattern or extractAlpinefromDocker call in case alpine block');
+            console.log('Showing first 2000 chars after case alpine:');
+            console.log(alpineCaseContent.substring(0, 2000));
+            console.log('ERROR: Could not find any matching pattern in case alpine block');
+            process.exit(1);
           }
         }
 
-        // Now find the return statement that contains this extractAlpinefromDocker call
-        // Look backwards from extractStartIndex to find 'return'
+        // Find the return statement - if we found the ternary pattern, extractStartIndex is already at the return
         let returnStartIndex = extractStartIndex;
         let foundReturn = false;
 
-        // Search backwards for 'return' keyword, but make sure we're not in the middle of another word
-        for (let i = extractStartIndex - 1; i >= Math.max(0, caseAlpineIndex - 100); i--) {
-          const substr = content.substring(Math.max(0, i - 6), i + 1);
-          if (substr === 'return') {
-            // Check that it's a standalone word (preceded by space, tab, newline, or start of line)
-            const beforeChar = i >= 6 ? content.charAt(i - 7) : '';
-            if (i < 7 || beforeChar === ' ' || beforeChar === '\t' || beforeChar === '\n' || beforeChar === '{' || beforeChar === ';') {
-              returnStartIndex = Math.max(0, i - 6);
-              foundReturn = true;
-              break;
+        if (ternaryMatch) {
+          // We already found the return statement with the ternary
+          foundReturn = true;
+        } else {
+          // Look backwards from extractStartIndex to find 'return'
+          for (let i = extractStartIndex - 1; i >= Math.max(0, caseAlpineIndex - 100); i--) {
+            const substr = content.substring(Math.max(0, i - 6), i + 1);
+            if (substr === 'return') {
+              const beforeChar = i >= 6 ? content.charAt(i - 7) : '';
+              if (i < 7 || beforeChar === ' ' || beforeChar === '\t' || beforeChar === '\n' || beforeChar === '{' || beforeChar === ';') {
+                returnStartIndex = Math.max(0, i - 6);
+                foundReturn = true;
+                break;
+              }
             }
           }
         }
 
         if (!foundReturn) {
-          console.log('⚠ Could not find return statement before extractAlpinefromDocker');
-          console.log('Showing context around extractAlpinefromDocker:');
+          console.log('⚠ Could not find return statement');
+          console.log('Showing context around start index:');
           console.log(content.substring(Math.max(0, extractStartIndex - 300), Math.min(content.length, extractStartIndex + 100)));
           process.exit(1);
         }
@@ -222,8 +219,8 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
 
         if (!renameMatch) {
           console.log('⚠ Could not find end of return statement (.pipe(rename))');
-          console.log('Showing context around extractAlpinefromDocker:');
-          console.log(content.substring(Math.max(0, extractStartIndex - 200), Math.min(content.length, extractEndIndex + 200)));
+          console.log('Showing context around return start:');
+          console.log(content.substring(Math.max(0, returnStartIndex - 200), Math.min(content.length, returnStartIndex + 500)));
           process.exit(1);
         }
 
@@ -237,11 +234,10 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
         console.log('Return statement (first 400 chars):', fullReturnStatement.substring(0, 400));
         console.log('Return statement (last 150 chars):', fullReturnStatement.substring(Math.max(0, fullReturnStatement.length - 150)));
 
-        // Verify that extractAlpinefromDocker is actually in this return statement
-        if (!fullReturnStatement.includes('extractAlpinefromDocker')) {
-          console.log('ERROR: extractAlpinefromDocker not found in the return statement!');
+        // Verify that the return statement contains either extractAlpinefromDocker or the ternary pattern
+        if (!fullReturnStatement.includes('extractAlpinefromDocker') && !fullReturnStatement.includes('product.nodejsRepository')) {
+          console.log('ERROR: extractAlpinefromDocker or product.nodejsRepository not found in the return statement!');
           console.log('This suggests the return statement was found incorrectly.');
-          console.log('extractAlpinefromDocker is at index:', extractStartIndex);
           console.log('return statement is at index:', returnStartIndex, 'to', returnEndIndex);
           console.log('Content before return:', content.substring(Math.max(0, returnStartIndex - 50), returnStartIndex));
           console.log('Content after return end:', content.substring(returnEndIndex, Math.min(content.length, returnEndIndex + 50)));
@@ -384,33 +380,32 @@ for ext_dir in extensions/*/; do
   fi
 done
 
-# For Alpine ARM64, ensure ternary-stream is installed in build directory (it might be missing due to --ignore-scripts)
+# For Alpine, ensure ternary-stream is installed in build directory (it might be missing due to --ignore-scripts)
 # ternary-stream is required by build/lib/util.js, so it needs to be in build/node_modules
 # This must be done BEFORE running any gulp commands
-if [[ "${VSCODE_ARCH}" == "arm64" ]]; then
-  echo "Checking for ternary-stream in build directory for Alpine ARM64..."
-  # Check if ternary-stream exists in build/node_modules (more reliable than npm list)
-  if [[ ! -d "build/node_modules/ternary-stream" ]] && [[ ! -f "build/node_modules/ternary-stream/package.json" ]]; then
-    echo "Installing ternary-stream in build directory (required for build/lib/util.js but may be missing due to --ignore-scripts)..."
-    # Ensure build directory exists and has a package.json
-    if [[ ! -f "build/package.json" ]]; then
-      echo "ERROR: build/package.json not found, cannot install ternary-stream"
-      exit 1
-    fi
-    npm install ternary-stream --prefix build --no-save --legacy-peer-deps || {
-      echo "ERROR: Failed to install ternary-stream in build directory!"
-      echo "This is required for Alpine ARM64 REH builds"
-      exit 1
-    }
-    # Verify installation
-    if [[ ! -d "build/node_modules/ternary-stream" ]] && [[ ! -f "build/node_modules/ternary-stream/package.json" ]]; then
-      echo "ERROR: ternary-stream installation verification failed!"
-      exit 1
-    fi
-    echo "✓ ternary-stream installed successfully in build directory"
-  else
-    echo "✓ ternary-stream already present in build directory"
+# This affects both ARM64 and X64 (X64 also uses --ignore-scripts which can skip postinstall scripts)
+echo "Checking for ternary-stream in build directory for Alpine ${VSCODE_ARCH}..."
+# Check if ternary-stream exists in build/node_modules (more reliable than npm list)
+if [[ ! -d "build/node_modules/ternary-stream" ]] && [[ ! -f "build/node_modules/ternary-stream/package.json" ]]; then
+  echo "Installing ternary-stream in build directory (required for build/lib/util.js but may be missing due to --ignore-scripts)..."
+  # Ensure build directory exists and has a package.json
+  if [[ ! -f "build/package.json" ]]; then
+    echo "ERROR: build/package.json not found, cannot install ternary-stream"
+    exit 1
   fi
+  npm install ternary-stream --prefix build --no-save --legacy-peer-deps || {
+    echo "ERROR: Failed to install ternary-stream in build directory!"
+    echo "This is required for Alpine REH builds"
+    exit 1
+  }
+  # Verify installation
+  if [[ ! -d "build/node_modules/ternary-stream" ]] && [[ ! -f "build/node_modules/ternary-stream/package.json" ]]; then
+    echo "ERROR: ternary-stream installation verification failed!"
+    exit 1
+  fi
+  echo "✓ ternary-stream installed successfully in build directory"
+else
+  echo "✓ ternary-stream already present in build directory"
 fi
 
 if [[ "${VSCODE_ARCH}" == "x64" ]]; then

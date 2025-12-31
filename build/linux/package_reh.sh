@@ -588,6 +588,7 @@ NODEJS_SCRIPT
     echo "Showing the fix in gulpfile.reh.js:"
     grep -A 5 "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js | head -10 || echo "Fix not found in grep output"
   fi
+  fi
   echo "=========================================="
 else
   echo "Skipping Node.js URL fix (not loong64 or riscv64, or gulpfile.reh.js not found)"

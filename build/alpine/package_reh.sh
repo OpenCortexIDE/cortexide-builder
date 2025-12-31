@@ -66,6 +66,139 @@ done
 
 node build/azure-pipelines/distro/mixin-npm
 
+# Verify and apply fix-reh-empty-dependencies fix if patch didn't work
+# This prevents "Invalid glob argument" errors when productionDependencies is empty
+if [[ -f "build/gulpfile.reh.js" ]]; then
+  if ! grep -q "dependenciesSrc.length > 0" build/gulpfile.reh.js 2>/dev/null; then
+    echo "Applying fix-reh-empty-dependencies fix to gulpfile.reh.js..."
+    node -e "
+      const fs = require('fs');
+      const path = './build/gulpfile.reh.js';
+      let content = fs.readFileSync(path, 'utf8');
+      let fixApplied = false;
+
+      console.log('Checking for fix-reh-empty-dependencies patterns...');
+      console.log('  - Has dependenciesSrc:', content.includes('dependenciesSrc'));
+      console.log('  - Has gulp.src(dependenciesSrc:', content.includes('gulp.src(dependenciesSrc'));
+      console.log('  - Has productionDependencies:', content.includes('productionDependencies'));
+
+      // Pattern 1: Standard pattern with exact spacing
+      const pattern1 = /const dependenciesSrc = productionDependencies\.map\(d => path\.relative\(REPO_ROOT, d\)\)\.map\(d => \[`\${d}\/\*\*`, `!\${d}\/\*\*\/{test,tests}\/\*\*`, `!\${d}\/.bin\/\*\*`\]\)\.flat\(\);/;
+      // Pattern 2: More flexible spacing
+      const pattern2 = /const\s+dependenciesSrc\s*=\s*productionDependencies\.map\(d\s*=>\s*path\.relative\(REPO_ROOT,\s*d\)\)\.map\(d\s*=>\s*\[`\${d}\/\*\*`,\s*`!\${d}\/\*\*\/{test,tests}\/\*\*`,\s*`!\${d}\/.bin\/\*\*`\]\)\.flat\(\);/;
+
+      // Pattern for gulp.src call - more flexible
+      const gulpPattern1 = /const\s+deps\s*=\s*gulp\.src\(dependenciesSrc,\s*{\s*base:\s*['\"]remote['\"],\s*dot:\s*true\s*}\)/;
+      const gulpPattern2 = /const\s+deps\s*=\s*gulp\.src\(dependenciesSrc,/;
+
+      // Check if fix is needed
+      if (content.includes('dependenciesSrc') && content.includes('gulp.src') && !content.includes('dependenciesSrc.length > 0')) {
+        console.log('Fix is needed, attempting to apply...');
+
+        // Try pattern 1 first
+        if (pattern1.test(content)) {
+          console.log('  - Matched pattern1 (exact)');
+          content = content.replace(
+            pattern1,
+            'const dependenciesSrc = productionDependencies.map(d => path.relative(REPO_ROOT, d)).filter(d => d && d.trim() !== \"\").map(d => [`\${d}/**`, `!\${d}/**/{test,tests}/**`, `!\${d}/.bin/**`]).flat();'
+          );
+          fixApplied = true;
+        } else if (pattern2.test(content)) {
+          console.log('  - Matched pattern2 (flexible)');
+          content = content.replace(
+            pattern2,
+            'const dependenciesSrc = productionDependencies.map(d => path.relative(REPO_ROOT, d)).filter(d => d && d.trim() !== \"\").map(d => [`\${d}/**`, `!\${d}/**/{test,tests}/**`, `!\${d}/.bin/**`]).flat();'
+          );
+          fixApplied = true;
+        } else {
+          console.log('  - Could not match dependenciesSrc pattern, trying to find it manually...');
+          // Try to find the line and replace it manually
+          const lines = content.split('\\n');
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes('dependenciesSrc') && lines[i].includes('productionDependencies') && lines[i].includes('map')) {
+              console.log(`  - Found potential line ${i + 1}: ${lines[i].substring(0, 100)}`);
+              if (!lines[i].includes('filter')) {
+                lines[i] = lines[i].replace(
+                  /\.map\(d\s*=>\s*\[`\${d}\/\*\*`/,
+                  '.filter(d => d && d.trim() !== \"\").map(d => [`\${d}/**`'
+                );
+                fixApplied = true;
+                break;
+              }
+            }
+          }
+          if (fixApplied) {
+            content = lines.join('\\n');
+          }
+        }
+
+        // Now fix the gulp.src call
+        if (gulpPattern1.test(content)) {
+          console.log('  - Matched gulpPattern1 (exact)');
+          content = content.replace(
+            gulpPattern1,
+            'const deps = dependenciesSrc.length > 0 ? gulp.src(dependenciesSrc, { base: \'remote\', dot: true }) : gulp.src([\'**\'], { base: \'remote\', dot: true, allowEmpty: true })'
+          );
+        } else if (gulpPattern2.test(content)) {
+          console.log('  - Matched gulpPattern2 (flexible), replacing...');
+          // Find the full line and replace it
+          const lines = content.split('\\n');
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes('const deps') && lines[i].includes('gulp.src(dependenciesSrc')) {
+              console.log(`  - Found gulp.src line ${i + 1}: ${lines[i]}`);
+              if (!lines[i].includes('dependenciesSrc.length > 0')) {
+                lines[i] = lines[i].replace(
+                  /const\s+deps\s*=\s*gulp\.src\(dependenciesSrc,.*?\)/,
+                  'const deps = dependenciesSrc.length > 0 ? gulp.src(dependenciesSrc, { base: \'remote\', dot: true }) : gulp.src([\'**\'], { base: \'remote\', dot: true, allowEmpty: true })'
+                );
+                fixApplied = true;
+                break;
+              }
+            }
+          }
+          if (fixApplied) {
+            content = lines.join('\\n');
+          }
+        }
+
+        if (fixApplied) {
+          fs.writeFileSync(path, content, 'utf8');
+          console.log('✓ fix-reh-empty-dependencies fix applied successfully');
+        } else {
+          console.log('⚠ Could not apply fix - pattern matching failed');
+          console.log('Showing relevant code around dependenciesSrc:');
+          const lines = content.split('\\n');
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes('dependenciesSrc') || (lines[i].includes('gulp.src') && lines[i].includes('dependenciesSrc'))) {
+              console.log(`Line ${i + 1}: ${lines[i]}`);
+            }
+          }
+        }
+      } else if (content.includes('dependenciesSrc.length > 0')) {
+        console.log('✓ fix-reh-empty-dependencies already applied');
+      } else {
+        console.log('⚠ fix-reh-empty-dependencies fix not needed (code structure different)');
+      }
+    " || {
+      echo "ERROR: Failed to apply fix-reh-empty-dependencies fix!"
+      exit 1
+    }
+
+    # Verify fix was applied
+    if ! grep -q "dependenciesSrc.length > 0" build/gulpfile.reh.js 2>/dev/null; then
+      echo "ERROR: fix-reh-empty-dependencies fix verification failed!"
+      echo "This is required for REH builds to prevent 'Invalid glob argument' errors."
+      echo "Showing relevant lines from gulpfile.reh.js:"
+      grep -n "dependenciesSrc\|gulp.src" build/gulpfile.reh.js | head -20
+      exit 1
+    else
+      echo "✓ fix-reh-empty-dependencies fix verified successfully"
+    fi
+  else
+    echo "✓ fix-reh-empty-dependencies already applied (found in gulpfile.reh.js)"
+  fi
+fi
+
 # Fix gulpfile.reh.js to use VSCODE_NODEJS_SITE for Alpine ARM64
 # This ensures Node.js is downloaded from unofficial-builds.nodejs.org instead of trying Docker
 # This MUST be done AFTER mixin-npm, as mixin-npm may regenerate/modify gulpfile.reh.js
@@ -154,40 +287,112 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
         const searchEndIndex = nextCaseMatch ? caseAlpineIndex + nextCaseMatch.index : content.length;
         const alpineCaseContent = content.substring(caseAlpineIndex, searchEndIndex);
 
-        // Look for the ternary pattern first - this is the most common structure
-        // The code is: return (product.nodejsRepository !== 'https://nodejs.org' ? ... : extractAlpinefromDocker(...))
-        const ternaryPattern = /return\s*\(\s*product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]\s*\?/;
-        const ternaryMatch = alpineCaseContent.match(ternaryPattern);
+        console.log('Alpine case content length:', alpineCaseContent.length);
+        console.log('First 1000 chars of case alpine:');
+        console.log(alpineCaseContent.substring(0, 1000));
+        console.log('Last 500 chars of case alpine:');
+        console.log(alpineCaseContent.substring(Math.max(0, alpineCaseContent.length - 500)));
+        console.log('Searching for patterns...');
+
+        // Look for various patterns that might exist
+        // Pattern 1: Ternary with product.nodejsRepository (exact match)
+        const ternaryPattern1 = /return\s*\(\s*product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]\s*\?/;
+        // Pattern 2: Ternary with different spacing (more flexible)
+        const ternaryPattern2 = /return\s*\(\s*product\.nodejsRepository\s*!==\s*['"]https:\/\/nodejs\.org['"]/;
+        // Pattern 3: Direct extractAlpinefromDocker call
+        const extractPattern = /extractAlpinefromDocker\s*\(/;
+        // Pattern 4: Any return statement in the case block
+        const returnPattern = /return\s*\(/;
+        // Pattern 5: Look for the pipe chain after the ternary (more specific)
+        const pipePattern = /\.pipe\s*\(\s*flatmap\s*\(/;
+        // Pattern 6: Look for fetchGithub in the case block
+        const fetchGithubPattern = /fetchGithub\s*\(/;
+
+        const ternaryMatch1 = alpineCaseContent.match(ternaryPattern1);
+        const ternaryMatch2 = !ternaryMatch1 ? alpineCaseContent.match(ternaryPattern2) : null;
+        const extractMatch = alpineCaseContent.match(extractPattern);
+        const returnMatch = alpineCaseContent.match(returnPattern);
+        const pipeMatch = alpineCaseContent.match(pipePattern);
+        const fetchGithubMatch = alpineCaseContent.match(fetchGithubPattern);
+
+        console.log('Pattern matches:');
+        console.log('  - ternaryPattern1 (exact):', ternaryMatch1 ? 'found at ' + ternaryMatch1.index : 'not found');
+        console.log('  - ternaryPattern2 (flexible):', ternaryMatch2 ? 'found at ' + ternaryMatch2.index : 'not found');
+        console.log('  - extractAlpinefromDocker:', extractMatch ? 'found at ' + extractMatch.index : 'not found');
+        console.log('  - return statement:', returnMatch ? 'found at ' + returnMatch.index : 'not found');
+        console.log('  - pipe pattern (.pipe(flatmap):', pipeMatch ? 'found at ' + pipeMatch.index : 'not found');
+        console.log('  - fetchGithub:', fetchGithubMatch ? 'found at ' + fetchGithubMatch.index : 'not found');
+
+        // Show the actual lines around where we found things
+        if (extractMatch) {
+          const extractIndex = extractMatch.index;
+          const start = Math.max(0, extractIndex - 200);
+          const end = Math.min(alpineCaseContent.length, extractIndex + 500);
+          console.log('Code around extractAlpinefromDocker:');
+          console.log(alpineCaseContent.substring(start, end));
+        }
+        if (returnMatch) {
+          const returnIndex = returnMatch.index;
+          const start = Math.max(0, returnIndex - 200);
+          const end = Math.min(alpineCaseContent.length, returnIndex + 500);
+          console.log('Code around return statement:');
+          console.log(alpineCaseContent.substring(start, end));
+        }
+        if (pipeMatch) {
+          const pipeIndex = pipeMatch.index;
+          const start = Math.max(0, pipeIndex - 300);
+          const end = Math.min(alpineCaseContent.length, pipeIndex + 200);
+          console.log('Code around pipe pattern:');
+          console.log(alpineCaseContent.substring(start, end));
+        }
 
         let extractStartIndex = -1;
-        let extractMatch = null;
+        let useTernary = false;
 
-        if (ternaryMatch) {
-          console.log('Found ternary pattern, will replace entire ternary');
-          // Find the start of the return statement
-          extractStartIndex = caseAlpineIndex + ternaryMatch.index;
-        } else {
-          // Fallback: look for extractAlpinefromDocker directly
-          const extractPattern = /extractAlpinefromDocker\s*\(/;
-          extractMatch = alpineCaseContent.match(extractPattern);
+        if (ternaryMatch1) {
+          console.log('Found ternary pattern (exact), will replace entire ternary');
+          extractStartIndex = caseAlpineIndex + ternaryMatch1.index;
+          useTernary = true;
+        } else if (ternaryMatch2) {
+          console.log('Found ternary pattern (flexible), will replace entire ternary');
+          extractStartIndex = caseAlpineIndex + ternaryMatch2.index;
+          useTernary = true;
+        } else if (extractMatch) {
+          console.log('Found extractAlpinefromDocker call directly');
+          extractStartIndex = caseAlpineIndex + extractMatch.index;
+        } else if (returnMatch) {
+          console.log('Found return statement, checking if it contains nodejs-related code...');
+          // Show more context around the return statement
+          const returnContext = alpineCaseContent.substring(Math.max(0, returnMatch.index - 100), Math.min(alpineCaseContent.length, returnMatch.index + 500));
+          console.log('Context around return statement:');
+          console.log(returnContext);
 
-          if (extractMatch) {
-            console.log('Found extractAlpinefromDocker call directly');
-            extractStartIndex = caseAlpineIndex + extractMatch.index;
+          // Check if the return statement contains nodejs.org or fetchUrls
+          if (returnContext.includes('nodejs.org') || returnContext.includes('fetchUrls') || returnContext.includes('fetchGithub')) {
+            console.log('Return statement contains nodejs-related code, using it as starting point');
+            extractStartIndex = caseAlpineIndex + returnMatch.index;
           } else {
-            console.log('⚠ Could not find ternary pattern or extractAlpinefromDocker call in case alpine block');
-            console.log('Showing first 2000 chars after case alpine:');
-            console.log(alpineCaseContent.substring(0, 2000));
-            console.log('ERROR: Could not find any matching pattern in case alpine block');
+            console.log('ERROR: Return statement found but does not contain nodejs-related code');
+            console.log('Full alpine case content:');
+            console.log(alpineCaseContent);
             process.exit(1);
           }
+        } else {
+          console.log('⚠ Could not find any matching pattern in case alpine block');
+          console.log('Full alpine case content (first 3000 chars):');
+          console.log(alpineCaseContent.substring(0, 3000));
+          console.log('Full alpine case content (last 1000 chars):');
+          console.log(alpineCaseContent.substring(Math.max(0, alpineCaseContent.length - 1000)));
+          console.log('ERROR: Could not find any matching pattern in case alpine block');
+          console.log('This suggests the code structure has changed. Please check the actual structure above.');
+          process.exit(1);
         }
 
         // Find the return statement - if we found the ternary pattern, extractStartIndex is already at the return
         let returnStartIndex = extractStartIndex;
         let foundReturn = false;
 
-        if (ternaryMatch) {
+        if (useTernary) {
           // We already found the return statement with the ternary
           foundReturn = true;
         } else {
@@ -343,12 +548,24 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
       }
 NODEJS_SCRIPT
 
-      node /tmp/fix-nodejs-url-alpine.js || {
+      set +e  # Don't exit on error, we'll handle it
+      node /tmp/fix-nodejs-url-alpine.js > /tmp/fix-nodejs-url-alpine.log 2>&1
+      EXIT_CODE=$?
+      set -e  # Re-enable exit on error
+
+      if [[ ${EXIT_CODE} -ne 0 ]]; then
         echo "ERROR: Failed to apply gulpfile.reh.js Node.js URL fix for Alpine ARM64!"
-        rm -f /tmp/fix-nodejs-url-alpine.js
+        echo "Exit code: ${EXIT_CODE}"
+        echo "Script output:"
+        cat /tmp/fix-nodejs-url-alpine.log || echo "No log file found"
+        rm -f /tmp/fix-nodejs-url-alpine.js /tmp/fix-nodejs-url-alpine.log
         exit 1
-      }
-      rm -f /tmp/fix-nodejs-url-alpine.js
+      fi
+
+      # Show script output even on success for debugging
+      echo "Script output:"
+      cat /tmp/fix-nodejs-url-alpine.log 2>/dev/null || echo "No log file found"
+      rm -f /tmp/fix-nodejs-url-alpine.js /tmp/fix-nodejs-url-alpine.log
 
       # Verify fix was applied
       if ! grep -q "process.env.VSCODE_NODEJS_SITE" build/gulpfile.reh.js 2>/dev/null; then

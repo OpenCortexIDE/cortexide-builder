@@ -278,20 +278,118 @@ if [[ -f "build/gulpfile.reh.js" ]] && [[ "${VSCODE_ARCH}" == "arm64" ]]; then
 
         console.log(`Found case alpine at index ${caseAlpineIndex}`);
 
+        // Show the actual case statement line
+        const caseLineStart = content.lastIndexOf('\n', caseAlpineIndex);
+        const caseLineEnd = content.indexOf('\n', caseAlpineIndex);
+        if (caseLineStart !== -1 && caseLineEnd !== -1) {
+          console.log('Case alpine line:', content.substring(caseLineStart + 1, caseLineEnd));
+        }
+
         // Find where extractAlpinefromDocker is called in the case alpine block
         const afterCase = content.substring(caseAlpineIndex);
         console.log('Searching for extractAlpinefromDocker call...');
+        console.log('First 500 chars after case alpine:');
+        console.log(afterCase.substring(0, 500));
 
         // Find the next case or end of switch to limit search scope
-        const nextCaseMatch = afterCase.match(/case\s+['"]/);
-        const searchEndIndex = nextCaseMatch ? caseAlpineIndex + nextCaseMatch.index : content.length;
-        const alpineCaseContent = content.substring(caseAlpineIndex, searchEndIndex);
+        // Look for the next case statement (but not the current one)
+        let searchEndIndex = content.length;
+
+        // Skip past the current case statement - find the colon and newline
+        let caseColonIndex = content.indexOf(':', caseAlpineIndex);
+        if (caseColonIndex === -1) {
+          console.log('ERROR: Could not find colon after case alpine');
+          process.exit(1);
+        }
+
+        // Find the start of the actual code (after the colon and any whitespace)
+        let codeStartIndex = caseColonIndex + 1;
+        while (codeStartIndex < content.length && (content[codeStartIndex] === ' ' || content[codeStartIndex] === '\t' || content[codeStartIndex] === '\n')) {
+          codeStartIndex++;
+        }
+
+        console.log(`Case colon at ${caseColonIndex}, code starts at ${codeStartIndex}`);
+
+        // Now look for the next case statement AFTER the current one
+        const afterCaseCode = content.substring(codeStartIndex);
+        const nextCaseMatch = afterCaseCode.match(/case\s+['"]/);
+        if (nextCaseMatch) {
+          searchEndIndex = codeStartIndex + nextCaseMatch.index;
+          console.log(`Found next case at index ${searchEndIndex}`);
+        } else {
+          // Look for the closing brace of the switch statement or default
+          const defaultMatch = afterCaseCode.match(/^\s*default\s*:/);
+          if (defaultMatch) {
+            searchEndIndex = codeStartIndex + defaultMatch.index;
+            console.log(`Found default at index ${searchEndIndex}`);
+          } else {
+            console.log('No next case or default found, using end of file');
+          }
+        }
+
+        let alpineCaseContent = content.substring(caseAlpineIndex, searchEndIndex);
+        console.log(`Extracted alpine case content: ${caseAlpineIndex} to ${searchEndIndex}, length: ${alpineCaseContent.length}`);
+
+        if (alpineCaseContent.length === 0 || alpineCaseContent.trim().length < 10) {
+          console.log('ERROR: Extracted case content is empty or too short!');
+          console.log('Trying alternative extraction method...');
+          // Try to find the content by looking for the return statement or extractAlpinefromDocker
+          const extractIndex = content.indexOf('extractAlpinefromDocker', caseAlpineIndex);
+          if (extractIndex !== -1 && extractIndex < searchEndIndex) {
+            console.log(`Found extractAlpinefromDocker at index ${extractIndex}`);
+            // Look backwards for return, forwards for the end
+            let returnIndex = content.lastIndexOf('return', extractIndex);
+            if (returnIndex === -1 || returnIndex < caseAlpineIndex) {
+              returnIndex = codeStartIndex;
+            }
+            // Look forwards for the end of the statement - find the closing paren and semicolon
+            let endIndex = content.indexOf(';', extractIndex);
+            if (endIndex === -1 || endIndex > searchEndIndex) {
+              // Look for the end of the pipe chain
+              endIndex = content.indexOf('.pipe(rename', extractIndex);
+              if (endIndex !== -1) {
+                endIndex = content.indexOf(')', endIndex) + 1;
+              }
+            }
+            if (endIndex === -1 || endIndex > searchEndIndex) {
+              endIndex = Math.min(searchEndIndex, extractIndex + 1000);
+            }
+            const altContent = content.substring(returnIndex, endIndex);
+            console.log(`Alternative extraction: ${returnIndex} to ${endIndex}, length: ${altContent.length}`);
+            if (altContent.length > 0) {
+              console.log('Alternative content (first 1000 chars):');
+              console.log(altContent.substring(0, 1000));
+              // Use this as the alpine case content for pattern matching
+              alpineCaseContent = altContent;
+            } else {
+              console.log('Alternative extraction also failed');
+              process.exit(1);
+            }
+          } else {
+            console.log('Could not find extractAlpinefromDocker in case block');
+            console.log(`Searched from ${caseAlpineIndex} to ${searchEndIndex}`);
+            // Show what we found
+            console.log('Content from caseAlpineIndex to searchEndIndex:');
+            console.log(content.substring(caseAlpineIndex, Math.min(caseAlpineIndex + 500, searchEndIndex)));
+            process.exit(1);
+          }
+        }
+
+        // Ensure we have valid content
+        if (!alpineCaseContent || alpineCaseContent.length === 0) {
+          console.log('ERROR: Could not extract alpine case content!');
+          console.log('Showing context around case alpine:');
+          console.log(content.substring(Math.max(0, caseAlpineIndex - 200), Math.min(content.length, caseAlpineIndex + 1000)));
+          process.exit(1);
+        }
 
         console.log('Alpine case content length:', alpineCaseContent.length);
-        console.log('First 1000 chars of case alpine:');
-        console.log(alpineCaseContent.substring(0, 1000));
-        console.log('Last 500 chars of case alpine:');
-        console.log(alpineCaseContent.substring(Math.max(0, alpineCaseContent.length - 500)));
+        if (alpineCaseContent.length > 0) {
+          console.log('First 1000 chars of case alpine:');
+          console.log(alpineCaseContent.substring(0, 1000));
+          console.log('Last 500 chars of case alpine:');
+          console.log(alpineCaseContent.substring(Math.max(0, alpineCaseContent.length - 500)));
+        }
         console.log('Searching for patterns...');
 
         // Look for various patterns that might exist

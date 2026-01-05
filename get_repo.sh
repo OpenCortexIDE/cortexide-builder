@@ -27,23 +27,71 @@ CORTEXIDE_REPO="../cortexide"
 if [[ -d "${CORTEXIDE_REPO}" && -f "${CORTEXIDE_REPO}/package.json" ]]; then
   echo "Using local CortexIDE repository at ${CORTEXIDE_REPO}..."
   
+  # Phase 3: Source state verification (warn only, non-blocking)
+  # Check main repo state to help identify potential issues
+  if [[ -d "${CORTEXIDE_REPO}/.git" ]]; then
+    cd "${CORTEXIDE_REPO}" 2>/dev/null || true
+    # Check for uncommitted changes (warn but don't fail)
+    if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+      echo "⚠️  Warning: Main repo has uncommitted changes - this may cause build inconsistencies"
+    fi
+    # Check if package-lock.json exists
+    if [[ -f "package.json" ]] && [[ ! -f "package-lock.json" ]]; then
+      echo "⚠️  Warning: package-lock.json missing in main repo - will be regenerated during build"
+    fi
+    cd - > /dev/null 2>&1 || true
+  fi
+  
   # Remove existing vscode directory if it exists
   rm -rf vscode
   
   # Copy the local CortexIDE repo to vscode directory (exclude heavy/temp files)
+  # Phase 1: Expanded exclusions to prevent build artifacts from causing regressions
   echo "Copying CortexIDE repository to vscode directory..."
   mkdir -p vscode
   rsync -a --delete \
     --exclude ".git" \
     --exclude "node_modules" \
+    --exclude "**/node_modules" \
     --exclude "out" \
+    --exclude "out-build" \
+    --exclude "out-vscode-min" \
     --exclude ".build" \
+    --exclude ".cache" \
+    --exclude "dist" \
+    --exclude "build/out" \
+    --exclude "*.tsbuildinfo" \
+    --exclude "**/*.tsbuildinfo" \
     --exclude ".vscode" \
     --exclude "**/.vscode" \
-    --exclude "**/node_modules" \
+    --exclude "src/vs/workbench/contrib/*/browser/react/out" \
+    --exclude "**/react/out" \
     "${CORTEXIDE_REPO}/" "vscode/"
   
+  # Phase 2: Post-copy cleanup to remove any artifacts that might have been copied
+  # This ensures a completely clean state even if exclusions miss something
   cd vscode || { echo "'vscode' dir not found"; exit 1; }
+  echo "Cleaning up any build artifacts that may have been copied..."
+  rm -rf out out-build out-vscode-min .build .cache dist build/out 2>/dev/null || true
+  find . -name "*.tsbuildinfo" -type f -delete 2>/dev/null || true
+  find . -type d -path "*/browser/react/out" -exec rm -rf {} + 2>/dev/null || true
+  
+  # Phase 6: Normalize timestamps to prevent build cache issues
+  # Touch key source files to ensure build system sees them as "new"
+  echo "Normalizing file timestamps to prevent cache issues..."
+  find src -name "*.ts" -type f -exec touch {} + 2>/dev/null || true
+  find src -name "*.tsx" -type f -exec touch {} + 2>/dev/null || true
+  
+  # Phase 5: File integrity check - verify critical files exist after copy
+  if [[ ! -f "package.json" ]]; then
+    echo "Error: package.json not found after copy - copy may have failed"
+    exit 1
+  fi
+  if [[ ! -f "product.json" ]]; then
+    echo "Error: product.json not found after copy - copy may have failed"
+    exit 1
+  fi
+  echo "✓ Critical files verified after copy"
   
   # Get version info from local repo
   MS_TAG=$( jq -r '.version' "package.json" )

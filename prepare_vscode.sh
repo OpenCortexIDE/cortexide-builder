@@ -171,6 +171,13 @@ if [[ -f "package-lock.json" ]]; then
   fi
 fi
 
+# Phase 4: Force clean node_modules to ensure clean dependency state
+# Always remove node_modules before npm install to prevent contamination
+# from any node_modules that might have been copied from main repo
+echo "Ensuring clean node_modules state..."
+rm -rf node_modules 2>/dev/null || true
+rm -rf build/node_modules 2>/dev/null || true
+
 # Create @vscode/ripgrep bin folder to skip download during npm install
 # This prevents 403 errors from GitHub rate limiting during npm ci
 # We'll handle the download manually after npm install with proper error handling

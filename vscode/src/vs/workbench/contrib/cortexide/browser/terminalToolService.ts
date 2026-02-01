@@ -130,11 +130,11 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 			cwd = override_cwd;
 		} else {
 			const workspace = this.workspaceContextService.getWorkspace();
-			if (workspace.folders.length > 0) {
-				cwd = workspace.folders[0].uri;
-			} else {
-				cwd = undefined;
+			const folders = workspace.folders;
+			if (folders.length > 0 && folders[0]) {
+				cwd = folders[0].uri;
 			}
+			// cwd remains undefined if no override and no folders
 		}
 
 		const options: ICreateTerminalOptions = {

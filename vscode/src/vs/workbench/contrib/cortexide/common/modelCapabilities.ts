@@ -85,6 +85,9 @@ export const defaultProviderSettings = {
 		region: 'us-east-1', // add region setting
 		endpoint: '', // optionally allow overriding default
 	},
+	pollinations: {
+		apiKey: '',
+	},
 
 } as const
 
@@ -250,18 +253,19 @@ export const defaultModelsOfProvider = {
 		// NOTE: Keep this list in sync with Mistral's current models.
 		// Reference: https://docs.mistral.ai/getting-started/models/ (checked 2025-11-30)
 		// Latest general models:
-		'mistral-medium-3.1', // Premier: Frontier-class multimodal model (Aug 2025)
-		'mistral-small-3.2', // Open: Update to previous small model (June 2025)
+		'mistral-large-latest',
+		'mistral-medium-latest', // Premier: Frontier-class multimodal model (Aug 2025)
+		'mistral-small-latest', // Open: Update to previous small model (June 2025)
 		// Reasoning models:
-		'magistral-medium-1.2', // Premier: Frontier-class multimodal reasoning model (Sept 2025)
-		'magistral-small-1.2', // Open: Small multimodal reasoning model (Sept 2025)
+		'magistral-medium-latest', // Premier: Frontier-class multimodal reasoning model (Sept 2025)
+		'magistral-small-latest', // Open: Small multimodal reasoning model (Sept 2025)
 		// Edge models:
 		'ministral-8b', // Premier: Powerful edge model with high performance/price ratio
 		'ministral-3b', // Premier: World's best edge model
 		// Code models:
 		'codestral-latest', // Premier: Cutting-edge language model for coding (July 2025)
-		'devstral-medium-1.0', // Premier: Enterprise-grade text model for SWE use cases (July 2025)
-		'devstral-small-1.1', // Open: Open source model that excels at SWE use cases (July 2025)
+		'devstral-medium-latest',// Premier: Enterprise-grade text model for SWE use cases (July 2025)
+		'devstral-small-latest', // Open: Open source model that excels at SWE use cases (July 2025)
 		// Audio models:
 		'voxtral-mini-transcribe', // Premier: Efficient audio input model for transcription (July 2025)
 		'voxtral-mini', // Open: Mini version of first audio input model (July 2025)
@@ -277,6 +281,14 @@ export const defaultModelsOfProvider = {
 	microsoftAzure: [],
 	awsBedrock: [],
 	liteLLM: [],
+	pollinations: [ // https://enter.pollinations.ai/api/docs, https://pollinations.ai/llms.txt
+		'openai',
+		'gemini',
+		'gemini-large',
+		'claude',
+		'deepseek',
+		'qwen3-coder-30b',
+	],
 
 
 } as const satisfies Record<ProviderName, string[]>
@@ -1357,7 +1369,7 @@ const mistralModelOptions = { // https://mistral.ai/products/la-plateforme#prici
 		contextWindow: 131_000,
 		reservedOutputTokenSpace: 8_192,
 		cost: { input: 2.00, output: 6.00 },
-		supportsFIM: false,
+		supportsFIM: true,
 		downloadable: { sizeGb: 73 },
 		supportsSystemMessage: 'system-role',
 		reasoningCapabilities: false,
@@ -1366,7 +1378,7 @@ const mistralModelOptions = { // https://mistral.ai/products/la-plateforme#prici
 		contextWindow: 131_000,
 		reservedOutputTokenSpace: 8_192,
 		cost: { input: 0.40, output: 2.00 },
-		supportsFIM: false,
+		supportsFIM: true,
 		downloadable: { sizeGb: 'not-known' },
 		supportsSystemMessage: 'system-role',
 		reasoningCapabilities: false,
@@ -1700,6 +1712,22 @@ const liteLLMSettings: VoidStaticProviderInfo = { // https://docs.litellm.ai/doc
 	},
 }
 
+// ---------------- POLLINATIONS ----------------
+const pollinationsSettings: VoidStaticProviderInfo = {
+	modelOptionsFallback: (modelName) => {
+		const fallback = extensiveModelOptionsFallback(modelName);
+		if (fallback && !fallback.specialToolFormat) {
+			fallback.specialToolFormat = 'openai-style';
+		}
+		return fallback;
+	},
+	modelOptions: {},
+	providerReasoningIOSettings: {
+		input: { includeInPayload: openAICompatIncludeInPayloadReasoning },
+		output: { nameOfFieldInDelta: 'reasoning_content' },
+	},
+}
+
 
 // ---------------- OPENROUTER ----------------
 const openRouterModelOptions_assumingOpenAICompat = {
@@ -1927,6 +1955,8 @@ const modelSettingsOfProvider: { [providerName in ProviderName]: VoidStaticProvi
 
 	liteLLM: liteLLMSettings,
 	lmStudio: lmStudioSettings,
+
+	pollinations: pollinationsSettings,
 
 	googleVertex: googleVertexSettings,
 	microsoftAzure: microsoftAzureSettings,

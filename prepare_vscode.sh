@@ -459,10 +459,14 @@ fi
 
 ../undo_telemetry.sh
 
-replace 's|Microsoft Corporation|CortexIDE|' build/lib/electron.js
-replace 's|Microsoft Corporation|CortexIDE|' build/lib/electron.ts
-replace 's|([0-9]) Microsoft|\1 CortexIDE|' build/lib/electron.js
-replace 's|([0-9]) Microsoft|\1 CortexIDE|' build/lib/electron.ts
+if [[ -f "build/lib/electron.js" ]]; then
+	replace 's|Microsoft Corporation|CortexIDE|' build/lib/electron.js
+	replace 's|([0-9]) Microsoft|\1 CortexIDE|' build/lib/electron.js
+fi
+if [[ -f "build/lib/electron.ts" ]]; then
+	replace 's|Microsoft Corporation|CortexIDE|' build/lib/electron.ts
+	replace 's|([0-9]) Microsoft|\1 CortexIDE|' build/lib/electron.ts
+fi
 
 if [[ "${OS_NAME}" == "linux" ]]; then
   # microsoft adds their apt repo to sources

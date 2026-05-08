@@ -83,7 +83,12 @@ else
   cd vscode || { echo "'vscode' dir not found"; exit 1; }
   
   git init -q
-  
+
+  # Skip Git LFS smudge on checkout — LFS test caches (e.g. copilot simulation
+  # sqlite) are not needed for the build and their storage may not always be
+  # populated on the LFS server.
+  git config core.lfsSkipSmudge true
+
   # Use GITHUB_TOKEN if available for authentication (GitHub Actions provides this automatically)
   # Otherwise use the public URL
   if [[ -n "${GITHUB_TOKEN}" ]]; then
@@ -92,18 +97,18 @@ else
   else
     git remote add origin https://github.com/OpenCortexIDE/cortexide.git
   fi
-  
+
   # Allow callers to specify a particular commit to checkout via the
   # environment variable CORTEXIDE_COMMIT.  We still default to the tip of the
   # ${CORTEXIDE_BRANCH} branch when the variable is not provided.
   if [[ -n "${CORTEXIDE_COMMIT}" ]]; then
     echo "Using explicit commit ${CORTEXIDE_COMMIT}"
     # Fetch just that commit to keep the clone shallow.
-    git fetch --depth 1 origin "${CORTEXIDE_COMMIT}"
-    git checkout "${CORTEXIDE_COMMIT}"
+    GIT_LFS_SKIP_SMUDGE=1 git fetch --depth 1 origin "${CORTEXIDE_COMMIT}"
+    GIT_LFS_SKIP_SMUDGE=1 git checkout "${CORTEXIDE_COMMIT}"
   else
-    git fetch --depth 1 origin "${CORTEXIDE_BRANCH}"
-    git checkout FETCH_HEAD
+    GIT_LFS_SKIP_SMUDGE=1 git fetch --depth 1 origin "${CORTEXIDE_BRANCH}"
+    GIT_LFS_SKIP_SMUDGE=1 git checkout FETCH_HEAD
   fi
   
   MS_TAG=$( jq -r '.version' "package.json" )

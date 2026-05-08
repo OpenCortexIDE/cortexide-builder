@@ -24,12 +24,12 @@ on:
   repository_dispatch:
     types: [stable]
   push:
-    branches: [ master ]
+    branches: [ main, master ]
     paths-ignore:
     - '**/*.md'
     - 'upstream/*.json'
   pull_request:
-    branches: [ master ]
+    branches: [ main, master ]
     paths-ignore:
     - '**/*.md'
 

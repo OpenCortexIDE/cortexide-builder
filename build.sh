@@ -51,23 +51,22 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   # Using compile-build-without-mangling for compatibility and debugging
   echo "Compiling TypeScript..."
   npm run gulp compile-build-without-mangling
-  
-  # Compile extension media assets
-  echo "Compiling extension media..."
-  npm run gulp compile-extension-media
-  
-  # Install extension dependencies before building extensions
-  # Extensions need both production AND dev dependencies for TypeScript compilation
-  # (devDependencies include @types/node, etc. needed for webpack/tsc)
+
+  # Install extension dependencies before media and extension compilation.
+  # compile-extension-media runs esbuild scripts that import extension deps
+  # (e.g. morphdom, lodash.throttle in markdown-language-features/preview-src).
   echo "Installing extension dependencies..."
   for ext_dir in extensions/*/; do
     if [[ -f "${ext_dir}package.json" ]] && [[ -f "${ext_dir}package-lock.json" ]]; then
       echo "Installing deps for $(basename "$ext_dir")..."
-      # Use npm ci without --production to get devDependencies (needed for @types/node)
       (cd "$ext_dir" && npm ci --ignore-scripts) || echo "Skipped $(basename "$ext_dir")"
     fi
   done
-  
+
+  # Compile extension media assets (webviews — requires extension deps above)
+  echo "Compiling extension media..."
+  npm run gulp compile-extension-media
+
   # Compile built-in extensions
   echo "Compiling extensions..."
   npm run gulp compile-extensions-build

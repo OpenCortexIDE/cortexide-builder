@@ -73,7 +73,8 @@ if [[ -d "${CORTEXIDE_REPO}" && -f "${CORTEXIDE_REPO}/package.json" ]]; then
   fi
 else
   # Fallback to cloning from GitHub (for CI or if local repo not found)
-  CORTEXIDE_BRANCH="main"
+  # Use sync/vscode-1.118.1 which has the VS Code 1.118.1 base + latest agent work
+  CORTEXIDE_BRANCH="sync/vscode-1.118.1"
   echo "Local CortexIDE repo not found, cloning from GitHub ${CORTEXIDE_BRANCH}..."
   
   # Remove existing vscode directory if it exists

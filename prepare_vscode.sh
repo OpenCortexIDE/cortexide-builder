@@ -161,6 +161,16 @@ fi
 mv .npmrc .npmrc.bak
 cp ../npmrc .npmrc
 
+# The package.json preinstall/postinstall scripts run TypeScript files via
+# `node build/npm/preinstall.ts`. The cortexide source requires Node 22.22.1
+# (see .nvmrc) where type stripping is fully stable. CI uses Node 22.15.1 which
+# needs --experimental-strip-types explicitly. Exporting it unconditionally is
+# safe — it is a no-op on Node versions that already support TS by default.
+export NODE_OPTIONS="${NODE_OPTIONS} --experimental-strip-types"
+# Skip the strict node-version gate in preinstall.ts: CI intentionally uses a
+# slightly older Node and the version check would abort the install.
+export VSCODE_SKIP_NODE_VERSION_CHECK=1
+
 # Remove package-lock.json if Node version changed to avoid ES Module conflicts
 # package-lock.json generated with Node 20 causes issues with Node 22
 if [[ -f "package-lock.json" ]]; then

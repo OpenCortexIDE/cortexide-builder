@@ -772,6 +772,24 @@ for ext_dir in extensions/*/; do
   fi
 done
 
+# Install extension sub-package dependencies (e.g. extensions/*/server/ listed in dirs.ts)
+# These are not covered by the top-level extensions/* loop above, and postinstall.ts is
+# skipped (--ignore-scripts), so we must install them explicitly.
+echo "Installing extension sub-package dependencies..."
+for ext_dir in extensions/*/; do
+  for sub_dir in "${ext_dir}"*/; do
+    if [[ -d "${sub_dir}" ]] && [[ -f "${sub_dir}package.json" ]] && [[ -f "${sub_dir}package-lock.json" ]]; then
+      sub_name="$(basename "${ext_dir%/}")/$(basename "${sub_dir%/}")"
+      echo "Installing deps for ${sub_name}..."
+      if (cd "${sub_dir}" && npm ci --ignore-scripts); then
+        echo "✓ Successfully installed dependencies for ${sub_name}"
+      else
+        echo "⚠ Warning: Failed to install dependencies for ${sub_name}, continuing..."
+      fi
+    fi
+  done
+done
+
 # For Alpine, ensure ternary-stream is installed in build directory (it might be missing due to --ignore-scripts)
 # ternary-stream is required by build/lib/util.js, so it needs to be in build/node_modules
 # This must be done BEFORE running any gulp commands

@@ -38,8 +38,10 @@ apply_patch() {
     if echo "$PATCH_ERROR" | grep -q "No such file or directory"; then
       [[ -z "$silent_mode" ]] && echo "Info: Patch targets files not in CortexIDE, skipping..."
       mv -f $1{.bak,}
-      # Return non-zero but don't abort - let caller decide
-      return 1
+      # Return 0 — skipping an inapplicable patch is success, not failure.
+      # Callers that use apply_patch directly (package_reh.sh, package_bin.sh) rely
+      # on set -e; returning 1 here would abort those scripts unnecessarily.
+      return 0
     # Check if already applied
     elif echo "$PATCH_ERROR" | grep -q "patch does not apply\|already exists in working"; then
       [[ -z "$silent_mode" ]] && echo "Info: Patch already applied or not needed, skipping..."

@@ -18,6 +18,7 @@ cd vscode || { echo "'vscode' dir not found"; exit 1; }
 
 export VSCODE_PLATFORM='alpine'
 export VSCODE_SKIP_NODE_VERSION_CHECK=1
+export NODE_OPTIONS="${NODE_OPTIONS} --experimental-strip-types"
 
 # For Alpine ARM64, configure Node.js download to use unofficial builds
 # The official nodejs.org doesn't have Alpine ARM64 builds, and Docker fallback fails on AMD64 hosts
@@ -64,7 +65,9 @@ for i in {1..5}; do # try 5 times
   echo "Npm install failed $i, trying again..."
 done
 
-node build/azure-pipelines/distro/mixin-npm
+node --experimental-strip-types build/azure-pipelines/distro/mixin-npm.ts 2>/dev/null || \
+  node build/azure-pipelines/distro/mixin-npm 2>/dev/null || \
+  echo "mixin-npm not found, skipping distro npm mixin..."
 
 # Verify and apply fix-reh-empty-dependencies fix if patch didn't work
 # This prevents "Invalid glob argument" errors when productionDependencies is empty

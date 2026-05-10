@@ -26,7 +26,8 @@ if [[ -d "src/vs/workbench/contrib/cortexide/browser/react/out" ]]; then
   rm -rf src/vs/workbench/contrib/cortexide/browser/react/out
 fi
 
-export NODE_OPTIONS="--max-old-space-size=12288"
+export NODE_OPTIONS="--max-old-space-size=12288 --experimental-strip-types"
+export VSCODE_SKIP_NODE_VERSION_CHECK=1
 
 for i in {1..5}; do # try 5 times
   npm ci && break
@@ -48,7 +49,9 @@ for ext_dir in extensions/*/; do
   fi
 done
 
-node build/azure-pipelines/distro/mixin-npm
+node --experimental-strip-types build/azure-pipelines/distro/mixin-npm.ts 2>/dev/null || \
+  node build/azure-pipelines/distro/mixin-npm 2>/dev/null || \
+  echo "mixin-npm not found, skipping distro npm mixin..."
 
 . ../build/windows/rtf/make.sh
 

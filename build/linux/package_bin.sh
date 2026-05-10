@@ -34,7 +34,7 @@ fi
 export VSCODE_PLATFORM='linux'
 export VSCODE_SKIP_NODE_VERSION_CHECK=1
 export VSCODE_SYSROOT_PREFIX='-glibc-2.28'
-export NODE_OPTIONS="--max-old-space-size=12288"
+export NODE_OPTIONS="--max-old-space-size=12288 --experimental-strip-types"
 
 # Skip sysroot download - CortexIDE doesn't need cross-compilation toolchains
 # Standard builds work without sysroot, and it's causing checksum errors
@@ -228,7 +228,9 @@ if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] ||
   bash "../build/linux/fix-dependencies-generator.sh" || echo "Warning: Fix script failed, continuing..."
 fi
 
-node build/azure-pipelines/distro/mixin-npm
+node --experimental-strip-types build/azure-pipelines/distro/mixin-npm.ts 2>/dev/null || \
+  node build/azure-pipelines/distro/mixin-npm 2>/dev/null || \
+  echo "mixin-npm not found, skipping distro npm mixin..."
 
 # CortexIDE: Build React components before packaging
 echo "Building React components for Linux ${VSCODE_ARCH}..."

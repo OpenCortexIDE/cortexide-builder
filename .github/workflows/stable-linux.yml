@@ -482,7 +482,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22.15.1'
-        if: env.DISABLED != 'yes'
 
       - name: Download vscode artifact
         uses: actions/download-artifact@v4

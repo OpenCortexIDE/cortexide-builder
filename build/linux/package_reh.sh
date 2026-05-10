@@ -40,6 +40,9 @@ elif [[ "${VSCODE_ARCH}" == "arm64" ]]; then
 
   export VSCODE_SKIP_SYSROOT=1
   export USE_GNUPP2A=1
+  # setup-env.sh downloads arm64 sysroots that are missing bfd-plugins/liblto_plugin,
+  # which causes linker failures. The Docker container provides the cross-toolchain.
+  export VSCODE_SKIP_SETUPENV=1
   # Unset VSCODE_SYSROOT_DIR to prevent node-gyp from trying to use cross-compilation
   unset VSCODE_SYSROOT_DIR
 elif [[ "${VSCODE_ARCH}" == "armhf" ]]; then
@@ -49,6 +52,9 @@ elif [[ "${VSCODE_ARCH}" == "armhf" ]]; then
 
   export VSCODE_SKIP_SYSROOT=1
   export USE_GNUPP2A=1
+  # setup-env.sh downloads armhf sysroots that are missing bfd-plugins/liblto_plugin,
+  # which causes linker failures. The Docker container provides the cross-toolchain.
+  export VSCODE_SKIP_SETUPENV=1
   # Unset VSCODE_SYSROOT_DIR to prevent node-gyp from trying to use cross-compilation
   unset VSCODE_SYSROOT_DIR
 elif [[ "${VSCODE_ARCH}" == "ppc64le" ]]; then
@@ -58,6 +64,9 @@ elif [[ "${VSCODE_ARCH}" == "ppc64le" ]]; then
   export VSCODE_SYSROOT_VERSION='20240129-253798'
   export USE_GNUPP2A=1
   export VSCODE_SKIP_SYSROOT=1
+  # setup-env.sh does not support ppc64le sysroot (install-sysroot.ts has no ppc64le case)
+  # Skip it entirely — the docker container provides the toolchain
+  export VSCODE_SKIP_SETUPENV=1
 elif [[ "${VSCODE_ARCH}" == "riscv64" ]]; then
   NODE_VERSION="20.16.0"
   VSCODE_REMOTE_DEPENDENCIES_CONTAINER_NAME="vscodium/vscodium-linux-build-agent:focal-devtoolset-riscv64"
@@ -79,6 +88,9 @@ elif [[ "${VSCODE_ARCH}" == "s390x" ]]; then
 
   export VSCODE_SKIP_SYSROOT=1
   export USE_GNUPP2A=1
+  # setup-env.sh does not have s390x sysroot checksums (install-sysroot.ts checksum DB
+  # doesn't include s390x-linux-gnu-glibc-2.28-gcc-10.5.0). Skip it entirely.
+  export VSCODE_SKIP_SETUPENV=1
   # Unset VSCODE_SYSROOT_DIR to prevent node-gyp from trying to use cross-compilation
   unset VSCODE_SYSROOT_DIR
   # Prevent native module builds during npm install (s390x native modules can't build on x86_64 host)

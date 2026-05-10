@@ -90,13 +90,12 @@ if [[ -f "../build/linux/${VSCODE_ARCH}/electron.sh" ]]; then
 
   TARGET=$( npm config get target )
 
-  # Only fails at different major versions
-  # For loong64 and ppc64le, allow v34.x even if target is v37.x since their repositories only have v34.2.0
+  # Only fails at different major versions.
+  # ppc64le/loong64/riscv64 use community Electron builds that lag behind the upstream
+  # version — allow any mismatch for these architectures (warning only).
   if [[ "${ELECTRON_VERSION%%.*}" != "${TARGET%%.*}" ]]; then
-    if [[ "${VSCODE_ARCH}" == "loong64" ]] && [[ "${ELECTRON_VERSION%%.*}" == "34" ]] && [[ "${TARGET%%.*}" == "37" ]]; then
-      echo "Warning: Using Electron ${ELECTRON_VERSION} for loong64 (target is ${TARGET}) - only v34.2.0 is available in darkyzhou/electron-loong64"
-    elif [[ "${VSCODE_ARCH}" == "ppc64le" ]] && [[ "${ELECTRON_VERSION%%.*}" == "34" ]] && [[ "${TARGET%%.*}" == "37" ]]; then
-      echo "Warning: Using Electron ${ELECTRON_VERSION} for ppc64le (target is ${TARGET}) - only v34.2.0 is available in lex-ibm/electron-ppc64le-build-scripts"
+    if [[ "${VSCODE_ARCH}" == "loong64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "riscv64" ]]; then
+      echo "Warning: Using Electron ${ELECTRON_VERSION} for ${VSCODE_ARCH} (target is ${TARGET}) - community Electron build; version mismatch is expected"
     else
       # Fail the pipeline if electron target doesn't match what is used.
       echo "Electron ${VSCODE_ARCH} binary version doesn't match target electron version!"

@@ -174,6 +174,22 @@ if [[ -z "${VSCODE_SKIP_SETUPENV}" ]]; then
   fi
 fi
 
+# Node.js 22 C++ headers require GCC 10+ (<source_location> C++20 header).
+# focal containers ship with GCC 9 by default; upgrade if possible.
+if ! command -v g++-10 &>/dev/null && ! command -v g++-11 &>/dev/null; then
+  echo "GCC 10+ not found — attempting apt-get install g++-10..."
+  apt-get install -yq g++-10 gcc-10 2>/dev/null || echo "Warning: apt-get install g++-10 failed"
+fi
+if command -v g++-10 &>/dev/null; then
+  export CXX=g++-10 CC=gcc-10
+  echo "Using GCC 10 for native module compilation"
+elif command -v g++-11 &>/dev/null; then
+  export CXX=g++-11 CC=gcc-11
+  echo "Using GCC 11 for native module compilation"
+else
+  echo "Warning: GCC 10+ not available; native-keymap may fail to compile with Node.js 22 headers"
+fi
+
 # For alternative architectures, skip postinstall scripts to avoid unsupported platform errors
 NPM_CI_OPTS=""
 if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] || [[ "${VSCODE_ARCH}" == "loong64" ]]; then

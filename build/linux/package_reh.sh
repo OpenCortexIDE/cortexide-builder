@@ -90,6 +90,7 @@ export ELECTRON_SKIP_BINARY_DOWNLOAD=1
 export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 export VSCODE_PLATFORM='linux'
 export VSCODE_SKIP_NODE_VERSION_CHECK=1
+export NODE_OPTIONS="--max-old-space-size=8192 --experimental-strip-types"
 # Don't override VSCODE_SYSROOT_PREFIX - let setup-env.sh use the correct defaults
 
 EXPECTED_GLIBC_VERSION="${EXPECTED_GLIBC_VERSION:=GLIBC_VERSION}"
@@ -249,7 +250,9 @@ done
 
 mv .npmrc.bak .npmrc
 
-node build/azure-pipelines/distro/mixin-npm
+node --experimental-strip-types build/azure-pipelines/distro/mixin-npm.ts 2>/dev/null || \
+  node build/azure-pipelines/distro/mixin-npm 2>/dev/null || \
+  echo "mixin-npm not found, skipping distro npm mixin..."
 
 # Apply Node.js URL fix patch for alternative architectures (loong64, riscv64)
 # This MUST be done AFTER mixin-npm, as mixin-npm may regenerate/modify gulpfile.reh.js

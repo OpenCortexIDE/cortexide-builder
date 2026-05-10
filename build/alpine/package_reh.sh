@@ -18,7 +18,9 @@ cd vscode || { echo "'vscode' dir not found"; exit 1; }
 
 export VSCODE_PLATFORM='alpine'
 export VSCODE_SKIP_NODE_VERSION_CHECK=1
-export NODE_OPTIONS="${NODE_OPTIONS} --experimental-strip-types"
+# Note: do NOT add --experimental-strip-types to NODE_OPTIONS here.
+# Alpine's Node binary rejects that flag in NODE_OPTIONS (it is allowed on the CLI).
+# It is passed explicitly to individual node invocations that run .ts files below.
 
 # For Alpine ARM64, configure Node.js download to use unofficial builds
 # The official nodejs.org doesn't have Alpine ARM64 builds, and Docker fallback fails on AMD64 hosts

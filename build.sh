@@ -68,6 +68,15 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
     fi
   done
 
+  # Install deps for nested sub-packages (e.g. css-language-features/server/, html-language-features/server/)
+  # tsgo type-checks these during compile-extensions-build and needs their node_modules present.
+  for sub_dir in extensions/*/*/; do
+    if [[ -f "${sub_dir}package.json" ]] && [[ -f "${sub_dir}package-lock.json" ]]; then
+      echo "Installing deps for ${sub_dir}..."
+      (cd "$sub_dir" && npm ci --ignore-scripts) || echo "Skipped ${sub_dir}"
+    fi
+  done
+
   # Compile extension media assets (webviews — requires extension deps above)
   echo "Compiling extension media..."
   npm run gulp compile-extension-media

@@ -253,7 +253,7 @@ jobs:
         if: env.DISABLED != 'yes' && env.SHOULD_BUILD == 'yes'
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        if: env.DISABLED != 'yes' && env.SHOULD_BUILD == 'yes'
+        if: env.DISABLED != 'yes' && env.SHOULD_BUILD == 'yes' && matrix.vscode_arch != 'ppc64le' && matrix.vscode_arch != 'riscv64' && matrix.vscode_arch != 'loong64'
 
       - name: Download vscode artifact
         uses: actions/download-artifact@v4
@@ -477,6 +477,12 @@ jobs:
       - name: Install libkrb5-dev
         run: sudo apt-get update -y && sudo apt-get install -y libkrb5-dev
         if: env.SHOULD_BUILD == 'yes'
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.1'
+        if: env.DISABLED != 'yes'
 
       - name: Download vscode artifact
         uses: actions/download-artifact@v4

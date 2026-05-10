@@ -174,20 +174,20 @@ if [[ -z "${VSCODE_SKIP_SETUPENV}" ]]; then
   fi
 fi
 
-# Node.js 22 C++ headers require GCC 10+ (<source_location> C++20 header).
-# focal containers ship with GCC 9 by default; upgrade if possible.
-if ! command -v g++-10 &>/dev/null && ! command -v g++-11 &>/dev/null; then
-  echo "GCC 10+ not found — attempting apt-get install g++-10..."
-  apt-get install -yq g++-10 gcc-10 2>/dev/null || echo "Warning: apt-get install g++-10 failed"
+# Electron 39+ headers require <source_location> (C++20, GCC 11+).
+# focal containers ship with GCC 9/10 by default; try GCC 11 first, then 10.
+if ! command -v g++-11 &>/dev/null; then
+  echo "GCC 11 not found — attempting apt-get install g++-11..."
+  apt-get install -yq g++-11 gcc-11 2>/dev/null || echo "Warning: apt-get install g++-11 failed"
 fi
-if command -v g++-10 &>/dev/null; then
-  export CXX=g++-10 CC=gcc-10
-  echo "Using GCC 10 for native module compilation"
-elif command -v g++-11 &>/dev/null; then
+if command -v g++-11 &>/dev/null; then
   export CXX=g++-11 CC=gcc-11
   echo "Using GCC 11 for native module compilation"
+elif command -v g++-10 &>/dev/null; then
+  export CXX=g++-10 CC=gcc-10
+  echo "Using GCC 10 for native module compilation"
 else
-  echo "Warning: GCC 10+ not available; native-keymap may fail to compile with Node.js 22 headers"
+  echo "Warning: GCC 11/10 not available; native module compilation may fail"
 fi
 
 # For alternative architectures, skip postinstall scripts to avoid unsupported platform errors
@@ -196,6 +196,12 @@ if [[ "${VSCODE_ARCH}" == "riscv64" ]] || [[ "${VSCODE_ARCH}" == "ppc64le" ]] ||
   NPM_CI_OPTS="--ignore-scripts"
   echo "Skipping postinstall scripts for ${VSCODE_ARCH} (unsupported by some packages)"
 fi
+
+# Force preinstall.ts to run fully (bypass isUpToDate state-hash check).
+# The compile-step artifact doesn't include node_modules/.postinstall-state,
+# so preinstall normally re-runs anyway — but VSCODE_FORCE_INSTALL=1 makes
+# this explicit and ensures installHeaders() is called on every packaging run.
+export VSCODE_FORCE_INSTALL=1
 
 for i in {1..5}; do # try 5 times
   npm ci ${NPM_CI_OPTS} && break

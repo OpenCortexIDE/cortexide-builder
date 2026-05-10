@@ -61,6 +61,13 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   # compile-extension-media runs esbuild scripts that import extension deps
   # (e.g. morphdom, lodash.throttle in markdown-language-features/preview-src).
   echo "Installing extension dependencies..."
+  # extensions/ root has its own package.json with shared deps (e.g. typescript@6.x).
+  # protocol.d.ts in typescript-language-features resolves ../../../../node_modules/typescript
+  # which maps to extensions/node_modules/typescript — must be installed before tsgo runs.
+  if [[ -f "extensions/package.json" ]] && [[ -f "extensions/package-lock.json" ]]; then
+    echo "Installing deps for extensions/ root..."
+    (cd extensions && npm ci --ignore-scripts) || echo "Skipped extensions/ root"
+  fi
   for ext_dir in extensions/*/; do
     if [[ -f "${ext_dir}package.json" ]] && [[ -f "${ext_dir}package-lock.json" ]]; then
       echo "Installing deps for $(basename "$ext_dir")..."

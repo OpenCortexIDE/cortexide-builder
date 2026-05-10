@@ -12,6 +12,11 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
 
   cd vscode || { echo "'vscode' dir not found"; exit 1; }
 
+  # Patch gulp-vinyl-zip to fix a race condition in toStream() that causes
+  # compile-extensions-build to stall under Node 22.15.x. The queue package
+  # dequeues tasks when they START (not finish), so q.length===0 fires prematurely.
+  node ../fix-gulp-vinyl-zip.js || echo "Warning: gulp-vinyl-zip patch failed, continuing..."
+
   export NODE_OPTIONS="--max-old-space-size=12288"
 
   # Clean up any running processes and stale build artifacts

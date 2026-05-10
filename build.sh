@@ -72,6 +72,14 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
   echo "Compiling extension media..."
   npm run gulp compile-extension-media
 
+  # Pre-populate .build/builtInExtensions/ before running compile-extensions-build.
+  # When extensions exist on disk at the right version, getExtensionStream() in
+  # builtInExtensions.ts uses vfs.src() (fast path) instead of downloading and
+  # unzipping via gulp-vinyl-zip, which stalls on Node 22.15.x due to a race
+  # condition in queue/toStream().
+  echo "Pre-loading built-in extensions..."
+  node ../preload-builtin-extensions.js
+
   # Compile built-in extensions
   echo "Compiling extensions..."
   npm run gulp compile-extensions-build
